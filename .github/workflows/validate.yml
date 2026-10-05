@@ -1,0 +1,23 @@
+name: Validate incident register
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate the data file and the rule file
+        run: python3 scripts/validate_register.py .
+      - name: Run the watch-list rule engine self-test
+        run: python3 rules/evaluate.py
+      - name: Import the app without starting a server
+        run: |
+          python3 -m pip install --quiet -r requirements.txt
+          python3 -c "import ast; ast.parse(open('app.py').read())"

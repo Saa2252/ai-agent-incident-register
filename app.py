@@ -1,0 +1,761 @@
+"""AI Agent Incident Register.
+
+Twelve real AI agent failures, each traced to the control that was missing, the test
+that would have caught it before launch, and the signal that would have shown it
+after. A visitor can also answer six questions about their own agent and download a
+watch list built from the same cases.
+
+Three rules run through this file.
+
+1. Every number on screen is computed from data/incidents.csv. Nothing is typed into
+   the page, so no count can drift away from the rows behind it.
+2. Only grade A and grade B rows feed a number. Grade C rows appear in the register,
+   labelled, and are excluded from every count.
+3. The watch list runs on fixed rules in rules/watchlist_rules.json. No model runs
+   inside this app, and every output line shows the rule and the incidents behind it.
+"""
+
+import html
+import importlib.util
+import sys
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+st.set_page_config(
+    page_title="AI Agent Incident Register",
+    page_icon="🛑",
+    layout="wide",
+    initial_sidebar_state="auto",  # collapses itself on a phone, where an open sidebar covers the page
+)
+
+APP_DIR = Path(__file__).parent
+DATA_FILE = APP_DIR / "data" / "incidents.csv"
+
+VERSION = "1.0"
+UPDATED = "3 October 2026"
+CORRECTIONS_URL = "https://github.com/sana-asif/ai-agent-incident-register/issues"
+
+# The app imports its vocabularies and its evidence rule from the validator rather than
+# restating them. A value the validator would reject cannot be displayed as valid here.
+sys.path.insert(0, str(APP_DIR / "scripts"))
+import validate_register as rules_check  # noqa: E402
+
+# The rule engine is loaded by explicit path. "evaluate" is a common module name and
+# this must always resolve to the one in this repo.
+_spec = importlib.util.spec_from_file_location(
+    "watchlist_engine", APP_DIR / "rules" / "evaluate.py"
+)
+engine = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(engine)
+
+COUNTED_GRADES = rules_check.COUNTED_GRADES
+CONTROL_CLASSES = rules_check.CONTROL_CLASSES
+OWASP_CODES = rules_check.OWASP_CODES
+
+SEVERITY_ORDER = ["Severe", "Serious", "Moderate", "Negligible"]
+SEVERITY_MEANING = {
+    "Severe": "People outside the organisation lost data, money or access to a service they depend on, and recovery took more than a day.",
+    "Serious": "A service went down, unlawful or unsafe guidance reached the public, or data was exposed, and it took real work to put right.",
+    "Moderate": "One or more people were misled or lost money, and the organisation had to make it good.",
+    "Negligible": "No harm occurred. The case is here as a near miss.",
+}
+
+GRADE_MEANING = {
+    "A": "A primary record. A ruling, a regulator notice, a vendor security advisory or a threat intelligence report, plus a second source.",
+    "B": "Two independent reputable reports on different sites, usually including the deployer's own public statement.",
+    "C": "A single source, or an account the deployer has not addressed. Shown here, counted nowhere.",
+}
+
+KIND_MEANING = {
+    "Incident": "Harm occurred. This follows the OECD definition.",
+    "Hazard": "A near miss. The failure was demonstrated but no harm has been established.",
+}
+
+APPROVAL_MEANING = {
+    "No": "No person saw the action before it took effect.",
+    "Yes": "A person approved, and the approval did not prevent the failure.",
+    "Yes, bypassed": "An approval gate existed on paper and did not hold.",
+    "Unknown": "The public record does not say.",
+}
+
+# Colour is a second signal here, never the only one. Every badge carries its own words.
+CLASS_COLOR = {
+    "Authority": "#B3261E",
+    "Boundary": "#8A4B00",
+    "Accuracy": "#1B5E8A",
+    "Oversight": "#5B3A8A",
+    "Vendor": "#2E6B3A",
+}
+SEVERITY_COLOR = {
+    "Severe": "#B3261E",
+    "Serious": "#8A4B00",
+    "Moderate": "#1B5E8A",
+    "Negligible": "#4A5568",
+}
+GRADE_COLOR = {"A": "#2E6B3A", "B": "#1B5E8A", "C": "#6B7280"}
+
+NIST_GAP_QUOTE = (
+    "NIST's March 2026 report on monitoring deployed AI systems names an immature "
+    "information sharing ecosystem and a lack of trusted guidelines for monitoring "
+    "methods and tools among the field's central gaps."
+)
+
+
+# --------------------------------------------------------------------------- loading
+
+
+@st.cache_data
+def load_register():
+    frame = pd.read_csv(DATA_FILE, dtype=str).fillna("")
+    frame["counted"] = frame["evidence_grade"].isin(COUNTED_GRADES)
+    frame["year"] = frame["event_date"].str.slice(0, 4)
+    return frame
+
+
+@st.cache_data
+def load_rules():
+    return engine.load_rules()
+
+
+def esc(value) -> str:
+    """Escape CSV-derived text before it reaches any raw-HTML render.
+
+    This repo is public and meant to be forked, so CSV content is treated as untrusted
+    input even though today it is hand written.
+    """
+    return html.escape(str(value), quote=True)
+
+
+def badge(text, color):
+    return (
+        f'<span style="display:inline-block;background:{color};color:#fff;'
+        f'border-radius:4px;padding:2px 8px;font-size:0.78rem;font-weight:600;'
+        f'margin:0 6px 4px 0;white-space:nowrap">{esc(text)}</span>'
+    )
+
+
+# --------------------------------------------------------------------------- findings
+
+
+def headline(frame):
+    """The opening line of the register, computed from the rows that count.
+
+    The claim the register makes is about which control was missing, so the number
+    that carries it is a count of control classes. Grade C rows are excluded.
+    """
+    counted = frame[frame["counted"]]
+    total = len(counted)
+    accuracy = int((counted["control_class"] == "Accuracy").sum())
+    not_accuracy = total - accuracy
+    by_class = counted["control_class"].value_counts().to_dict()
+    # Could the agent do more than read. This is the authority it actually held at the
+    # time, which is not always the authority its owners believed it held.
+    acted = counted["authority"].apply(
+        lambda value: bool({"Write", "Delete", "Pay", "Promise"} & set(value.split("|")))
+    )
+    return {
+        "total": total,
+        "all_rows": len(frame),
+        "accuracy": accuracy,
+        "not_accuracy": not_accuracy,
+        "by_class": by_class,
+        "no_approval": int((counted["human_approval"] != "Yes").sum()),
+        "could_act": int(acted.sum()),
+        "read_only": int((~acted).sum()),
+        "read_only_bad": int((~acted & counted["severity"].isin(["Serious", "Severe"])).sum()),
+        "years": f"{counted['year'].min()} to {counted['year'].max()}",
+    }
+
+
+# ------------------------------------------------------------------------------ home
+
+
+def screen_home(frame, rules):
+    facts = headline(frame)
+
+    st.title("AI Agent Incident Register")
+    st.markdown(
+        f"#### {facts['all_rows']} real AI agent failures, each traced to the control that "
+        "was missing, the test that would have caught it before launch, and the signal "
+        "that would have shown it after."
+    )
+
+    left, middle, right = st.columns(3)
+    left.metric("Incidents in the register", facts["all_rows"], help="Grades A, B and C. One grade C row is shown but counted nowhere.")
+    middle.metric("Rows that feed the numbers", facts["total"], help="Grade A and grade B only. Every count on this site uses these rows.")
+    right.metric("Watch-list rules built from them", len(rules["rules"]), help="Fixed rules. No model runs in this tool.")
+
+    st.markdown("---")
+
+    st.markdown(f"### The finding")
+    st.markdown(
+        f"**{facts['not_accuracy']} of the {facts['total']} cases were not accuracy failures.** "
+        "The model being wrong was the smaller half of the problem. In most of these cases "
+        "the missing control governed what the agent was allowed to do, what it was allowed "
+        "to treat as an instruction, or who was positioned to stop it."
+    )
+
+    order = sorted(facts["by_class"].items(), key=lambda item: (-item[1], item[0]))
+    rows = []
+    for name, count in order:
+        rows.append({
+            "What the missing control governed": name,
+            "Cases": count,
+            "What that means": CONTROL_CLASSES[name],
+        })
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        use_container_width=True,
+        column_config={"Cases": st.column_config.NumberColumn(width="small")},
+    )
+
+    st.caption(
+        f"Counted over {facts['total']} grade A and grade B rows, events from "
+        f"{facts['years']}. One row per case, one class per row, assigned by the ordered "
+        "rubric on the Method page."
+    )
+
+    st.markdown("---")
+
+    first, second = st.columns(2)
+    with first:
+        st.markdown("### Two counts that change where you look")
+        st.markdown(
+            f"- In **{facts['no_approval']} of {facts['total']}** cases no person approved "
+            "the action before it took effect, or the gate that should have stopped it did "
+            "not hold.\n"
+            f"- **{facts['read_only']} of the {facts['total']}** agents could only read. "
+            f"**{facts['read_only_bad']} of those {facts['read_only']}** still produced a "
+            "serious or severe outcome. Read-only is not the same as low risk, because an "
+            "agent that only reads can still speak, and what it says binds the "
+            "organisation."
+        )
+    with second:
+        st.markdown("### Why this register exists")
+        st.markdown(NIST_GAP_QUOTE)
+        st.markdown(
+            "Teams are asked to monitor agents in production without an agreed way to do "
+            "it and without a shared record of what has already gone wrong. This is a "
+            "small, checkable contribution to the second problem."
+        )
+
+    st.markdown("---")
+    st.markdown("### How this works")
+    st.markdown(
+        "**The register** lists every case with its evidence grade and a link you can "
+        "follow. Nothing is on a card that is not in the source.\n\n"
+        "**Build your watch list** asks six plain questions about your own agent and "
+        "returns the tests and signals those answers trigger. It runs on fixed rules, not "
+        "on a model, so every line shows the rule and the incidents behind it.\n\n"
+        "**Method** gives the inclusion rule, the evidence grades, the coding rubric, the "
+        "limits and the change log. Start there if you want to disagree with something."
+    )
+    st.info(
+        "This is a public register built by one person from public records. It is not "
+        "legal advice, and the clause references are the closest fit rather than a legal "
+        "classification. Corrections are welcome and logged.",
+        icon="ℹ️",
+    )
+
+
+# -------------------------------------------------------------------------- register
+
+
+def incident_card(row):
+    st.markdown(
+        badge(row["id"], "#374151")
+        + badge(row["incident_or_hazard"], "#374151")
+        + badge(f"{row['severity']} severity", SEVERITY_COLOR[row["severity"]])
+        + badge(f"Missing control: {row['control_class']}", CLASS_COLOR[row["control_class"]])
+        + badge(f"Evidence grade {row['evidence_grade']}", GRADE_COLOR[row["evidence_grade"]])
+        + (badge("Facts disputed by the deployer", "#8A4B00") if row["disputed"] == "Yes" else "")
+        + (badge("Not counted in any number", "#6B7280") if not row["counted"] else ""),
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f"**{esc(row['deployer'])}** · {esc(row['sector'])} · {esc(row['agent_type'])} · {esc(row['event_date'])}")
+
+    st.markdown("**What happened**")
+    st.markdown(esc(row["what_happened"]))
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**What the agent was allowed to do**")
+        granted = [part for part in row["authority"].split("|") if part]
+        st.markdown("\n".join(f"- {esc(item)}" for item in granted))
+        st.markdown(f"**A person approved first:** {esc(row['human_approval'])}")
+        st.caption(APPROVAL_MEANING.get(row["human_approval"], ""))
+    with right:
+        st.markdown("**Failure pattern**")
+        st.markdown(f"{esc(row['failure_pattern'])}")
+        st.caption(f"OWASP Agentic Top 10 2026: {row['owasp_code']}, {OWASP_CODES[row['owasp_code']]}")
+        st.markdown(f"**Harm:** {esc(row['harm_type'])}")
+        st.caption(f"{row['severity']} on this register's scale means: {SEVERITY_MEANING[row['severity']][0].lower()}{SEVERITY_MEANING[row['severity']][1:]}")
+
+    st.error(f"**The missing control.** {esc(row['missing_control'])}", icon="🚫")
+    st.warning(
+        f"**Test before launch.** {esc(row['test_before_launch'])}\n\n"
+        f"**Pass mark.** {esc(row['test_pass_mark'])}",
+        icon="🧪",
+    )
+    st.success(
+        f"**Signal after launch.** {esc(row['signal_after_launch'])}\n\n"
+        f"**Monitoring category, NIST AI 800-4.** {esc(row['nist_800_4_category'])}",
+        icon="📈",
+    )
+    st.markdown(f"**The role that should hold this control:** {esc(row['owner_role'])}")
+
+    st.markdown("**What changed after**")
+    st.markdown(esc(row["what_changed_after"]))
+    if row["disputed"] == "Yes":
+        st.markdown(
+            ":orange[**The facts here are disputed.** The deployer's own position is in the "
+            "paragraph above and in the second source. Read both before using this case.]"
+        )
+
+    st.markdown("**Closest clauses**")
+    st.markdown(
+        f"- NIST AI RMF 1.0: {esc(row['nist_ai_rmf'])}\n"
+        f"- ISO/IEC 42001:2023 Annex A: {esc(row['iso_42001'])}\n"
+        f"- EU AI Act: {esc(row['eu_ai_act'])}"
+    )
+    st.caption(
+        "Closest clause, not a legal classification. The duty in any real case depends on "
+        "the role, the system and the jurisdiction."
+    )
+
+    st.markdown(f"**Evidence, grade {row['evidence_grade']}.** {GRADE_MEANING[row['evidence_grade']]}")
+    st.markdown(f"1. [{esc(row['source_1_label'])}]({row['source_1_url']})")
+    if row["source_2_url"]:
+        st.markdown(f"2. [{esc(row['source_2_label'])}]({row['source_2_url']})")
+    st.caption(f"Sources last checked {row['date_checked']}.")
+
+
+def screen_register(frame):
+    st.title("The register")
+    st.markdown(
+        "Every case on one page. Filter it, then open a row for the full record. The "
+        "sources are links, so you can check any claim in two clicks."
+    )
+
+    with st.sidebar:
+        st.markdown("### Filter the register")
+        classes = st.multiselect(
+            "What the missing control governed",
+            sorted(frame["control_class"].unique()),
+            help="One class per case, assigned by the rubric on the Method page.",
+        )
+        severities = st.multiselect(
+            "Severity",
+            [s for s in SEVERITY_ORDER if s in set(frame["severity"])],
+        )
+        kinds = st.multiselect("Incident or hazard", sorted(frame["incident_or_hazard"].unique()))
+        grades = st.multiselect("Evidence grade", sorted(frame["evidence_grade"].unique()))
+        authority_filter = st.multiselect(
+            "The agent could",
+            sorted(rules_check.AUTHORITIES),
+            help="What the agent was actually able to do at the time of the event.",
+        )
+        counted_only = st.checkbox(
+            "Only rows that feed the numbers",
+            value=False,
+            help="Grade A and grade B. This is the set every count on this site uses.",
+        )
+
+    view = frame
+    if classes:
+        view = view[view["control_class"].isin(classes)]
+    if severities:
+        view = view[view["severity"].isin(severities)]
+    if kinds:
+        view = view[view["incident_or_hazard"].isin(kinds)]
+    if grades:
+        view = view[view["evidence_grade"].isin(grades)]
+    if authority_filter:
+        view = view[view["authority"].apply(
+            lambda value: bool(set(authority_filter) & set(value.split("|")))
+        )]
+    if counted_only:
+        view = view[view["counted"]]
+
+    st.markdown(f"**{len(view)} of {len(frame)} cases shown.**")
+
+    if view.empty:
+        st.info("No case matches those filters. Clear one and try again.")
+        return
+
+    summary = view[[
+        "id", "title", "deployer", "event_date", "severity", "control_class", "evidence_grade",
+    ]].rename(columns={
+        "id": "ID",
+        "title": "What happened",
+        "deployer": "Deployer",
+        "event_date": "Date",
+        "severity": "Severity",
+        "control_class": "Missing control",
+        "evidence_grade": "Evidence",
+    })
+    st.dataframe(summary, hide_index=True, use_container_width=True)
+
+    st.markdown("### Full records")
+    for _, row in view.iterrows():
+        label = f"{row['id']} · {row['title']}"
+        if not row["counted"]:
+            label += "  (grade C, not counted)"
+        with st.expander(label):
+            incident_card(row)
+
+    st.download_button(
+        "Download the whole register as CSV",
+        data=DATA_FILE.read_bytes(),
+        file_name="ai_agent_incident_register.csv",
+        mime="text/csv",
+        help="The same file the app reads. Every number here is computed from it.",
+    )
+
+
+# ------------------------------------------------------------------------ watch list
+
+
+def screen_watchlist(frame, rules):
+    st.title("Build your watch list")
+    st.markdown(
+        "Six plain questions about your own agent. The answers trigger fixed rules and "
+        "return the tests to run before launch and the signals to watch after. Nothing "
+        "here is generated, so every line shows the rule that produced it and the "
+        "incidents behind that rule."
+    )
+    st.info(
+        "No model runs in this tool and nothing you answer is stored or sent anywhere. "
+        f"The rules are in rules/watchlist_rules.json, version {rules['version']}.",
+        icon="🔒",
+    )
+
+    answers = {}
+    st.markdown("### The six questions")
+    for question in rules["questions"]:
+        choice = st.radio(
+            f"**{question['id']}. {question['text']}**",
+            ["Not sure yet", "Yes", "No"],
+            horizontal=True,
+            key=f"answer_{question['id']}",
+        )
+        st.caption(question["plain"])
+        if choice == "Yes":
+            answers[question["id"]] = True
+        elif choice == "No":
+            answers[question["id"]] = False
+
+    selected = engine.evaluate(answers, rules)
+    unanswered = [q["id"] for q in rules["questions"] if q["id"] not in answers]
+
+    st.markdown("---")
+    st.markdown(f"### Your list, {len(selected)} items")
+
+    if unanswered:
+        note = (
+            "Still unanswered: " + ", ".join(unanswered) + ". Those questions trigger no "
+            "rules, so your list is shorter than it should be."
+        )
+        if {"Q1", "Q6"} & set(unanswered):
+            note += (
+                " An agent nobody can say whether it can delete data, or whether a person "
+                "approves what it does, is itself a finding. Go and find out before you "
+                "use this list."
+            )
+        st.warning(note, icon="⚠️")
+
+    if answers and not any(answers.values()) and answers.get("Q6") is True:
+        st.success(
+            "A read-only agent with a person approving its actions is the narrowest case "
+            "in this register, and two of the twelve cases still apply to it.",
+            icon="✅",
+        )
+
+    categories = {}
+    for rule in selected:
+        categories[rule["nist_800_4_category"]] = categories.get(rule["nist_800_4_category"], 0) + 1
+    if categories:
+        st.caption(
+            "By NIST AI 800-4 monitoring category: "
+            + ", ".join(f"{name} {count}" for name, count in sorted(categories.items()))
+        )
+
+    titles = dict(zip(frame["id"], frame["title"]))
+    for rule in selected:
+        with st.expander(f"{rule['id']} · {rule['title']}", expanded=False):
+            st.markdown(f"**Why this is on your list.** {esc(rule['triggered_by'])}")
+            st.warning(
+                f"**Test before launch.** {esc(rule['test'])}\n\n"
+                f"**Pass mark.** {esc(rule['pass_mark'])}",
+                icon="🧪",
+            )
+            st.success(f"**Signal after launch.** {esc(rule['signal'])}", icon="📈")
+            st.markdown(
+                f"- **Owner.** {esc(rule['owner_role'])}\n"
+                f"- **Monitoring category, NIST AI 800-4.** {esc(rule['nist_800_4_category'])}\n"
+                f"- **Failure pattern, OWASP Agentic Top 10 2026.** {rule['owasp_code']}, "
+                f"{OWASP_CODES[rule['owasp_code']]}"
+            )
+            st.markdown("**Incidents behind this rule**")
+            for incident in rule["incident_ids"]:
+                st.markdown(f"- `{incident}` {esc(titles.get(incident, 'not found'))}")
+            st.markdown(f"**What those cases show.** {esc(rule['why'])}")
+
+    st.markdown("---")
+    if selected:
+        st.download_button(
+            "Download your watch list",
+            data=engine.to_markdown(selected, answers, rules),
+            file_name="agent_watch_list.md",
+            mime="text/markdown",
+            type="primary",
+        )
+    st.caption(
+        "This is a starting point built from 12 public cases, not an assessment of your "
+        "system. It will miss risks specific to your setting, and passing every test here "
+        "does not make an agent safe."
+    )
+
+
+# ---------------------------------------------------------------------------- method
+
+
+def screen_method(frame, rules):
+    st.title("Method")
+    st.markdown(f"Version {VERSION}, last updated {UPDATED}. Single coder.")
+
+    st.markdown("### What counts as a case")
+    st.markdown(
+        "> A case where an AI system that could act or make promises for an organisation "
+        "caused harm or a near miss in real use.\n\n"
+        "Three parts of that sentence do the work. **Act or make promises** keeps out "
+        "systems that only produce text for a person to check. **For an organisation** "
+        "keeps out individuals experimenting on their own. **In real use** keeps out "
+        "laboratory demonstrations, with one exception noted below."
+    )
+    st.markdown(
+        "The one exception is a demonstrated vulnerability in a widely deployed agent, "
+        "recorded as a hazard rather than an incident. A zero-click data exfiltration path "
+        "in an assistant with access to a company's mail and files is a control failure "
+        "whether or not anyone is known to have used it."
+    )
+
+    st.markdown("### Incident or hazard")
+    for kind, meaning in KIND_MEANING.items():
+        count = int((frame["incident_or_hazard"] == kind).sum())
+        st.markdown(f"- **{kind}** ({count} {'row' if count == 1 else 'rows'}). {meaning}")
+    st.caption("These follow the OECD AI Incidents and Hazards Monitor definitions.")
+
+    st.markdown("### Evidence grades")
+    st.markdown(
+        "Only grade A and grade B rows feed a number anywhere on this site. That rule is "
+        "enforced by the validator, not by me remembering it."
+    )
+    grade_rows = []
+    for grade, meaning in GRADE_MEANING.items():
+        grade_rows.append({
+            "Grade": grade,
+            "Rows": int((frame["evidence_grade"] == grade).sum()),
+            "Counted": "Yes" if grade in COUNTED_GRADES else "No",
+            "What it means": meaning,
+        })
+    st.dataframe(pd.DataFrame(grade_rows), hide_index=True, use_container_width=True)
+    st.markdown(
+        "A grade B row needs two reports on two different sites, and in practice usually "
+        "includes the deployer's own public statement. Where the deployer confirmed the "
+        "event but the harm is known only from reporting, the row stays at B rather than "
+        "rising to A. The register keeps one grade C row, labelled on its card and "
+        "excluded from every count, because dropping it would hide a failure pattern that "
+        "no counted row shows as plainly."
+    )
+    st.warning(
+        "**A note on sources, which turned into a finding of its own.** Searching for these "
+        "cases returns a large volume of pages that read as incident write-ups but are "
+        "generated summaries of other summaries, often with invented detail and no primary "
+        "record. Several candidate cases were dropped because no primary source existed "
+        "behind the reporting. If you build something similar, budget most of your time "
+        "for verification rather than for finding cases.",
+        icon="⚠️",
+    )
+
+    st.markdown("### The coding rubric")
+    st.markdown(
+        "Each row gets exactly one class for what the missing control governed. The rubric "
+        "was written before the rows were coded, and it is applied in this order, so the "
+        "first match wins and a row cannot be classed twice."
+    )
+    rubric = [
+        ("1. Vendor", "The failure arrived through a third party that held access to the organisation."),
+        ("2. Boundary", "The agent acted on instructions that came from content it read rather than from its operator."),
+        ("3. Authority", "The agent was able to take an action it should not have been able to take at all."),
+        ("4. Oversight", "No person was positioned to catch it, stop it, or verify the claim the deployment ran on."),
+        ("5. Accuracy", "What is left. The agent stated something untrue and nothing checked it against the source."),
+    ]
+    st.dataframe(
+        pd.DataFrame([{"Order and class": name, "Test applied": test} for name, test in rubric]),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        "Accuracy is last on purpose. An agent that says something wrong and an agent that "
+        "deletes a database both look like accuracy problems if accuracy is the first "
+        "question you ask."
+    )
+
+    st.markdown("### Severity")
+    for level in SEVERITY_ORDER:
+        count = int((frame["severity"] == level).sum())
+        st.markdown(f"- **{level}** ({count} {'row' if count == 1 else 'rows'}). {SEVERITY_MEANING[level]}")
+
+    st.markdown("### Naming policy")
+    st.markdown(
+        "Deployers and vendors are named, because the public record names them and because "
+        "a register of anonymous cases cannot be checked. Individuals are not named, "
+        "including the people who found these failures and the staff involved, even where "
+        "reporting names them. The one exception is a named party to a published legal or "
+        "regulatory decision, where the name is part of the citation."
+    )
+
+    st.markdown("### The watch list")
+    st.markdown(
+        f"Six questions, {len(rules['rules'])} fixed rules, version {rules['version']}. No "
+        "model runs in the tool. Each question maps to rules by a trigger written in the "
+        "rule file, and the validator fails if a question triggers nothing, if a rule "
+        "points at an incident that does not exist, or if a rule carries a category or a "
+        "pattern code outside the published taxonomies."
+    )
+    trigger_rows = []
+    for question in rules["questions"]:
+        fired = [r["id"] for r in rules["rules"] if r["trigger"].startswith(question["id"])]
+        trigger_rows.append({
+            "Question": f"{question['id']}. {question['text']}",
+            "Rules it can trigger": ", ".join(fired),
+        })
+    trigger_rows.append({
+        "Question": "Applies to every agent",
+        "Rules it can trigger": ", ".join(r["id"] for r in rules["rules"] if r["trigger"] == "always"),
+    })
+    st.dataframe(pd.DataFrame(trigger_rows), hide_index=True, use_container_width=True)
+
+    st.markdown("### Standards used")
+    st.markdown(
+        "- **NIST AI RMF 1.0.** The closest subcategory per row, for the control that was missing.\n"
+        "- **NIST AI 800-4, March 2026.** Its six monitoring categories tag every signal: "
+        "functionality, operational, human factors, security, compliance, large-scale impacts.\n"
+        "- **ISO/IEC 42001:2023 Annex A.** Mostly A.6.2.6 on operation and monitoring, "
+        "A.6.2.8 on event logs, A.8.4 on communication of incidents and A.10.3 on suppliers.\n"
+        "- **EU AI Act, Regulation (EU) 2024/1689.** Articles 9, 14, 15, 26, 50 and 73 as "
+        "closest clauses.\n"
+        "- **OWASP Top 10 for Agentic Applications 2026,** published 9 December 2025, for "
+        "the failure pattern code."
+    )
+
+    st.markdown("### Limits")
+    st.markdown(
+        "- **One coder.** Every judgement on this site is mine. There is no second rater and "
+        "no inter-rater reliability figure, so the coding should be read as one defensible "
+        "reading rather than as a measurement.\n"
+        "- **A convenience sample, not a population.** These twelve cases are the ones with "
+        "a usable public record. Agent failures that were handled quietly are the majority "
+        "and none of them are here, which almost certainly biases the counts toward the "
+        "visible and the embarrassing.\n"
+        "- **Twelve is a small number.** A count of 12 is an illustration of a pattern, not "
+        "evidence of its distribution. Treat the finding as a hypothesis worth testing "
+        "against your own incidents.\n"
+        "- **Closest clause, not legal classification.** The clause references are the "
+        "nearest fit for a reader who needs a starting point. Whether any obligation "
+        "actually applies depends on the role, the system and the jurisdiction. This is not "
+        "legal advice.\n"
+        "- **Tests are not proof.** Every test on this site is a test that would have caught "
+        "the specific failure described. Passing all of them does not make an agent safe.\n"
+        "- **The clause references have not been line-checked against every official text.** "
+        "The NIST AI RMF and the EU AI Act are public and were used directly. ISO/IEC 42001 "
+        "is paywalled, and the Annex A control numbers here come from the standard's "
+        "published structure rather than from a reading of the clause text, because "
+        "secondary sites disagree on the numbering and do not count as a check. Treat the "
+        "ISO column as the weakest part of this register, and corrections to it are the "
+        "most useful thing you can send."
+    )
+
+    st.markdown("### Dates that matter")
+    st.markdown(
+        "The EU AI Act obligations for high-risk systems referenced on these cards apply "
+        "from 2 December 2027 under the Digital Omnibus changes. If you are reading this "
+        "well after October 2026, check the current date before relying on it."
+    )
+
+    st.markdown("### Corrections")
+    st.markdown(
+        f"If a fact, a grade, a clause or a class is wrong, open an issue at "
+        f"[{CORRECTIONS_URL}]({CORRECTIONS_URL}) or say so in the comments wherever you "
+        "found this. Every correction goes in the change log below with the date and what "
+        "changed. A register nobody corrects is a blog post."
+    )
+
+    st.markdown("### Change log")
+    st.dataframe(
+        pd.DataFrame([
+            {
+                "Version": "1.0",
+                "Date": "2026-10-03",
+                "What changed": "First publication. 12 cases, 11 counted, 18 watch-list rules.",
+            },
+        ]),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    st.markdown("### Reviewed by")
+    st.markdown(
+        ":orange[**Not yet reviewed.**] One practitioner read is planned before this is "
+        "promoted, and the reviewer will be credited here by name with the date. Until that "
+        "line names a person, treat this as a single-author draft."
+    )
+
+
+# ------------------------------------------------------------------------------ main
+
+
+def main():
+    frame = load_register()
+    rules = load_rules()
+
+    with st.sidebar:
+        st.markdown("## AI Agent Incident Register")
+        screen = st.radio(
+            "Screen",
+            ["Home", "The register", "Build your watch list", "Method"],
+            label_visibility="collapsed",
+        )
+        st.markdown("---")
+
+    if screen == "Home":
+        screen_home(frame, rules)
+    elif screen == "The register":
+        screen_register(frame)
+    elif screen == "Build your watch list":
+        screen_watchlist(frame, rules)
+    else:
+        screen_method(frame, rules)
+
+    with st.sidebar:
+        st.caption(
+            f"Version {VERSION}, {UPDATED}. {len(frame)} cases, "
+            f"{int(frame['counted'].sum())} counted. Built by Sana Asif Ahmad. "
+            "Not legal advice."
+        )
+
+    st.markdown("---")
+    st.caption(
+        f"AI Agent Incident Register, version {VERSION}. Every number on this site is "
+        "computed from data/incidents.csv and uses grade A and grade B rows only. "
+        "Closest clause, not legal classification. Corrections welcome."
+    )
+
+
+if __name__ == "__main__":
+    main()
