@@ -35,7 +35,7 @@ DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
 VERSION = "1.0"
 UPDATED = "3 October 2026"
-CORRECTIONS_URL = "https://github.com/sana-asif/ai-agent-incident-register/issues"
+CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
 # restating them. A value the validator would reject cannot be displayed as valid here.

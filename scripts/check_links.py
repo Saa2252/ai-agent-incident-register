@@ -23,7 +23,7 @@ TIMEOUT = 20
 # Some publishers refuse a bare Python user agent. The point here is to find dead
 # links, not to argue with bot rules, so the request identifies itself honestly.
 HEADERS = {
-    "User-Agent": "ai-agent-incident-register link checker (+https://github.com/sana-asif)",
+    "User-Agent": "ai-agent-incident-register link checker (+https://github.com/Saa2252/ai-agent-incident-register)",
     "Accept": "text/html,application/xhtml+xml,*/*",
 }
 
