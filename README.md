@@ -86,7 +86,23 @@ rules/watchlist_rules.json    Six questions, 18 fixed rules. Readable without ru
 rules/evaluate.py             Applies the rules. Pure stdlib, with a self-test.
 scripts/validate_register.py  The method as code. Runs in CI.
 scripts/check_links.py        Link checker. Run by hand.
+tests/                        Three cases turned into tests that run. Stdlib, no model calls.
 ```
+
+Three of the register's rows are not only described but executable. `tests/` turns
+AIR-010 (untrusted content treated as an instruction) and AIR-002 and AIR-004
+(destructive authority without a gate, and a gate that stopped holding) into 19 tests
+that run in about two milliseconds:
+
+```bash
+python3 -m unittest discover tests
+```
+
+Each guard was checked by breaking it. Removing the provenance guard fails 9 tests,
+making the approval gate's self-check vacuous fails 1, dropping the two-person
+de-duplication fails 1, and letting trust launder through a derived message fails 2. A
+test that still passes when the thing it tests is deleted is decoration. See
+`tests/README.md` for what these prove and, more usefully, what they do not.
 
 ## Limits, stated up front
 
