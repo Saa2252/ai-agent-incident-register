@@ -76,6 +76,30 @@ link check that fails on somebody's rate limit trains you to ignore a red build:
 python3 scripts/check_links.py .
 ```
 
+## Staying reachable
+
+The app is hosted on Streamlit Community Cloud, which sleeps an app after 12 hours
+with no traffic. Since April 2025 a push to this repository no longer wakes it, and a
+plain uptime ping does not either, because an HTTP request returns 200 from the static
+page shell without starting the Python process. The backend only starts when a browser
+runs the page JavaScript and opens a websocket.
+
+`.github/workflows/keepalive.yml` runs headless Chromium against the published app
+every 6 hours, clicks the wake button if it finds one, and then checks that real
+content rendered rather than trusting the response code. Run it by hand with:
+
+```bash
+pip install playwright && playwright install chromium
+python3 scripts/keepalive.py https://your-app-url
+```
+
+Two honest limits. GitHub disables scheduled workflows on a repository with no activity
+for 60 days, and nothing announces it when that happens. And this works against the
+economics of free hosting, so if Streamlit changes what counts as activity again the
+workflow will start failing. That is why it checks what rendered: a keepalive that
+reports success without looking at the response is the same mistake this register has a
+row about.
+
 ## Layout
 
 ```
@@ -86,6 +110,7 @@ rules/watchlist_rules.json    Six questions, 18 fixed rules. Readable without ru
 rules/evaluate.py             Applies the rules. Pure stdlib, with a self-test.
 scripts/validate_register.py  The method as code. Runs in CI.
 scripts/check_links.py        Link checker. Run by hand.
+scripts/keepalive.py          Wakes the published app and checks it rendered. CI only.
 tests/                        Three cases turned into tests that run. Stdlib, no model calls.
 ```
 

@@ -1,0 +1,52 @@
+name: Keep the app awake
+
+# Streamlit Community Cloud sleeps an app after 12 hours with no traffic, and
+# since April 2025 a push to this repository no longer wakes it. Only a visitor
+# does. This workflow is that visitor.
+#
+# It runs every 6 hours rather than every 12, so one missed run does not put the
+# app to sleep. GitHub's scheduler is busiest on the hour, so the minute is
+# offset to reduce the chance of a delayed or dropped run.
+#
+# Two things worth knowing before relying on this.
+#
+#   1. GitHub disables scheduled workflows on a repository with no activity for
+#      60 days. A register that is visibly maintained will not hit that, but if
+#      this goes quiet for two months the schedule stops and nothing says so.
+#      Check the Actions tab if the app starts turning up asleep.
+#   2. This works against the economics of free hosting. Streamlit has already
+#      changed what counts as activity once. If they do it again, this workflow
+#      starts failing, which is the point of it checking what rendered rather
+#      than just reporting a 200.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+# Only one wake attempt at a time. A queued second run would wake an app the
+# first run is already waking.
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Playwright and Chromium
+        run: |
+          python3 -m pip install --quiet playwright
+          python3 -m playwright install --with-deps chromium
+      - name: Open the app and check it rendered
+        env:
+          # Set this as a repository variable under Settings, Secrets and
+          # variables, Actions, Variables. The script falls back to the published
+          # address if it is not set.
+          APP_URL: ${{ vars.APP_URL }}
+        run: python3 scripts/keepalive.py
