@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.2"
+VERSION = "0.9.3"
 UPDATED = "8 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -289,6 +289,53 @@ def screen_home(frame, rules):
         )
 
     st.markdown("---")
+    st.markdown("### The second finding, which is about the evidence rather than the agents")
+    st.markdown(
+        "Building this register produced three observations that looked separate and are "
+        "not.\n\n"
+        "1. **Primary records exist mainly for legal and security events.** Rulings, CVEs, "
+        "threat intelligence reports and enforcement notices. A chatbot that quietly gave "
+        "wrong answers for a year produces no document at all.\n"
+        "2. **A security vendor's catalogue of agent failures is mostly security "
+        "failures.** One of the lead lists used here is exactly that, and the shape of its "
+        "total follows from who compiled it.\n"
+        "3. **Searching for these cases returns a large volume of generated write-ups with "
+        "no record behind them.** Confident, detailed, cited to each other, traceable to "
+        "nothing."
+    )
+    st.info(
+        "**Who documents a failure determines which failures exist on paper.** Every "
+        "register of AI incidents, this one included, is a map of the documentation "
+        "regime rather than a map of the harm. The failure modes that generate paperwork "
+        "are overrepresented in every count anyone publishes, and the ones handled quietly "
+        "between a vendor and a customer are absent from all of them.",
+        icon="🔍",
+    )
+    st.markdown(
+        "That has a practical edge for anyone reading this to decide where to look. The "
+        "categories that are easiest to find public cases for are the ones your own "
+        "organisation is most likely to already be watching, because they are the ones "
+        "that produce an external artefact. The categories with no public cases are not "
+        "the safe ones. They are the ones nobody had to write down."
+    )
+
+    st.markdown("---")
+    st.success(
+        "**Every row on this register maps onto the European Commission's own serious "
+        "incident reporting template.** The fields were chosen to sit close to it, so a "
+        "case here can be lifted into an Article 73 report rather than rewritten from "
+        "scratch. That is the point of the format, not a side effect of it.",
+        icon="📋",
+    )
+    st.caption(
+        "Checked on 8 October 2026: the Commission's guidance and template are still the "
+        "draft of 26 September 2025. Its consultation closed on 7 November 2025 and the "
+        "final was expected to apply from 2 August 2026, which has passed. If a final "
+        "version has landed and this page has not caught up, that is exactly the kind of "
+        "correction worth sending."
+    )
+
+    st.markdown("---")
     st.markdown("### How this works")
     st.markdown(
         "**The register** lists every case with its evidence grade and a link you can "
@@ -356,6 +403,11 @@ def incident_card(row):
 
     st.markdown("**What changed after**")
     st.markdown(esc(row["what_changed_after"]))
+    if row["aftermath_source_url"]:
+        same = row["aftermath_source_url"] in (row["source_1_url"], row["source_2_url"])
+        which = "Source 1 below" if row["aftermath_source_url"] == row["source_1_url"] else (
+            "Source 2 below" if same else "A separate source")
+        st.caption(f"[{which}]({row['aftermath_source_url']}) carries this claim.")
     if row["disputed"] == "Yes":
         st.markdown(
             ":orange[**The facts here are disputed.** The deployer's own position is in the "
@@ -914,6 +966,14 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.3 | 2026-10-08 | Audit round. Added an aggregator denylist to the validator "
+        "after finding the previous round's audit had been unsystematic and had missed a "
+        "violation it introduced itself. Gave every row a named citation for its deployer "
+        "response, which was previously assumed rather than stated. Re-checked the weaker "
+        "B rows and found AIR-003 both under-graded and factually incomplete: the platform "
+        "published its own postmortem and the data was recovered, neither of which the row "
+        "said. Added the second finding, on documentation regimes. Put the Article 73 "
+        "alignment on the home screen. |\n"
         "| 0.9.2 | 2026-10-08 | Sourcing round. Linked every standard to the thing itself "
         "rather than naming it, and said plainly why ISO/IEC 42001 is the one left "
         "unlinked. Credited the three databases used to find candidates and separated "

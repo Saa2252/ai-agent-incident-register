@@ -40,7 +40,7 @@ FIELDS = [
     "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "owner_role",
     "nist_ai_rmf", "iso_42001", "eu_ai_act",
-    "what_changed_after", "disputed",
+    "what_changed_after", "disputed", "aftermath_source_url",
     "evidence_grade", "source_1_label", "source_1_url",
     "source_2_label", "source_2_url", "date_checked",
 ]
@@ -103,6 +103,20 @@ APPROVAL_STATES = {"Yes", "No", "Unknown", "Yes, bypassed"}
 # accuracy failure under any ordering of the rubric.
 UNTRUE_STATES = {"Yes", "No"}
 
+# Aggregators are how cases are found. They are never the evidence for one. An index of
+# other people's reporting is weaker than the reporting, and citing the index hides which
+# report the claim actually rests on. This rule was written in version 0.9.2 and the
+# first audit under it was not systematic: it caught one violation by luck and missed a
+# second that the same commit had introduced. Hence the list rather than the intention.
+AGGREGATOR_HOSTS = {
+    "incidentdatabase.ai",
+    "oecd.ai",
+    "aiaaic.org",
+    "icd-ai.org",
+    "en.wikipedia.org",
+    "grokipedia.com",
+}
+
 GRADES = {"A", "B", "C"}
 COUNTED_GRADES = {"A", "B"}  # the only grades any displayed number may include
 
@@ -113,7 +127,8 @@ YES_NO = {"Yes", "No"}
 PRIMARY_MARKERS = (
     "tribunal", "court", "attorney general", "regulator", "press release",
     "security response center", "cve-", "threat intelligence", "trust portal",
-    "assurance of voluntary compliance", "judgment", "decision", "monitor",
+    "assurance of voluntary compliance", "judgment", "decision",
+    "postmortem", "advisory", "own account",
 )
 
 # ---- clause shapes ----
@@ -203,6 +218,13 @@ def check_evidence(report, where, row):
         parsed = urlparse(url)
         if parsed.scheme != "https" or not parsed.netloc:
             report.error(f"{where}.sources", f"'{url}' is not an https link with a host")
+        host = parsed.netloc.lower().removeprefix("www.")
+        if host in AGGREGATOR_HOSTS:
+            report.error(
+                f"{where}.sources",
+                f"'{host}' is an aggregator. Use it to find the case, then cite the report "
+                "it points at. An index of other people's reporting is not evidence",
+            )
 
     hosts = {urlparse(url).netloc.lower().removeprefix("www.") for _, url in sources}
 
@@ -319,6 +341,27 @@ def validate_rows(report, rows, today):
         for field in ("missing_control", "test_before_launch", "test_pass_mark", "signal_after_launch"):
             if sentence_count(row[field]) > 2:
                 report.warn(f"{where}.{field}", "more than two sentences. Keep the coding fields short")
+
+        # what_changed_after makes a claim about the deployer's response, which is a
+        # different claim from the incident itself. It gets its own named citation rather
+        # than an assumption that the incident sources happen to cover it.
+        aftermath = row["aftermath_source_url"].strip()
+        if not aftermath:
+            report.error(
+                f"{where}.aftermath_source_url",
+                "what_changed_after has no citation. The deployer response is a separate "
+                "claim from the incident and needs its own source, even when that source "
+                "is one of the two already listed",
+            )
+        else:
+            parsed = urlparse(aftermath)
+            if parsed.scheme != "https" or not parsed.netloc:
+                report.error(f"{where}.aftermath_source_url", f"'{aftermath}' is not an https link")
+            elif parsed.netloc.lower().removeprefix("www.") in AGGREGATOR_HOSTS:
+                report.error(
+                    f"{where}.aftermath_source_url",
+                    "cites an aggregator. Cite the report it points at",
+                )
 
         check_clauses(report, where, row)
         check_evidence(report, where, row)

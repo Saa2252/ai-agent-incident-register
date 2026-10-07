@@ -1,6 +1,6 @@
 # Data dictionary
 
-One file, `incidents.csv`, 33 fields, one row per case. The app computes every number
+One file, `incidents.csv`, 34 fields, one row per case. The app computes every number
 it shows from this file, so a change here changes the site. `scripts/validate_register.py`
 enforces everything below and fails the build if a row stops obeying it.
 
@@ -65,6 +65,7 @@ text. The Method page says so on the page itself.
 | Field | Allowed values | Notes |
 | --- | --- | --- |
 | `what_changed_after` | Free text | What the deployer did or said. Their position goes here even when it contradicts the reporting, and especially then. |
+| `aftermath_source_url` | `https://` URL | Which source carries the `what_changed_after` claim. The deployer's response is a **separate claim** from the incident, so it gets a named citation rather than an assumption that the incident sources happen to cover it. Usually this is `source_1_url` or `source_2_url`, named explicitly. Where neither covers it, it is a third link. Required on every row. |
 | `evidence_grade` | `A`, `B`, `C` | See below. Only A and B feed a number anywhere on the site. |
 | `source_1_label` | Free text | The most authoritative source. For grade A this must name a primary record. |
 | `source_1_url` | `https://` URL | Required. |
@@ -82,6 +83,18 @@ text. The Method page says so on the page itself.
 
 Where the deployer confirmed the event but the harm is known only from reporting, the
 row stays at B rather than rising to A.
+
+## Aggregators are not evidence
+
+`incidentdatabase.ai`, `oecd.ai`, `aiaaic.org`, `icd-ai.org`, Wikipedia and Grokipedia
+are on a denylist in the validator and **fail the build** if they appear in any source
+field, including the aftermath one. They are how cases are found. They are never the
+evidence for one, because an index of other people's reporting is weaker than the
+reporting and citing the index hides which report the claim actually rests on.
+
+This rule arrived in v0.9.2, after the rows were already coded. The first audit under it
+was not systematic: it caught one violation by luck and missed a second that the same
+commit had introduced. The denylist exists because of that, not in spite of it.
 
 ## Descriptive counts and analytical counts
 
