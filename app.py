@@ -33,8 +33,8 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.1"
-UPDATED = "7 October 2026"
+VERSION = "0.9.2"
+UPDATED = "8 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
@@ -767,16 +767,55 @@ def screen_method(frame, rules):
 
     st.markdown("### Standards and frameworks used")
     st.markdown(
-        "- **NIST AI RMF 1.0.** The closest subcategory per row, for the control that was missing.\n"
-        "- **NIST AI 800-4, March 2026.** A research report, not a standard. It proposes six "
-        "monitoring categories and this register uses them to tag every signal: "
-        "functionality, operational, human factors, security, compliance, large-scale impacts.\n"
+        "Each one links to the thing itself, not to a summary of it. That is the same bar "
+        "the incident rows are held to.\n\n"
+        "- **[NIST AI RMF 1.0](https://doi.org/10.6028/NIST.AI.100-1).** The closest "
+        "subcategory per row, for the control that was missing.\n"
+        "- **[NIST AI 800-4](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.800-4.pdf), "
+        "March 2026.** A research report, not a standard. It proposes six monitoring "
+        "categories and this register uses them to tag every signal: functionality, "
+        "operational, human factors, security, compliance, large-scale impacts.\n"
         "- **ISO/IEC 42001:2023 Annex A.** Mostly A.6.2.6 on operation and monitoring, "
-        "A.6.2.8 on event logs, A.8.4 on communication of incidents and A.10.3 on suppliers.\n"
-        "- **EU AI Act, Regulation (EU) 2024/1689.** Articles 9, 14, 15, 26, 50 and 73 as "
-        "closest clauses.\n"
-        "- **OWASP Top 10 for Agentic Applications 2026,** published 9 December 2025, for "
-        "the failure pattern code."
+        "A.6.2.8 on event logs, A.8.4 on communication of incidents and A.10.3 on "
+        "suppliers. Deliberately unlinked, because the standard is paywalled and a link "
+        "to a shop is not a link to the text. See the limits below.\n"
+        "- **[EU AI Act, Regulation (EU) 2024/1689]"
+        "(https://eur-lex.europa.eu/eli/reg/2024/1689/oj).** Articles 9, 14, 15, 26, 50 "
+        "and 73 as closest clauses. Article 3(49) defines a serious incident, which is the "
+        "threshold the reporting duty in Article 73 hangs on.\n"
+        "- **[OWASP Top 10 for Agentic Applications 2026]"
+        "(https://genai.owasp.org/2025/12/09/owasp-genai-security-project-releases-top-10-"
+        "risks-and-mitigations-for-agentic-ai-security/),** published 9 December 2025, for "
+        "the failure pattern code.\n"
+        "- **[Commission draft guidance and reporting template for serious AI incidents]"
+        "(https://digital-strategy.ec.europa.eu/en/consultations/ai-act-commission-issues-"
+        "draft-guidance-and-reporting-template-serious-ai-incidents-and-seeks).** A "
+        "September 2025 draft. The fields on each incident card were shaped to sit close "
+        "to it, so a row here can be lifted into that template rather than rewritten. "
+        "Check whether a final version has landed before relying on it."
+    )
+
+    st.markdown("### Where the cases were found")
+    st.markdown(
+        "Finding a case and admitting a case are different steps, and only the second one "
+        "has a rule. These three were used to build the candidate list. None of them "
+        "decides what goes in. The evidence rule does that, and every candidate had to "
+        "survive it independently of where it came from.\n\n"
+        "- **[AI Incident Database](https://incidentdatabase.ai/).** Indexed incidents with "
+        "linked reports. Useful for finding, never cited as the evidence for a row, "
+        "because an aggregator indexing other people's reporting is weaker than the "
+        "reporting.\n"
+        "- **[OECD AI Incidents and Hazards Monitor](https://oecd.ai/en/incidents-methodology).** "
+        "News-derived candidates, and the incident versus hazard definitions this register "
+        "uses.\n"
+        "- **[Cyera, Agent-Inflicted Damage](https://www.cyera.com/research/agent-inflicted-"
+        "damage-inside-the-real-world-failures-of-enterprise-ai-systems).** A vendor study "
+        "of agent-caused cases, treated as a lead list only. A security vendor counting "
+        "security failures has an interest in the total, which is the same structural "
+        "problem this register discloses about its own sample.\n\n"
+        "Field names and definitions follow the [OECD common reporting framework]"
+        "(https://one.oecd.org/document/DSTI/DPC/GPAI(2024)5/FINAL/en/pdf) where they map "
+        "cleanly onto the fields here."
     )
 
     st.markdown("### Limits")
@@ -875,6 +914,11 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.2 | 2026-10-08 | Sourcing round. Linked every standard to the thing itself "
+        "rather than naming it, and said plainly why ISO/IEC 42001 is the one left "
+        "unlinked. Credited the three databases used to find candidates and separated "
+        "finding a case from admitting one. Replaced the aggregator citation on AIR-002 "
+        "and the weakest source on AIR-003 with original reporting. |\n"
         "| 0.9.1 | 2026-10-07 | Second reviewer round. Corrected the sensitivity table, "
         "which showed one computation twice and implied two checks agreeing. Added the "
         "structural finding, that no case caused harm through an untrue statement alone, "
