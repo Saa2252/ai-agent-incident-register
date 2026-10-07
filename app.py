@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9"
+VERSION = "0.9.1"
 UPDATED = "7 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -190,6 +190,7 @@ def headline(frame):
         "accuracy_first": int(len(counted) - said_untrue.sum()),
         "would_change_class": int(said_untrue.sum() - accuracy),
         "said_nothing_untrue": int((~said_untrue).sum()),
+        "said_untrue": int(said_untrue.sum()),
         "no_approval": int((counted["human_approval"] != "Yes").sum()),
         "could_act": int(acted.sum()),
         "read_only": int((~acted).sum()),
@@ -227,12 +228,17 @@ def screen_home(frame, rules):
         "stop it."
     )
     st.markdown(
-        f"Classified by the rubric on the Method page, which tests accuracy last, "
-        f"{facts['not_accuracy']} of {facts['total']} come out as something other than "
-        f"accuracy failures. That ordering is doing some of the work: test accuracy first "
-        f"instead and {facts['would_change_class']} rows change class, leaving "
-        f"{facts['accuracy_first']} of {facts['total']}. The headline above uses the "
-        f"{facts['said_nothing_untrue']}, because no ordering can move those rows."
+        f"**And in the other {facts['said_untrue']}, saying something untrue was never "
+        f"sufficient on its own.** Every one of the {facts['total']} also required "
+        "authority the agent should not have held, reach it should not have had, or a "
+        "path nobody was monitoring. That is the part that does not flip when you "
+        "rearrange the counting: a control on what an agent may **do** catches both "
+        "groups, and a control on what it **says** catches one."
+    )
+    st.caption(
+        f"The second claim is checkable on every row. No case in the register caused harm "
+        f"through an untrue statement alone, and the validator fails the build if a row is "
+        f"ever added that does."
     )
 
     order = sorted(facts["by_class"].items(), key=lambda item: (-item[1], item[0]))
@@ -243,11 +249,12 @@ def screen_home(frame, rules):
             "Cases": count,
             "What that means": CONTROL_CLASSES[name],
         })
-    st.dataframe(
-        pd.DataFrame(rows),
-        hide_index=True,
-        use_container_width=True,
-        column_config={"Cases": st.column_config.NumberColumn(width="small")},
+    st.markdown(
+        "| What the missing control governed | Cases | What that means |\n| --- | --- | --- |\n"
+        + "\n".join(
+            f"| {r['What the missing control governed']} | {r['Cases']} | {r['What that means']} |"
+            for r in rows
+        )
     )
 
     st.caption(
@@ -426,18 +433,19 @@ def screen_register(frame):
         st.info("No case matches those filters. Clear one and try again.")
         return
 
-    summary = view[[
-        "id", "title", "deployer", "event_date", "severity", "control_class", "evidence_grade",
-    ]].rename(columns={
-        "id": "ID",
-        "title": "What happened",
-        "deployer": "Deployer",
-        "event_date": "Date",
-        "severity": "Severity",
-        "control_class": "Missing control",
-        "evidence_grade": "Evidence",
-    })
-    st.dataframe(summary, hide_index=True, use_container_width=True)
+    # Rendered as a Markdown table rather than st.dataframe on purpose. Streamlit's
+    # dataframe draws to a canvas, so its contents are absent from the accessibility tree
+    # entirely: no roles, no cells, no text. A register that asks to be checked cannot
+    # put its own index somewhere a screen reader cannot reach it.
+    header = "| ID | What happened | Deployer | Date | Severity | Missing control | Evidence |"
+    st.markdown(
+        header + "\n| --- | --- | --- | --- | --- | --- | --- |\n"
+        + "\n".join(
+            f"| {r['id']} | {esc(r['title'])} | {esc(r['deployer'])} | {r['event_date']} "
+            f"| {r['severity']} | {r['control_class']} | {r['evidence_grade']} |"
+            for _, r in view.iterrows()
+        )
+    )
 
     st.markdown("### Full records")
     for _, row in view.iterrows():
@@ -679,18 +687,33 @@ def screen_method(frame, rules):
     st.markdown(
         f"| Ordering | Cases classed as not accuracy |\n| --- | --- |\n"
         f"| Accuracy last, as published | {facts['not_accuracy']} of {facts['total']} |\n"
-        f"| Accuracy first | {facts['accuracy_first']} of {facts['total']} |\n"
-        f"| Agent stated nothing untrue at all | {facts['said_nothing_untrue']} of {facts['total']} |"
+        f"| Accuracy first | {facts['accuracy_first']} of {facts['total']} |"
+    )
+    st.warning(
+        "**These are two numbers, not three, and an earlier version of this page implied "
+        "otherwise.** Under this coding, testing accuracy first classes a row as Accuracy "
+        "exactly when the agent stated something untrue, so 'accuracy first' and 'the "
+        "agent stated nothing untrue' are the same computation under two names. Showing "
+        "both as separate rows would be showing one result twice and calling it "
+        "corroboration. A reviewer caught that and it is recorded in the change log.",
+        icon="⚠️",
     )
     st.markdown(
         f"**{facts['would_change_class']} rows change class** when accuracy is tested "
-        "first, so the ordering accounts for a real part of the gap. That is why the "
-        "headline on the home screen uses the last row of that table rather than the "
-        "first. Every row carries a `said_something_untrue` field recorded independently "
-        "of its class, and a row where the agent stated nothing untrue cannot become an "
-        "accuracy failure under any ordering. The one genuinely arguable row, AIR-012, is "
-        "marked as having stated something untrue, which counts against this finding "
-        "rather than for it."
+        f"first (AIR-002, AIR-011, AIR-012), so the published ordering accounts for a real "
+        f"part of the gap. {facts['accuracy_first']} of {facts['total']} is therefore the "
+        "floor, and the home screen headline uses it rather than the larger number. Every "
+        "row carries a `said_something_untrue` field recorded independently of its class. "
+        "The one genuinely arguable row, AIR-012, is marked as having stated something "
+        "untrue, which counts against this finding rather than for it."
+    )
+    st.markdown(
+        "**What the ordering cannot touch.** The finding the register actually rests on is "
+        "structural rather than a count. In none of the counted cases was an untrue "
+        "statement sufficient on its own: harm always also required authority the agent "
+        "should not have held, reach it should not have had, or a path nobody was "
+        "monitoring. Rearranging the rubric changes which bucket a row sits in. It does "
+        "not produce a single case where a wrong answer alone did the damage."
     )
 
     st.markdown("### Severity")
@@ -777,6 +800,16 @@ def screen_method(frame, rules):
         "evidence rule that makes every row checkable is the same rule that biases the "
         "sample toward the finding. Read the headline as a floor on the non-accuracy "
         "cases, not as a ratio between the two.\n"
+        "- **Fixing the rubric did not fix this.** Version 0.9 measured what the rubric's "
+        "ordering was doing and rewrote the headline around the part that survives it. "
+        "That closes one threat and leaves this one standing, and the two are often "
+        "confused. The cases where the agent stated nothing untrue are largely the "
+        "security and legal ones, which are precisely the cases that generate primary "
+        "records, so the current headline is at least as exposed to this bias as the one "
+        "it replaced. The honest repair is to publish the long list of candidates that "
+        "were considered and dropped, with the reason for each, so the shape of what the "
+        "evidence rule excluded can be seen rather than guessed at. That is not done yet "
+        "and it is the largest hole in this method.\n"
         "- **A convenience sample, not a population.** These twelve cases are the ones with "
         "a usable public record. Agent failures that were handled quietly are the majority "
         "and none of them are here, which also biases the counts toward the visible and "
@@ -801,14 +834,28 @@ def screen_method(frame, rules):
 
     st.markdown("### Dates that matter")
     st.markdown(
-        "The Digital Omnibus was adopted as Regulation (EU) 2026/1744 and entered into "
-        "force on 27 July 2026. It moved some AI Act deadlines and left others alone, and "
+        "The Digital Omnibus on AI is [Regulation (EU) 2026/1744]"
+        "(https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32026R1744) of 8 July "
+        "2026, published in the Official Journal on 24 July 2026 and in force from the "
+        "third day after that. It moved some AI Act deadlines and left others alone, and "
         "the difference matters for how you read the clause column.\n\n"
-        "| Obligation | Applies from |\n| --- | --- |\n"
-        "| Article 50 transparency, including Article 50(1) | 2 August 2026, already in force |\n"
-        "| Article 50(2) machine-readable marking, for systems already on the market | 2 December 2026 |\n"
-        "| High-risk, standalone Annex III systems | 2 December 2027 |\n"
-        "| High-risk, AI embedded in Annex I regulated products | 2 August 2028 |\n"
+        "| Obligation | Applies from | Where this came from |\n| --- | --- | --- |\n"
+        "| Article 50 transparency | 2 August 2026, already in force | **Derived.** Article 113 sets a general application date of 2 August 2026 and does not list Chapter IV among its exceptions. Read from a consolidated rendering, not the Official Journal page itself. |\n"
+        "| Article 50(2) machine-readable marking, for systems placed on the market before 2 August 2026 | 2 December 2026 | **Derived** from the four month transitional period in Regulation (EU) 2026/1744, whose recital text was read on EUR-Lex. The regulation gives the period, not the date. |\n"
+        "| High-risk, standalone Annex III systems | 2 December 2027 | **Official Journal text** on EUR-Lex |\n"
+        "| High-risk, AI embedded in Annex I regulated products | 2 August 2028 | **Official Journal text** on EUR-Lex |\n"
+    )
+    st.warning(
+        "**Two of these four are derived rather than quoted, and that distinction matters "
+        "more here than anywhere else on this page.** These are the claims a lawyer in the "
+        "audience knows better than I do, and an earlier version of this page took them "
+        "from legal commentary without saying so. The regulation number, its entry into "
+        "force and the two high-risk dates were since read on EUR-Lex. The Article 50 "
+        "dates were not quoted from an article that states them, they were worked out from "
+        "Article 113's structure and from a transitional period given in months. That "
+        "reasoning is shown so you can check it rather than trust it, and a correction "
+        "here is the most useful one you could send.",
+        icon="⚠️",
     )
     st.markdown(
         "The practical point for this register is that the chatbot cases are not waiting on "
@@ -828,7 +875,16 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
-        "| 0.9 | 2026-10-07 | Reviewer round. Measured what the rubric's ordering does to "
+        "| 0.9.1 | 2026-10-07 | Second reviewer round. Corrected the sensitivity table, "
+        "which showed one computation twice and implied two checks agreeing. Added the "
+        "structural finding, that no case caused harm through an untrue statement alone, "
+        "and made the validator enforce it. Verified the Omnibus regulation and the two "
+        "high-risk dates against EUR-Lex and labelled the two Article 50 dates as derived "
+        "rather than quoted. Stated that fixing the rubric's ordering did not fix the "
+        "sampling bias. Replaced every interactive table with a semantic one, after finding "
+        "that Streamlit's dataframe renders to a canvas and leaves its contents out of the "
+        "accessibility tree completely. |\n"
+        "| 0.9 | 2026-10-07 | First reviewer round. Measured what the rubric's ordering does to "
         "the finding and rewrote the headline around the order-independent floor. "
         "Separated descriptive counts from analytical ones. Decoupled severity from "
         "recovery effort. Corrected the EU AI Act dates, including that Article 50 is "

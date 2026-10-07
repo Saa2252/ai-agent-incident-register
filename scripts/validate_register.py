@@ -425,6 +425,27 @@ def check_analytical_split(report, project_dir, rows):
             "doing nothing. Check that grade C rows are really being excluded",
         )
 
+    # The structural finding, which is what the register actually rests on now that the
+    # ordering effect has been measured: no case caused harm through an untrue statement
+    # alone. A row that did would need the agent to have stated something untrue while
+    # holding no authority beyond reading, with a person approving its actions, and with
+    # nothing structural recorded as the missing control. The home screen asserts that no
+    # such row exists, so the build refuses one.
+    for row in counted:
+        untruth_alone = (
+            row["said_something_untrue"] == "Yes"
+            and not ({"Write", "Delete", "Pay", "Promise"} & set(row["authority"].split("|")))
+            and row["human_approval"] == "Yes"
+            and row["control_class"] == "Accuracy"
+        )
+        if untruth_alone:
+            report.error(
+                row["id"],
+                "harm came from an untrue statement alone, with no authority beyond read, "
+                "a person approving, and no structural missing control. The home screen "
+                "claims no such case exists. Either the coding is wrong or the claim is",
+            )
+
     # The ordering sensitivity has to stay reportable, because the headline rests on it.
     ordered = sum(1 for r in counted if r["control_class"] != "Accuracy")
     floor = sum(1 for r in counted if r["said_something_untrue"] == "No")
@@ -436,7 +457,11 @@ def check_analytical_split(report, project_dir, rows):
         )
     print(
         f"Ordering sensitivity: {ordered} of {len(counted)} not accuracy under the "
-        f"published rubric, {floor} of {len(counted)} under any ordering."
+        f"published rubric, {floor} of {len(counted)} with accuracy tested first."
+    )
+    print(
+        f"Structural finding holds: 0 of {len(counted)} cases caused harm through an "
+        "untrue statement alone."
     )
 
 

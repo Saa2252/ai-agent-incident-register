@@ -10,11 +10,19 @@ A more accurate model would have changed nothing. What was missing governed what
 agent was allowed to **do**, what it was allowed to treat as an **instruction**, or who
 was positioned to **stop** it.
 
+And in the other 6, saying something untrue was never sufficient on its own. Every one
+of the 11 also required authority the agent should not have held, reach it should not
+have had, or a path nobody was monitoring. That is the finding that does not move when
+you rearrange the counting: a control on what an agent may **do** catches both groups,
+and a control on what it **says** catches one. The validator fails the build if a row is
+ever added where a wrong answer alone did the damage.
+
 Classified by the register's rubric, which tests accuracy last, 8 of 11 come out as
-something other than accuracy failures. That ordering does some of the work: test
-accuracy first and 3 rows change class, leaving 5 of 11. The headline uses the 5,
-because no ordering can move those rows. The sensitivity table is on the Method page and
-the validator recomputes it on every build.
+something other than accuracy failures. Test accuracy first and 3 rows change class,
+leaving 5 of 11. Those are two numbers rather than three, because under this coding
+accuracy-first and "stated nothing untrue" are the same computation. The Method page
+says so, and says what the ordering fix did not fix: the sampling bias is still open
+until the long list of dropped candidates is published.
 
 ## Why this exists
 
