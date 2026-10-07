@@ -11,8 +11,8 @@ The checks are the published method turned into code. Every claim the app makes 
 screen has a rule here that would fail if the data stopped supporting it:
 
   Evidence       A needs a primary record and a second source. B needs two
-                 independent sources on different sites. C gets one source and is
-                 excluded from every count the app displays.
+                 independent sources on different sites. C gets one source, appears in
+                 descriptive counts, and is excluded from every analytical one.
   Vocabulary     Severity, harm class, monitoring category and failure pattern come
                  from fixed lists, so the counts mean the same thing in every row.
   Clauses        Each row carries a NIST AI RMF subcategory, an ISO/IEC 42001 Annex A
@@ -36,7 +36,7 @@ FIELDS = [
     "id", "title", "event_date", "deployer", "sector", "agent_type",
     "what_happened", "incident_or_hazard", "harm_type", "severity",
     "authority", "human_approval",
-    "failure_pattern", "owasp_code", "control_class", "missing_control",
+    "failure_pattern", "owasp_code", "said_something_untrue", "control_class", "missing_control",
     "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "owner_role",
     "nist_ai_rmf", "iso_42001", "eu_ai_act",
@@ -97,6 +97,11 @@ AUTHORITIES = {"Read", "Write", "Delete", "Pay", "Promise"}
 # existed on paper and did not hold is not the same as no gate, and it is not the same
 # as a gate that worked.
 APPROVAL_STATES = {"Yes", "No", "Unknown", "Yes, bypassed"}
+
+# Recorded independently of control_class, so the rubric's ordering can be measured
+# rather than argued about. A row where the agent stated nothing untrue cannot become an
+# accuracy failure under any ordering of the rubric.
+UNTRUE_STATES = {"Yes", "No"}
 
 GRADES = {"A", "B", "C"}
 COUNTED_GRADES = {"A", "B"}  # the only grades any displayed number may include
@@ -224,8 +229,9 @@ def check_evidence(report, where, row):
             )
         report.warn(
             where,
-            "grade C. This row must be excluded from every count the app displays and "
-            "labelled as single source on its card",
+            "grade C. This row appears in descriptive counts of the register's "
+            "composition, is excluded from every analytical count, and must be labelled "
+            "as single source on its card",
         )
 
 
@@ -273,6 +279,17 @@ def validate_rows(report, rows, today):
             report.error(f"{where}.human_approval", f"'{row['human_approval']}' is not one of {sorted(APPROVAL_STATES)}")
         if row["disputed"] not in YES_NO:
             report.error(f"{where}.disputed", "must be Yes or No")
+        if row["said_something_untrue"] not in UNTRUE_STATES:
+            report.error(f"{where}.said_something_untrue", "must be Yes or No")
+
+        # The rubric classes a row Accuracy only where the agent stated something untrue.
+        # The reverse is allowed, because a row can be both and the ordering decides.
+        if row["control_class"] == "Accuracy" and row["said_something_untrue"] == "No":
+            report.error(
+                where,
+                "classed Accuracy but recorded as having stated nothing untrue. One of the "
+                "two is wrong",
+            )
 
         granted = [part.strip() for part in row["authority"].split("|") if part.strip()]
         if not granted:
@@ -354,6 +371,127 @@ def validate_rules(report, project_dir, register_ids):
         report.warn("rules", f"{incident} is in the register but no watch-list rule cites it")
 
 
+def check_analytical_split(report, project_dir, rows):
+    """The register's load-bearing claim, checked rather than remembered.
+
+    Two reviewers independently found the same contradiction in version 0.8: the page
+    said only grade A and B rows feed a number, and then printed composition counts
+    totalling all rows. The fix is not to remember harder. It is this.
+
+    Descriptive counts describe the register and cover every row. Analytical counts
+    support a claim and cover only the counted grades. This checks three things:
+
+      1. the app's headline function actually filters to counted rows
+      2. the distinction is not vacuous, meaning the two sets of numbers really differ
+      3. the headline cannot be restated more favourably by reordering the rubric
+    """
+    app = project_dir / "app.py"
+    if not app.exists():
+        report.warn("app", "app.py not found, skipping the analytical split check")
+        return
+
+    source = app.read_text(encoding="utf-8")
+    try:
+        body = source.split("def headline(", 1)[1].split("\ndef ", 1)[0]
+    except IndexError:
+        report.error("app.headline", "no headline() function found to check")
+        return
+    if 'counted = frame[frame["counted"]]' not in body:
+        report.error(
+            "app.headline",
+            "does not filter to counted rows. Every analytical figure must exclude "
+            "grade C",
+        )
+
+    counted = [r for r in rows if r["evidence_grade"] in COUNTED_GRADES]
+    uncounted = [r for r in rows if r["evidence_grade"] not in COUNTED_GRADES]
+    if not uncounted:
+        return
+
+    # If every analytical figure came out the same over all rows, the separation would
+    # be real in the prose and meaningless in the data, which is the version of this
+    # bug that survives a careless fix.
+    def figures(subset):
+        return (
+            len(subset),
+            sum(1 for r in subset if r["control_class"] != "Accuracy"),
+            sum(1 for r in subset if r["said_something_untrue"] == "No"),
+        )
+
+    if figures(counted) == figures(rows):
+        report.error(
+            "analytical split",
+            "the counted and all-row figures are identical, so the exclusion rule is "
+            "doing nothing. Check that grade C rows are really being excluded",
+        )
+
+    # The ordering sensitivity has to stay reportable, because the headline rests on it.
+    ordered = sum(1 for r in counted if r["control_class"] != "Accuracy")
+    floor = sum(1 for r in counted if r["said_something_untrue"] == "No")
+    if floor > ordered:
+        report.error(
+            "analytical split",
+            f"the order-independent floor ({floor}) exceeds the ordered-rubric count "
+            f"({ordered}), which should be impossible. Check said_something_untrue",
+        )
+    print(
+        f"Ordering sensitivity: {ordered} of {len(counted)} not accuracy under the "
+        f"published rubric, {floor} of {len(counted)} under any ordering."
+    )
+
+
+def check_freshness(report, project_dir):
+    """The stated date must not be older than the newest commit.
+
+    A reviewer noticed the page said 3 October while files had landed on the 6th. A
+    register whose own date is stale is making a small version of the mistake it
+    documents, so the build now refuses it.
+    """
+    import subprocess
+
+    app = project_dir / "app.py"
+    if not app.exists():
+        return
+    source = app.read_text(encoding="utf-8")
+    match = re.search(r'UPDATED = "([^"]+)"', source)
+    if not match:
+        report.error("app", "no UPDATED date found in app.py")
+        return
+    stated_text = match.group(1)
+    try:
+        stated = date(
+            int(stated_text.split()[2]),
+            MONTHS[stated_text.split()[1]],
+            int(stated_text.split()[0]),
+        )
+    except (ValueError, KeyError, IndexError):
+        report.error("app.UPDATED", f"'{stated_text}' is not a date like '7 October 2026'")
+        return
+
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(project_dir), "log", "-1", "--format=%cs"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        return
+    if out.returncode != 0 or not out.stdout.strip():
+        return
+    last_commit = parse_date(out.stdout.strip())
+    if last_commit and last_commit > stated:
+        report.error(
+            "app.UPDATED",
+            f"says {stated_text} but the newest commit is {last_commit}. Bump the date "
+            "or the page is telling readers something false about itself",
+        )
+
+
+MONTHS = {
+    "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+    "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12,
+}
+
+
 def main(argv):
     project_dir = Path(argv[1] if len(argv) > 1 else ".").resolve()
     csv_path = project_dir / "data" / "incidents.csv"
@@ -379,6 +517,8 @@ def main(argv):
     today = date.today()
     validate_rows(report, rows, today)
     validate_rules(report, project_dir, {row["id"] for row in rows})
+    check_analytical_split(report, project_dir, rows)
+    check_freshness(report, project_dir)
 
     counted = [row for row in rows if row["evidence_grade"] in COUNTED_GRADES]
     print(f"Register: {len(rows)} rows, {len(counted)} counted (grades A and B).")

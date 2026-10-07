@@ -33,8 +33,8 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "1.0"
-UPDATED = "3 October 2026"
+VERSION = "0.9"
+UPDATED = "7 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
@@ -55,12 +55,22 @@ CONTROL_CLASSES = rules_check.CONTROL_CLASSES
 OWASP_CODES = rules_check.OWASP_CODES
 
 SEVERITY_ORDER = ["Severe", "Serious", "Moderate", "Negligible"]
+# The scale measures one thing only: who was affected and how badly. Recovery time and
+# effort are deliberately not in it. A failure that happened to be cheap to fix is not a
+# smaller failure, and bundling the two axes leaves no home for a case that cost someone
+# real money and was put right in an hour.
 SEVERITY_MEANING = {
-    "Severe": "People outside the organisation lost data, money or access to a service they depend on, and recovery took more than a day.",
-    "Serious": "A service went down, unlawful or unsafe guidance reached the public, or data was exposed, and it took real work to put right.",
-    "Moderate": "One or more people were misled or lost money, and the organisation had to make it good.",
-    "Negligible": "No harm occurred. The case is here as a near miss.",
+    "Severe": "People outside the deploying organisation lost data, money, or access to a service they depend on.",
+    "Serious": "Unlawful or unsafe guidance reached the public, or data was exposed, or a service people rely on went down.",
+    "Moderate": "One or more identifiable people were misled or left out of pocket, and the organisation had to make it good.",
+    "Negligible": "No harm occurred.",
 }
+SEVERITY_NOTE = (
+    "A hazard is rated on the harm it could have caused, not on harm that occurred, and "
+    "its card says Hazard next to the rating. That is why one hazard in this register is "
+    "rated Serious: a zero-click path out of a company's mail and files is a serious "
+    "exposure whether or not anyone is known to have walked it."
+)
 
 GRADE_MEANING = {
     "A": "A primary record. A ruling, a regulator notice, a vendor security advisory or a threat intelligence report, plus a second source.",
@@ -139,6 +149,16 @@ def badge(text, color):
 # --------------------------------------------------------------------------- findings
 
 
+def describe_count(total, counted):
+    """Render a composition count, saying plainly how much of it feeds a number."""
+    rows = "row" if total == 1 else "rows"
+    if total == counted:
+        return f"{total} {rows}"
+    if counted == 0:
+        return f"{total} {rows}, not counted"
+    return f"{total} {rows}, {counted} of them counted"
+
+
 def headline(frame):
     """The opening line of the register, computed from the rows that count.
 
@@ -150,6 +170,12 @@ def headline(frame):
     accuracy = int((counted["control_class"] == "Accuracy").sum())
     not_accuracy = total - accuracy
     by_class = counted["control_class"].value_counts().to_dict()
+    # The rubric tests accuracy last, so a case that is both a permissions failure and
+    # an accuracy failure is classed as the former. That ordering could be producing
+    # the finding on its own, so the register measures the effect rather than arguing
+    # about it. A row where the agent stated nothing untrue cannot become an accuracy
+    # failure under any ordering, which makes it an order-independent floor.
+    said_untrue = counted["said_something_untrue"] == "Yes"
     # Could the agent do more than read. This is the authority it actually held at the
     # time, which is not always the authority its owners believed it held.
     acted = counted["authority"].apply(
@@ -161,6 +187,9 @@ def headline(frame):
         "accuracy": accuracy,
         "not_accuracy": not_accuracy,
         "by_class": by_class,
+        "accuracy_first": int(len(counted) - said_untrue.sum()),
+        "would_change_class": int(said_untrue.sum() - accuracy),
+        "said_nothing_untrue": int((~said_untrue).sum()),
         "no_approval": int((counted["human_approval"] != "Yes").sum()),
         "could_act": int(acted.sum()),
         "read_only": int((~acted).sum()),
@@ -189,12 +218,21 @@ def screen_home(frame, rules):
 
     st.markdown("---")
 
-    st.markdown(f"### The finding")
+    st.markdown("### The finding")
     st.markdown(
-        f"**{facts['not_accuracy']} of the {facts['total']} cases were not accuracy failures.** "
-        "The model being wrong was the smaller half of the problem. In most of these cases "
-        "the missing control governed what the agent was allowed to do, what it was allowed "
-        "to treat as an instruction, or who was positioned to stop it."
+        f"**In {facts['said_nothing_untrue']} of the {facts['total']} cases the agent said "
+        "nothing untrue, and harm happened anyway.** In those cases a more accurate model "
+        "would have changed nothing. What was missing governed what the agent was allowed "
+        "to do, what it was allowed to treat as an instruction, or who was positioned to "
+        "stop it."
+    )
+    st.markdown(
+        f"Classified by the rubric on the Method page, which tests accuracy last, "
+        f"{facts['not_accuracy']} of {facts['total']} come out as something other than "
+        f"accuracy failures. That ordering is doing some of the work: test accuracy first "
+        f"instead and {facts['would_change_class']} rows change class, leaving "
+        f"{facts['accuracy_first']} of {facts['total']}. The headline above uses the "
+        f"{facts['said_nothing_untrue']}, because no ordering can move those rows."
     )
 
     order = sorted(facts["by_class"].items(), key=lambda item: (-item[1], item[0]))
@@ -213,9 +251,10 @@ def screen_home(frame, rules):
     )
 
     st.caption(
-        f"Counted over {facts['total']} grade A and grade B rows, events from "
-        f"{facts['years']}. One row per case, one class per row, assigned by the ordered "
-        "rubric on the Method page."
+        f"How the {facts['total']} grade A and grade B rows fall out under the ordered "
+        f"rubric, events from {facts['years']}. One row per case, one class per row. This "
+        "table describes the register. The finding above does not rest on it, for the "
+        "reason given in the paragraph above."
     )
 
     st.markdown("---")
@@ -544,11 +583,26 @@ def screen_method(frame, rules):
         "whether or not anyone is known to have used it."
     )
 
+    st.markdown("### Two kinds of count, and which is which")
+    st.markdown(
+        f"**Descriptive counts** describe what is in the register and cover all "
+        f"{len(frame)} rows, including the grade C one. **Analytical counts** are any "
+        f"number used to support a claim, and those use only the {int(frame['counted'].sum())} "
+        "grade A and grade B rows. Every table below says which it is. The validator "
+        "enforces three things on this: that the function producing the headline filters "
+        "to counted rows, that the two sets of figures genuinely differ so the rule is not "
+        "doing nothing, and that the order-independent floor never exceeds the "
+        "ordered-rubric count."
+    )
+
     st.markdown("### Incident or hazard")
     for kind, meaning in KIND_MEANING.items():
         count = int((frame["incident_or_hazard"] == kind).sum())
-        st.markdown(f"- **{kind}** ({count} {'row' if count == 1 else 'rows'}). {meaning}")
-    st.caption("These follow the OECD AI Incidents and Hazards Monitor definitions.")
+        counted_count = int(((frame["incident_or_hazard"] == kind) & frame["counted"]).sum())
+        st.markdown(f"- **{kind}** ({describe_count(count, counted_count)}). {meaning}")
+    st.caption(
+        "Descriptive. These follow the OECD AI Incidents and Hazards Monitor definitions."
+    )
 
     st.markdown("### Evidence grades")
     st.markdown(
@@ -563,7 +617,13 @@ def screen_method(frame, rules):
             "Counted": "Yes" if grade in COUNTED_GRADES else "No",
             "What it means": meaning,
         })
-    st.dataframe(pd.DataFrame(grade_rows), hide_index=True, use_container_width=True)
+    st.markdown(
+        "| Grade | Rows | Counted | What it means |\n| --- | --- | --- | --- |\n"
+        + "\n".join(
+            f"| {r['Grade']} | {r['Rows']} | {r['Counted']} | {r['What it means']} |"
+            for r in grade_rows
+        )
+    )
     st.markdown(
         "A grade B row needs two reports on two different sites, and in practice usually "
         "includes the deployer's own public statement. Where the deployer confirmed the "
@@ -585,8 +645,8 @@ def screen_method(frame, rules):
     st.markdown("### The coding rubric")
     st.markdown(
         "Each row gets exactly one class for what the missing control governed. The rubric "
-        "was written before the rows were coded, and it is applied in this order, so the "
-        "first match wins and a row cannot be classed twice."
+        "is applied in the order below, so the first match wins and a row cannot be "
+        "classed twice."
     )
     rubric = [
         ("1. Vendor", "The failure arrived through a third party that held access to the organisation."),
@@ -595,10 +655,12 @@ def screen_method(frame, rules):
         ("4. Oversight", "No person was positioned to catch it, stop it, or verify the claim the deployment ran on."),
         ("5. Accuracy", "What is left. The agent stated something untrue and nothing checked it against the source."),
     ]
-    st.dataframe(
-        pd.DataFrame([{"Order and class": name, "Test applied": test} for name, test in rubric]),
-        hide_index=True,
-        use_container_width=True,
+    st.markdown(
+        "| Order | Class | The test applied |\n| --- | --- | --- |\n"
+        + "\n".join(
+            f"| {name.split('.')[0]} | {name.split('. ')[1]} | {test} |"
+            for name, test in rubric
+        )
     )
     st.caption(
         "Accuracy is last on purpose. An agent that says something wrong and an agent that "
@@ -606,10 +668,46 @@ def screen_method(frame, rules):
         "question you ask."
     )
 
+    st.markdown("#### What that ordering does to the finding")
+    facts = headline(frame)
+    st.markdown(
+        "Putting accuracy last is a choice, and a choice that could manufacture the "
+        "result. If a case is both a permissions failure and an accuracy failure, this "
+        "rubric classes it as the former. So the register measures the effect rather than "
+        "asking to be trusted on it."
+    )
+    st.markdown(
+        f"| Ordering | Cases classed as not accuracy |\n| --- | --- |\n"
+        f"| Accuracy last, as published | {facts['not_accuracy']} of {facts['total']} |\n"
+        f"| Accuracy first | {facts['accuracy_first']} of {facts['total']} |\n"
+        f"| Agent stated nothing untrue at all | {facts['said_nothing_untrue']} of {facts['total']} |"
+    )
+    st.markdown(
+        f"**{facts['would_change_class']} rows change class** when accuracy is tested "
+        "first, so the ordering accounts for a real part of the gap. That is why the "
+        "headline on the home screen uses the last row of that table rather than the "
+        "first. Every row carries a `said_something_untrue` field recorded independently "
+        "of its class, and a row where the agent stated nothing untrue cannot become an "
+        "accuracy failure under any ordering. The one genuinely arguable row, AIR-012, is "
+        "marked as having stated something untrue, which counts against this finding "
+        "rather than for it."
+    )
+
     st.markdown("### Severity")
+    st.markdown(
+        "The scale measures one thing: who was affected and how badly. Recovery time and "
+        "effort are deliberately not in it. A failure that happened to be cheap to fix is "
+        "not a smaller failure."
+    )
     for level in SEVERITY_ORDER:
         count = int((frame["severity"] == level).sum())
-        st.markdown(f"- **{level}** ({count} {'row' if count == 1 else 'rows'}). {SEVERITY_MEANING[level]}")
+        counted_count = int(((frame["severity"] == level) & frame["counted"]).sum())
+        st.markdown(
+            f"- **{level}** ({describe_count(count, counted_count)}). "
+            f"{SEVERITY_MEANING[level]}"
+        )
+    st.markdown(SEVERITY_NOTE)
+    st.caption("Descriptive, over all rows in the register.")
 
     st.markdown("### Naming policy")
     st.markdown(
@@ -639,12 +737,16 @@ def screen_method(frame, rules):
         "Question": "Applies to every agent",
         "Rules it can trigger": ", ".join(r["id"] for r in rules["rules"] if r["trigger"] == "always"),
     })
-    st.dataframe(pd.DataFrame(trigger_rows), hide_index=True, use_container_width=True)
+    st.markdown(
+        "| Question | Rules it can trigger |\n| --- | --- |\n"
+        + "\n".join(f"| {r['Question']} | {r['Rules it can trigger']} |" for r in trigger_rows)
+    )
 
-    st.markdown("### Standards used")
+    st.markdown("### Standards and frameworks used")
     st.markdown(
         "- **NIST AI RMF 1.0.** The closest subcategory per row, for the control that was missing.\n"
-        "- **NIST AI 800-4, March 2026.** Its six monitoring categories tag every signal: "
+        "- **NIST AI 800-4, March 2026.** A research report, not a standard. It proposes six "
+        "monitoring categories and this register uses them to tag every signal: "
         "functionality, operational, human factors, security, compliance, large-scale impacts.\n"
         "- **ISO/IEC 42001:2023 Annex A.** Mostly A.6.2.6 on operation and monitoring, "
         "A.6.2.8 on event logs, A.8.4 on communication of incidents and A.10.3 on suppliers.\n"
@@ -659,10 +761,26 @@ def screen_method(frame, rules):
         "- **One coder.** Every judgement on this site is mine. There is no second rater and "
         "no inter-rater reliability figure, so the coding should be read as one defensible "
         "reading rather than as a measurement.\n"
+        "- **The rubric is stated, not pre-registered.** It was written before the rows "
+        "were coded, but the rule file and the data file were first committed together, so "
+        "nothing in the repository proves that order and you should not take my word for "
+        "it. From version 0.9 onward any change to the rubric lands in its own commit "
+        "ahead of any recoding, which makes the claim checkable from here forward even "
+        "though it is not checkable backward.\n"
+        "- **The sampling frame runs along the axis the finding measures.** This is the "
+        "sharpest objection to this register and it deserves to be made here rather than "
+        "by someone else. Primary records exist for events that produce legal, security or "
+        "regulatory paperwork: rulings, CVEs, threat intelligence reports, enforcement "
+        "notices. Those are disproportionately the authority, boundary and vendor cases. A "
+        "chatbot that quietly gave wrong answers for a year generates no such document, so "
+        "accuracy failures are systematically harder to admit to this register. The "
+        "evidence rule that makes every row checkable is the same rule that biases the "
+        "sample toward the finding. Read the headline as a floor on the non-accuracy "
+        "cases, not as a ratio between the two.\n"
         "- **A convenience sample, not a population.** These twelve cases are the ones with "
         "a usable public record. Agent failures that were handled quietly are the majority "
-        "and none of them are here, which almost certainly biases the counts toward the "
-        "visible and the embarrassing.\n"
+        "and none of them are here, which also biases the counts toward the visible and "
+        "the embarrassing.\n"
         "- **Twelve is a small number.** A count of 12 is an illustration of a pattern, not "
         "evidence of its distribution. Treat the finding as a hypothesis worth testing "
         "against your own incidents.\n"
@@ -683,9 +801,20 @@ def screen_method(frame, rules):
 
     st.markdown("### Dates that matter")
     st.markdown(
-        "The EU AI Act obligations for high-risk systems referenced on these cards apply "
-        "from 2 December 2027 under the Digital Omnibus changes. If you are reading this "
-        "well after October 2026, check the current date before relying on it."
+        "The Digital Omnibus was adopted as Regulation (EU) 2026/1744 and entered into "
+        "force on 27 July 2026. It moved some AI Act deadlines and left others alone, and "
+        "the difference matters for how you read the clause column.\n\n"
+        "| Obligation | Applies from |\n| --- | --- |\n"
+        "| Article 50 transparency, including Article 50(1) | 2 August 2026, already in force |\n"
+        "| Article 50(2) machine-readable marking, for systems already on the market | 2 December 2026 |\n"
+        "| High-risk, standalone Annex III systems | 2 December 2027 |\n"
+        "| High-risk, AI embedded in Annex I regulated products | 2 August 2028 |\n"
+    )
+    st.markdown(
+        "The practical point for this register is that the chatbot cases are not waiting on "
+        "a future deadline. Article 50 has applied since August 2026, so a deployer whose "
+        "customer-facing agent misstates its own policy today is already inside a live "
+        "transparency regime, not a forthcoming one."
     )
 
     st.markdown("### Corrections")
@@ -697,23 +826,31 @@ def screen_method(frame, rules):
     )
 
     st.markdown("### Change log")
-    st.dataframe(
-        pd.DataFrame([
-            {
-                "Version": "1.0",
-                "Date": "2026-10-03",
-                "What changed": "First publication. 12 cases, 11 counted, 18 watch-list rules.",
-            },
-        ]),
-        hide_index=True,
-        use_container_width=True,
+    st.markdown(
+        "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9 | 2026-10-07 | Reviewer round. Measured what the rubric's ordering does to "
+        "the finding and rewrote the headline around the order-independent floor. "
+        "Separated descriptive counts from analytical ones. Decoupled severity from "
+        "recovery effort. Corrected the EU AI Act dates, including that Article 50 is "
+        "already in force. Withdrew the pre-registration claim as unevidenced. Added "
+        "runnable control tests for three rows. |\n"
+        "| 0.8 | 2026-10-03 | First build. 12 cases, 11 counted, 18 watch-list rules. |"
+    )
+    st.markdown(
+        "**No corrections from readers yet.** When one arrives it goes in the table above "
+        "with the date, what was wrong, and who sent it."
     )
 
     st.markdown("### Reviewed by")
     st.markdown(
-        ":orange[**Not yet reviewed.**] One practitioner read is planned before this is "
-        "promoted, and the reviewer will be credited here by name with the date. Until that "
-        "line names a person, treat this as a single-author draft."
+        ":orange[**Not yet reviewed.**] One practitioner read is planned, and the reviewer "
+        "will be credited here by name with the date."
+    )
+    st.markdown(
+        f"This is why the register is at version {VERSION} and not 1.0. A thing cannot be "
+        "both a finished release and a single-author draft, and of the two the draft is "
+        "the true one until somebody outside has read it cold. Version 1.0 is the cold "
+        "read landing, not a date."
     )
 
 

@@ -1,6 +1,6 @@
 # Data dictionary
 
-One file, `incidents.csv`, 32 fields, one row per case. The app computes every number
+One file, `incidents.csv`, 33 fields, one row per case. The app computes every number
 it shows from this file, so a change here changes the site. `scripts/validate_register.py`
 enforces everything below and fails the build if a row stops obeying it.
 
@@ -34,6 +34,7 @@ Three conventions apply to every field.
 | `human_approval` | `Yes`, `No`, `Unknown`, `Yes, bypassed` | `Yes, bypassed` is its own state. A gate that existed on paper and did not hold is not the same as no gate. |
 | `failure_pattern` | Free text, one line | The primary pattern in plain words. |
 | `owasp_code` | `ASI01` to `ASI10` | OWASP Top 10 for Agentic Applications 2026, published 9 December 2025. One code per row. |
+| `said_something_untrue` | `Yes`, `No` | Did the agent itself state something untrue? Recorded **independently of `control_class`**, so the rubric's ordering can be measured rather than argued about. A `No` row cannot become an accuracy failure under any ordering, which makes the count of them an order-independent floor under the headline. A row classed `Accuracy` with `No` here is a contradiction and the validator rejects it. |
 | `control_class` | `Accuracy`, `Authority`, `Boundary`, `Oversight`, `Vendor` | What the missing control governed. **This is the field the headline finding counts.** One per row, assigned by the ordered rubric on the Method page. |
 | `disputed` | `Yes`, `No` | `Yes` means the deployer publicly contests the facts. A `Yes` row must carry the deployer's position in `what_changed_after`, and the validator checks for it. |
 
@@ -81,6 +82,20 @@ text. The Method page says so on the page itself.
 
 Where the deployer confirmed the event but the harm is known only from reporting, the
 row stays at B rather than rising to A.
+
+## Descriptive counts and analytical counts
+
+These are different things and the register keeps them apart, because version 0.8 did
+not and two reviewers found the contradiction in the first minute.
+
+- A **descriptive count** describes what is in the register. It covers all rows,
+  including grade C. Composition tables say so underneath.
+- An **analytical count** supports a claim. It covers only grades A and B.
+
+`scripts/validate_register.py` enforces this. It checks that the app's `headline()`
+filters to counted rows, that the two sets of figures genuinely differ so the rule is
+not doing nothing, and that the order-independent floor never exceeds the ordered-rubric
+count.
 
 ## Adding a row
 

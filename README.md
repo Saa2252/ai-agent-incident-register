@@ -5,10 +5,16 @@ that would have caught it before launch, and the signal that would have shown it
 
 Live app: https://ai-agent-incident-register.streamlit.app
 
-Eight of the eleven counted cases were not accuracy failures. The model being wrong was
-the smaller half of the problem. In most of these cases the missing control governed
-what the agent was allowed to **do**, what it was allowed to treat as an
-**instruction**, or who was positioned to **stop** it.
+**In 5 of the 11 counted cases the agent said nothing untrue, and harm happened anyway.**
+A more accurate model would have changed nothing. What was missing governed what the
+agent was allowed to **do**, what it was allowed to treat as an **instruction**, or who
+was positioned to **stop** it.
+
+Classified by the register's rubric, which tests accuracy last, 8 of 11 come out as
+something other than accuracy failures. That ordering does some of the work: test
+accuracy first and 3 rows change class, leaving 5 of 11. The headline uses the 5,
+because no ordering can move those rows. The sensitivity table is on the Method page and
+the validator recomputes it on every build.
 
 ## Why this exists
 
