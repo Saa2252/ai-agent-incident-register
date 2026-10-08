@@ -30,10 +30,25 @@ st.set_page_config(
     initial_sidebar_state="auto",  # collapses itself on a phone, where an open sidebar covers the page
 )
 
+# Wide tables scroll inside their own box rather than pushing the page sideways.
+#
+# The register index carries ten facet columns and is rendered as Markdown rather than
+# with st.table or st.dataframe. st.dataframe draws to a canvas and leaves its contents
+# out of the accessibility tree entirely. st.table is a real table but does not render
+# Markdown on the pinned Streamlit version, so links in cells come out as literal
+# bracket syntax. Markdown gives a real table, with headers, that a screen reader can
+# read and that can hold a link. The only thing it lacks is this, and this is four lines.
+TABLE_CSS = """
+<style>
+div[data-testid="stMarkdownContainer"]:has(> table) { overflow-x: auto; }
+div[data-testid="stMarkdownContainer"] > table { min-width: max-content; }
+</style>
+"""
+
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.10"
+VERSION = "0.9.11"
 UPDATED = "9 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -504,11 +519,35 @@ def screen_home(frame, rules):
         "**Method** gives the inclusion rule, the evidence grades, the coding rubric, the "
         "limits and the change log. Start there if you want to disagree with something."
     )
-    st.info(
-        "This is a public register built by one person from public records. It is not "
-        "legal advice, and the clause references are the closest fit rather than a legal "
-        "classification. Corrections are welcome and logged.",
-        icon="ℹ️",
+    st.markdown("---")
+    st.markdown("### Published for comment until 7 November 2026")
+    st.markdown(
+        f"This is version {VERSION}. It is published for comment rather than as a "
+        "finished reference, and the version number is the least important part of that "
+        "sentence. What makes it real is the three things below."
+    )
+    st.markdown(
+        f"- **One route.** Open an issue at [{CORRECTIONS_URL}]({CORRECTIONS_URL}). That "
+        "is the only channel. Comments elsewhere are welcome but the change log is driven "
+        "from issues, so a correction sent anywhere else may not reach it.\n"
+        "- **A window with a date on it.** Comments received up to **7 November 2026** "
+        "will be worked through and answered before this moves to 1.0. The window closing "
+        "does not close the route, it just marks the point at which the open questions "
+        "stop being open.\n"
+        "- **Every substantive comment goes in the change log**, with the date, whether "
+        "or not it is acted on. A comment recorded and declined is better served than one "
+        "silently dropped."
+    )
+    st.error(
+        "**What this register must not be used for.** It is not legal advice and not a "
+        "compliance assessment. It must not be used to decide whether any organisation "
+        "named here met a legal obligation, to assess a vendor, or as evidence in a "
+        "procurement or enforcement decision. The clause references are the closest fit "
+        "for a reader who needs a starting point, several of the facts rest on reporting "
+        "rather than on findings, and one person coded all of it. Use it to generate "
+        "questions about your own system. Do not use it to reach conclusions about "
+        "somebody else's.",
+        icon="⛔",
     )
 
 
@@ -1139,6 +1178,13 @@ def screen_method(frame, rules):
         "- **One coder.** Every judgement on this site is mine. There is no second rater and "
         "no inter-rater reliability figure, so the coding should be read as one defensible "
         "reading rather than as a measurement.\n"
+        "- **The secondary class has no rubric.** The primary class is assigned by an "
+        "ordered, published, first-match-wins test. The secondary class, added in version "
+        "0.9.9 to record the reading that ordering discards, was assigned case by case "
+        "with no rule behind it. It is shown on cards and counted nowhere, and that is "
+        "deliberate: a matrix built on it would display one person's unruled judgement as "
+        "structure. Oversight is the tell. It wins the primary test twice and was "
+        "assigned as a secondary six times.\n"
         "- **The rubric is stated, not pre-registered.** It was written before the rows "
         "were coded, but the rule file and the data file were first committed together, so "
         "nothing in the repository proves that order and you should not take my word for "
@@ -1243,6 +1289,12 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.11 | 2026-10-09 | Launch framing. Published for comment with one named "
+        "route, a window that closes on 7 November 2026, and an explicit statement of "
+        "what the register must not be used for. Made wide tables scroll inside their own "
+        "box instead of pushing the page. Ran the honesty test on the proposed case by "
+        "control matrix and did not build it, because the structure it would show is "
+        "produced by a field that has no rubric. |\n"
         "| 0.9.10 | 2026-10-09 | Fixed a crash on the register screen. A block inside each "
         "incident card used an expander, and the card is itself rendered inside one, "
         "which Streamlit refuses. Every card open raised for six commits while the build "
@@ -1350,6 +1402,7 @@ def screen_method(frame, rules):
 
 
 def main():
+    st.markdown(TABLE_CSS, unsafe_allow_html=True)
     frame = load_register()
     rules = load_rules()
 
