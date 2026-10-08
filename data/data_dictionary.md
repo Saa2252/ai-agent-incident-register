@@ -1,6 +1,6 @@
 # Data dictionary
 
-One file, `incidents.csv`, 52 fields, one row per case. The app computes every number
+One file, `incidents.csv`, 53 fields, one row per case. The app computes every number
 it shows from this file, so a change here changes the site. `scripts/validate_register.py`
 enforces everything below and fails the build if a row stops obeying it.
 
@@ -45,6 +45,7 @@ Three conventions apply to every field.
 | --- | --- | --- |
 | `control_maturity` | `Absent`, `Designed`, `Implemented`, `Unknown` | What state the missing control was actually in. `Absent` means it did not exist. `Designed` means it existed in a policy or an instruction with nothing enforcing it. `Implemented` means it was built and wired in and did not stop the thing it was there to stop. `Operating` is in the validator's vocabulary **only so it can be rejected**, because a control that was operating is not a missing control. |
 | `missing_control` | 1 to 2 sentences | One plain sentence on the control that was not there. Not a list of everything that could have been better. |
+| `missing_control_basis` | Starts with `Stated`, `Entailed` or `Reading`, then a full stop and the working | How the register knows the control was missing. **`Stated`**: the deployer, a regulator or a ruling said it. **`Entailed`**: it follows from the record, and a control added afterwards is evidence of its prior absence. **`Reading`**: neither, and the card says so. The tier alone is rejected by the validator: it has to carry the reason. |
 | `test_before_launch` | 1 to 2 sentences | A test somebody could actually run next week. |
 | `test_pass_mark` | 1 to 2 sentences | What counts as a pass. A test with no pass mark is a conversation. |
 | `signal_after_launch` | 1 to 2 sentences | The metric or alert that would have shown this once live. |
@@ -92,6 +93,18 @@ text. The Method page says so on the page itself.
 
 Where the deployer confirmed the event but the harm is known only from reporting, the
 row stays at B rather than rising to A.
+
+## Only one column makes a claim about a company
+
+`missing_control` is the single field where this register asserts something about an
+organisation that the organisation did not assert about itself. It is the only field
+that carries an inference tier, and the distribution is published on the home screen as
+a statistic rather than tucked into a disclaimer.
+
+`test_before_launch`, `test_pass_mark` and `signal_after_launch` deliberately carry no
+such marking. They are engineering recommendations addressed to the reader about the
+reader's own system. They are not claims about the deployer, and hedging them would be
+hedging the wrong thing.
 
 ## Was accountability locatable at launch?
 

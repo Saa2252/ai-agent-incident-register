@@ -40,12 +40,12 @@ FIELDS = [
     "deploy_stop_authority", "deploy_stop_authority_source", "deploy_review_date",
     "deploy_review_date_source", "failure_pattern", "owasp_code",
     "said_something_untrue", "control_class", "secondary_class", "control_maturity",
-    "missing_control", "test_before_launch", "test_pass_mark", "signal_after_launch",
-    "nist_800_4_category", "control_owner_role", "accountable_role", "nist_ai_rmf",
-    "iso_42001", "eu_ai_act", "what_changed_after", "disputed", "aftermath_status",
-    "aftermath_source_url", "evidence_grade", "source_1_label", "source_1_url",
-    "source_2_label", "source_2_url", "date_checked", "facts_changed_at",
-    "derived_rechecked_at", "archive_urls",
+    "missing_control", "missing_control_basis", "test_before_launch", "test_pass_mark",
+    "signal_after_launch", "nist_800_4_category", "control_owner_role",
+    "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act", "what_changed_after",
+    "disputed", "aftermath_status", "aftermath_source_url", "evidence_grade",
+    "source_1_label", "source_1_url", "source_2_label", "source_2_url", "date_checked",
+    "facts_changed_at", "derived_rechecked_at", "archive_urls",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -140,6 +140,18 @@ HARM_CONTROL_STATES = {"Yes", "No", "Partly"}
 # absent, not a note that nothing turned up. Coding "No" from a failed search would mean
 # accusing a deployer of having had no stop authority on no evidence, which is the exact
 # drift this register has already had to correct twice.
+# How the register knows the control was missing. Only missing_control carries this.
+# The test and signal columns are engineering recommendations rather than claims about
+# the company, and marking them would be hedging the wrong thing.
+#
+# Published as a distribution rather than as a disclaimer, because the useful fact is
+# how few of the rows rest on the register's own judgement.
+MISSING_CONTROL_TIERS = {
+    "Stated": "The deployer, a regulator or a ruling said it.",
+    "Entailed": "It follows from the record. A control added afterwards is evidence of its prior absence.",
+    "Reading": "Neither. This is the register's own judgement, labelled as such.",
+}
+
 DEPLOY_STATES = {"Yes", "No", "Not disclosed"}
 DEPLOY_PAIRS = (
     ("deploy_evidence_seen", "deploy_evidence_source"),
@@ -375,6 +387,21 @@ def validate_rows(report, rows, today):
                     "does not tell the reader the ending is unknown. Stopping at the "
                     "failure overstates the harm",
                 )
+        basis = row["missing_control_basis"].strip()
+        tier = basis.split(".")[0].strip()
+        if tier not in MISSING_CONTROL_TIERS:
+            report.error(
+                f"{where}.missing_control_basis",
+                f"must begin with one of {sorted(MISSING_CONTROL_TIERS)} followed by a "
+                "full stop and the reason",
+            )
+        elif len(basis) <= len(tier) + 2:
+            report.error(
+                f"{where}.missing_control_basis",
+                f"says '{tier}' with no reason after it. The tier without the working is "
+                "a label, not a basis",
+            )
+
         if row["control_maturity"] not in CONTROL_MATURITY:
             report.error(f"{where}.control_maturity", f"must be one of {sorted(CONTROL_MATURITY)}")
         elif row["control_maturity"] == "Operating":
@@ -638,6 +665,14 @@ def check_analytical_split(report, project_dir, rows):
     print(
         f"Structural finding holds: 0 of {len(counted)} cases caused harm through an "
         "untrue statement alone."
+    )
+    tiers = {}
+    for row in counted:
+        tier = row["missing_control_basis"].split(".")[0].strip()
+        tiers[tier] = tiers.get(tier, 0) + 1
+    print(
+        "Missing control basis: "
+        + ", ".join(f"{n} {t.lower()}" for t, n in sorted(tiers.items(), key=lambda x: -x[1]))
     )
 
 

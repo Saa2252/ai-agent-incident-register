@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.8"
+VERSION = "0.9.9"
 UPDATED = "9 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -203,6 +203,13 @@ def headline(frame):
         "aftermath_partial": int((counted["aftermath_status"] == "Partial").sum()),
         "aftermath_undocumented": int((counted["aftermath_status"] == "Undocumented").sum()),
         "control_absent": int((counted["control_maturity"] == "Absent").sum()),
+        "basis_stated": int(counted["missing_control_basis"].str.startswith("Stated").sum()),
+        "basis_entailed": int(counted["missing_control_basis"].str.startswith("Entailed").sum()),
+        "basis_reading": int(counted["missing_control_basis"].str.startswith("Reading").sum()),
+        "roles": (
+            pd.concat([counted["control_owner_role"], counted["accountable_role"]])
+            .value_counts().to_dict()
+        ),
         "control_designed": int((counted["control_maturity"] == "Designed").sum()),
         "control_implemented": int((counted["control_maturity"] == "Implemented").sum()),
         "control_unknown": int((counted["control_maturity"] == "Unknown").sum()),
@@ -308,6 +315,32 @@ def screen_home(frame, rules):
         )
 
     st.markdown("---")
+    st.markdown("### Who could have stopped it, and whether anyone can tell")
+    st.markdown(
+        f"**In {facts['no_stop_authority_recorded']} of the {facts['total']} counted "
+        "cases, the public record does not say which role could have halted the "
+        "deployment.** Not that nobody could. That the record does not say. That is a "
+        "harder claim than naming anyone, and it is the one the evidence supports."
+    )
+    st.markdown(
+        "This register names organisations and never individuals, and that is the "
+        "stronger version rather than the cautious one. A name is unusable to you. A "
+        "**role** is a lookup into your own org chart. These are the roles that came up "
+        "across the twelve cases, and the useful exercise is to put a name against each "
+        "one for your own agent and see which lines you cannot fill."
+    )
+    role_rows = sorted(facts["roles"].items(), key=lambda item: (-item[1], item[0]))
+    st.markdown(
+        "| Role | Cases where it was the one that mattered | Who is this in your organisation? |\n"
+        "| --- | --- | --- |\n"
+        + "\n".join(f"| {name} | {count} | |" for name, count in role_rows)
+    )
+    st.caption(
+        "Each case names the role that runs the control and the role that answers when it "
+        "fails, which are rarely the same. A blank in the third column is the finding."
+    )
+
+    st.markdown("---")
     st.markdown("### What state the missing control was in")
     st.markdown(
         f"Of the {facts['total']} counted cases, **{facts['control_absent']} had no such "
@@ -332,6 +365,26 @@ def screen_home(frame, rules):
         "the irreversible action inside a single uninterrupted task, with no checkpoint "
         "where a person was asked anything. In one case the path required no user action "
         "at all: an email nobody opened was enough."
+    )
+
+    st.markdown("---")
+    st.markdown("### How much of this is the register's own judgement")
+    st.markdown(
+        "Naming the control that was missing is the only place this register makes a "
+        "claim about a company that the company did not make about itself. So every row "
+        "says how it knows."
+    )
+    st.markdown(
+        f"| How the register knows | Cases | What it means |\n| --- | --- | --- |\n"
+        f"| Stated | {facts['basis_stated']} of {facts['total']} | The deployer, a regulator or a ruling said it. |\n"
+        f"| Entailed | {facts['basis_entailed']} of {facts['total']} | It follows from the record. A control added afterwards is evidence of its prior absence. |\n"
+        f"| Our reading | {facts['basis_reading']} of {facts['total']} | Neither. This is judgement, and it is labelled as such on the card. |"
+    )
+    st.markdown(
+        f"**{facts['basis_stated'] + facts['basis_entailed']} of {facts['total']} do not "
+        "rest on this register's opinion.** The test and signal columns carry no such "
+        "marking, deliberately: those are engineering recommendations rather than claims "
+        "about anybody, and hedging them would be hedging the wrong thing."
     )
 
     st.markdown("---")
@@ -522,10 +575,15 @@ def incident_card(row):
         st.caption(f"{row['severity']} on this register's scale means: {SEVERITY_MEANING[row['severity']][0].lower()}{SEVERITY_MEANING[row['severity']][1:]}")
         st.caption(f"**Why this row meets it.** {esc(row['severity_basis'])}")
 
+    tier = row["missing_control_basis"].split(".")[0].strip()
     st.error(
         f"**The missing control.** {esc(row['missing_control'])}\n\n"
         f"**State it was in: {row['control_maturity']}.** {MATURITY_MEANING[row['control_maturity']]}",
         icon="🚫",
+    )
+    st.caption(
+        f"**How the register knows this: {tier}.** "
+        f"{esc(row['missing_control_basis'].split('.', 1)[1].strip())}"
     )
     st.warning(
         f"**Test before launch.** {esc(row['test_before_launch'])}\n\n"
@@ -648,19 +706,51 @@ def screen_register(frame):
         st.info("No case matches those filters. Clear one and try again.")
         return
 
-    # Rendered as a Markdown table rather than st.dataframe on purpose. Streamlit's
-    # dataframe draws to a canvas, so its contents are absent from the accessibility tree
-    # entirely: no roles, no cells, no text. A register that asks to be checked cannot
-    # put its own index somewhere a screen reader cannot reach it.
-    header = "| ID | What happened | Deployer | Date | Severity | Missing control | Evidence |"
-    st.markdown(
-        header + "\n| --- | --- | --- | --- | --- | --- | --- |\n"
-        + "\n".join(
-            f"| {r['id']} | {esc(r['title'])} | {esc(r['deployer'])} | {r['event_date']} "
-            f"| {r['severity']} | {r['control_class']} | {r['evidence_grade']} |"
-            for _, r in view.iterrows()
-        )
+    # Sorted by ID ascending, always. A register that opens sorted by severity is making
+    # an editorial claim in its furniture, and the sort order is the one piece of
+    # furniture a reader cannot see the reasoning behind. CVE, the AI Incident Database
+    # and ATLAS all do the same. The filters in the sidebar do the real work.
+    #
+    # Rendered as Markdown rather than st.dataframe because Streamlit's dataframe draws
+    # to a canvas, leaving its contents out of the accessibility tree entirely.
+    view = view.sort_values("id")
+
+    group = st.toggle(
+        "Group by what the missing control governed",
+        value=False,
+        help=(
+            "Off by default. Grouping by control class arranges the register around this "
+            "site's own argument, so it is offered as a view you choose rather than the "
+            "order you are given."
+        ),
     )
+
+    columns = [
+        ("id", "ID"), ("title", "What happened"), ("deployer", "Deployer"),
+        ("event_date", "Date"), ("severity", "Severity"),
+        ("control_class", "Missing control"), ("control_maturity", "Control was"),
+        ("aftermath_status", "Ending"), ("deploy_stop_authority", "Stop authority on record"),
+        ("evidence_grade", "Evidence"),
+    ]
+
+    def render(frame_part):
+        head = "| " + " | ".join(label for _, label in columns) + " |"
+        rule = "| " + " | ".join("---" for _ in columns) + " |"
+        body = "\n".join(
+            "| " + " | ".join(esc(r[field]) for field, _ in columns) + " |"
+            for _, r in frame_part.iterrows()
+        )
+        st.markdown(f"{head}\n{rule}\n{body}")
+
+    if group:
+        for name in sorted(view["control_class"].unique()):
+            part = view[view["control_class"] == name]
+            st.markdown(f"**{name}**  ({len(part)})")
+            st.caption(CONTROL_CLASSES[name])
+            render(part)
+            st.markdown("")
+    else:
+        render(view)
 
     st.markdown("### Full records")
     for _, row in view.iterrows():
@@ -1154,6 +1244,14 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.9 | 2026-10-09 | Pre-launch round. Marked how the register knows each "
+        "missing control, in three tiers, and published the distribution as a statistic "
+        "rather than a disclaimer. Left the test and signal columns unmarked, because "
+        "they are recommendations to the reader rather than claims about a deployer. "
+        "Fixed the register index to sort by ID with ten filterable columns and an "
+        "optional grouping, so the sort order stops carrying an argument. Put the "
+        "recurring roles on the home screen as a checklist to run against your own "
+        "organisation. |\n"
         "| 0.9.8 | 2026-10-09 | Audit and hygiene round. Walked every commit that touched "
         "the data file looking for edits lost to the archiver's stale writes, and bounded "
         "the damage to one row, two fields and one published commit. Moved the page's own "
