@@ -1,6 +1,6 @@
 # Data dictionary
 
-One file, `incidents.csv`, 41 fields, one row per case. The app computes every number
+One file, `incidents.csv`, 50 fields, one row per case. The app computes every number
 it shows from this file, so a change here changes the site. `scripts/validate_register.py`
 enforces everything below and fails the build if a row stops obeying it.
 
@@ -70,6 +70,7 @@ text. The Method page says so on the page itself.
 | `harm_borne_by` | Free text | Who actually paid for the failure. People, not organisations, wherever the record supports it. |
 | `could_have_prevented` | Free text | Who held the lever. The role or organisation that could have changed the outcome before it happened. |
 | `harm_bearer_had_control` | `Yes`, `No`, `Partly` | Were they the same people? Uniformly `No` across the current twelve, which is the finding rather than a defect in the field. A field with no variance cannot be checked by its own distribution, so it is checked by reading the two fields above it. |
+| `why_in_register` | Free text | The scope line applied to this row. Why this is an **agent** incident rather than a generic failure that involved software. Added after a reviewer asked whether AIR-009 was an agent incident or a supply-chain one that happened to involve an AI product. |
 | `severity_basis` | Free text, one or two sentences | Which clause of the severity scale this row actually meets. Added because AIR-003's account changed materially and its rating was held without anyone saying why. A rating with no stated basis cannot be re-checked when the facts move, so **severity must be re-evaluated and this field updated whenever `what_happened` changes.** |
 | `aftermath_status` | `Documented`, `Partial`, `Undocumented` | How completely the ending is on the record. A `Partial` or `Undocumented` row **must** say so in `what_changed_after`, and the validator rejects it otherwise. Stopping at the failure overstates the harm. |
 | `aftermath_source_url` | `https://` URL | Which source carries the `what_changed_after` claim. The deployer's response is a **separate claim** from the incident, so it gets a named citation rather than an assumption that the incident sources happen to cover it. Usually this is `source_1_url` or `source_2_url`, named explicitly. Where neither covers it, it is a third link. Required on every row. |
@@ -90,6 +91,43 @@ text. The Method page says so on the page itself.
 
 Where the deployer confirmed the event but the harm is known only from reporting, the
 row stays at B rather than rising to A.
+
+## Was accountability locatable at launch?
+
+Three questions asked of the moment each agent went into real use, coded from the public
+record. They measure whether accountability could be **found**, not whether the deployer
+was careless, and not whether anything worked. Whether a control held is
+`control_maturity`, and the two are kept apart deliberately: a review date that existed
+and was ignored is a different finding from one that was never set.
+
+| Field | Values |
+| --- | --- |
+| `deploy_evidence_seen` | Was there a record that someone reviewed the agent's behaviour before launch? |
+| `deploy_stop_authority` | Was there a record of a role that could halt or roll back the deployment? |
+| `deploy_review_date` | Was there a record of a date it would be re-examined? |
+
+Each takes `Yes`, `No` or `Not disclosed`, and each has a paired `_source` field.
+
+**`Not disclosed` is the default, and `No` needs a source too.** `No` is a claim that
+something was absent, not a note that nothing turned up. Coding `No` from a failed
+search would mean accusing a deployer of having had no stop authority on no evidence,
+which is the exact drift this register has already had to correct twice. A `No` is only
+valid where a source states the absence: a postmortem admitting there was no gate, a
+regulator's finding, a ruling. No row currently meets that bar, so there are no `No`
+values at all, and that is the correct result rather than a gap.
+
+The validator refuses `Yes` or `No` without a source, and refuses a source attached to
+`Not disclosed`.
+
+## Everything derived from the facts gets re-checked when they move
+
+`facts_changed_at` and `derived_rechecked_at` are a pair. The validator refuses any row
+where the second is earlier than the first.
+
+Severity already had this rule via `severity_basis`. It now covers everything computed
+from `what_happened`: `control_class` (which the headline counts),
+`said_something_untrue`, `incident_or_hazard` and `severity`. When the facts of a case
+move, those four have to be re-examined, not assumed to survive.
 
 ## Endings are evidence too
 

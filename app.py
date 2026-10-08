@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.5"
+VERSION = "0.9.6"
 UPDATED = "8 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -205,6 +205,10 @@ def headline(frame):
         "control_absent": int((counted["control_maturity"] == "Absent").sum()),
         "control_designed": int((counted["control_maturity"] == "Designed").sum()),
         "control_implemented": int((counted["control_maturity"] == "Implemented").sum()),
+        "control_unknown": int((counted["control_maturity"] == "Unknown").sum()),
+        "no_stop_authority_recorded": int((counted["deploy_stop_authority"] == "Not disclosed").sum()),
+        "no_review_recorded": int((counted["deploy_review_date"] == "Not disclosed").sum()),
+        "no_evidence_recorded": int((counted["deploy_evidence_seen"] == "Not disclosed").sum()),
         "bearer_no_control": int((counted["harm_bearer_had_control"] == "No").sum()),
         "no_approval": int((counted["human_approval"] != "Yes").sum()),
         "could_act": int(acted.sum()),
@@ -304,24 +308,29 @@ def screen_home(frame, rules):
         )
 
     st.markdown("---")
-    st.markdown("### Who held the control, and who paid for it not being there")
+    st.markdown("### What state the missing control was in")
     st.markdown(
-        f"**In all {facts['total']} counted cases, the people who bore the harm were not "
-        "the people who could have prevented it.** "
-        "Passengers, patients, rental customers, developers, people calling a helpline. "
-        "Not one of them could have changed a credential scope or added a release gate. "
-        "That is not a surprising result, and it is worth stating as a count rather than "
-        "as a sentiment, because it is the reason this is a governance problem and not an "
-        "engineering one."
+        f"Of the {facts['total']} counted cases, **{facts['control_absent']} had no such "
+        f"control in any form**, {facts['control_designed']} had one on paper with nothing "
+        f"enforcing it, {facts['control_implemented']} had one built and wired in that did "
+        f"not hold, and for {facts['control_unknown']} the record does not say. "
+        f"({facts['control_absent']} plus {facts['control_designed']} plus "
+        f"{facts['control_implemented']} plus {facts['control_unknown']} is "
+        f"{facts['total']}.)"
     )
     st.markdown(
-        f"The register also records what state each missing control was in. "
-        f"**{facts['control_absent']} of {facts['total']} did not exist in any form. "
-        f"{facts['control_designed']} existed on paper with nothing enforcing them. "
-        f"{facts['control_implemented']} was built, wired in, and did not hold.** That "
-        "last category is the one worth dwelling on: a control can be designed, "
+        "The third category is the one worth dwelling on. A control can be designed, "
         "implemented, evidenced in an audit, and still not be stopping anything. Every "
-        "card says which of these it was."
+        "card says which of the four it was."
+    )
+    st.markdown(
+        "Every row also records who bore the harm against who could have prevented it, and "
+        "in all of them those are different people. On its own that is unremarkable, since "
+        "it is true of most consumer harm. An airline passenger cannot fix airline policy "
+        "either. **What is specific to agents is the clock.** An agent acts for the "
+        "organisation at machine speed, so the window in which anybody could have "
+        "intervened was not a procurement cycle or a review board. In one of these cases "
+        "it was nine seconds from the agent deciding to the backups being gone."
     )
 
     st.markdown("---")
@@ -340,14 +349,21 @@ def screen_home(frame, rules):
         "nothing."
     )
     st.markdown(
-        "A fourth observation came later, from auditing how each of these stories ended. "
-        f"**{facts['aftermath_documented']} of the {facts['total']} counted cases have a "
-        f"fully documented ending. {facts['aftermath_partial']} stop part way and "
-        f"{facts['aftermath_undocumented']} has no recorded ending at all.** "
-        "When this register was first built, one row said a company's database was "
-        "destroyed and the newest backup was three months old. The platform had published "
-        "a postmortem saying the data was recovered two and a half days later. The "
-        "destruction was news. The recovery was a postmortem nobody aggregated."
+        "A fourth observation came from auditing how each of these stories ended, and "
+        "three rows show the direction directly. **One said a database and its backups "
+        "were destroyed with the newest copy three months old, when the platform had "
+        "published a postmortem saying the data was recovered two and a half days later. "
+        "One said an eating disorder helpline was shut, when the number had been taken "
+        "over by another charity and still reaches therapists. One recorded a regulator's "
+        "settlement terms and omitted that the company denied wrongdoing.** Every one of "
+        "those omissions made the deployer look worse than the record supports."
+    )
+    st.markdown(
+        f"Underneath that, the measurement: **{facts['aftermath_documented']} of the "
+        f"{facts['total']} counted cases have a fully documented ending, "
+        f"{facts['aftermath_partial']} stop part way, and {facts['aftermath_undocumented']} "
+        "has no recorded ending at all.** The destruction was news. The recovery was a "
+        "postmortem nobody aggregated."
     )
     st.info(
         "**Who documents a failure determines which failures exist on paper.** Every "
@@ -371,6 +387,28 @@ def screen_home(frame, rules):
         "organisation is most likely to already be watching, because they are the ones "
         "that produce an external artefact. The categories with no public cases are not "
         "the safe ones. They are the ones nobody had to write down."
+    )
+
+    st.markdown("---")
+    st.markdown("### A fourth instance, about what deployment records contain")
+    st.markdown(
+        "Each row was asked three questions about the moment the agent went into real "
+        "use. Was there a record that someone reviewed its behaviour beforehand. Was "
+        "there a record of a role that could halt or roll it back. Was there a record of "
+        "a date it would be looked at again."
+    )
+    st.markdown(
+        f"| Question | Record is silent |\n| --- | --- |\n"
+        f"| Anyone reviewed its behaviour before launch | {facts['no_evidence_recorded']} of {facts['total']} |\n"
+        f"| Any role could halt or roll back the deployment | {facts['no_stop_authority_recorded']} of {facts['total']} |\n"
+        f"| Any date was set to look at it again | {facts['no_review_recorded']} of {facts['total']} |"
+    )
+    st.markdown(
+        "**This is a finding about incident reporting, not about the deployers.** Silence "
+        "in the record is not evidence that nobody could stop these systems. It is "
+        "evidence that nobody writes it down. Every row defaults to *not disclosed*, and "
+        "both *yes* and *no* require a source, because coding *no* from a failed search "
+        "would be accusing a deployer of something on no evidence."
     )
 
     st.markdown("---")
@@ -429,6 +467,12 @@ def incident_card(row):
     st.markdown("**What happened**")
     st.markdown(esc(row["what_happened"]))
 
+    with st.expander("Why is this in the register?"):
+        st.markdown(esc(row["why_in_register"]))
+        st.caption(
+            "The scope line is on the Method page. This is that line applied to this row."
+        )
+
     left, right = st.columns(2)
     with left:
         st.markdown("**What the agent was allowed to do**")
@@ -436,6 +480,19 @@ def incident_card(row):
         st.markdown("\n".join(f"- {esc(item)}" for item in granted))
         st.markdown(f"**A person approved first:** {esc(row['human_approval'])}")
         st.caption(APPROVAL_MEANING.get(row["human_approval"], ""))
+        st.markdown("**Was accountability locatable at launch?**")
+        for label, answer_field, source_field in (
+            ("Someone reviewed its behaviour first", "deploy_evidence_seen", "deploy_evidence_source"),
+            ("A role could halt or roll it back", "deploy_stop_authority", "deploy_stop_authority_source"),
+            ("A date was set to look at it again", "deploy_review_date", "deploy_review_date_source"),
+        ):
+            answer = row[answer_field]
+            link = f" [[source]]({row[source_field]})" if row[source_field] else ""
+            st.markdown(f"- {label}: **{answer}**{link}")
+        st.caption(
+            "Not disclosed means the public record is silent, which is the default. It is "
+            "not a finding that the thing was missing."
+        )
     with right:
         st.markdown("**Failure pattern**")
         st.markdown(f"{esc(row['failure_pattern'])}")
@@ -862,11 +919,16 @@ def screen_method(frame, rules):
 
     st.markdown("### Naming policy")
     st.markdown(
-        "Deployers and vendors are named, because the public record names them and because "
-        "a register of anonymous cases cannot be checked. Individuals are not named, "
-        "including the people who found these failures and the staff involved, even where "
-        "reporting names them. The one exception is a named party to a published legal or "
-        "regulatory decision, where the name is part of the citation."
+        "**This policy governs people who appear in the cases.** Deployers and vendors are "
+        "named, because the public record names them and a register of anonymous cases "
+        "cannot be checked. Individuals in the cases are not named, including the people "
+        "who found these failures and the staff involved, even where reporting names them. "
+        "The one exception is a named party to a published legal or regulatory decision, "
+        "where the name is part of the citation.\n\n"
+        "**Contributors to the register are a separate matter and are named with their "
+        "consent.** A reviewer who reads this cold is doing work in their own name and "
+        "should get the credit for it, which is the opposite of the situation the policy "
+        "above protects against."
     )
 
     st.markdown("### The watch list")
@@ -1042,6 +1104,16 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.6 | 2026-10-08 | Correctness and deployment round. Extended the "
+        "re-evaluation rule from severity to every field derived from the facts, enforced "
+        "by a pair of dates. Re-checked AIR-009's class after its causal account changed "
+        "and found it holds, because Vendor is tested before Oversight and still matches, "
+        "with the headline unaffected either way. Wrote AIR-009's inclusion rationale onto "
+        "its card rather than leaving it assumed. Led the aftermath finding on the three "
+        "cases that show its direction instead of on the count. Separated the naming "
+        "policy for people in the cases from contributors to the register. Added the three "
+        "deployment questions as coded fields, where Not disclosed is the default and both "
+        "Yes and No require a source. |\n"
         "| 0.9.5 | 2026-10-08 | Schema round, building four fields that were specified "
         "early and never made it in while the project was busy correcting itself. Split "
         "the single owner into the role that runs the control and the role that answers "

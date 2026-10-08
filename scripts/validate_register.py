@@ -34,20 +34,28 @@ from urllib.parse import urlparse
 
 FIELDS = [
     "id", "title", "event_date", "deployer", "sector", "agent_type", "what_happened",
-    "incident_or_hazard", "harm_type", "harm_borne_by", "could_have_prevented",
-    "harm_bearer_had_control", "severity", "severity_basis", "authority",
-    "human_approval", "failure_pattern", "owasp_code", "said_something_untrue",
-    "control_class", "control_maturity", "missing_control", "test_before_launch",
-    "test_pass_mark", "signal_after_launch", "nist_800_4_category",
-    "control_owner_role", "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act",
-    "what_changed_after", "disputed", "aftermath_status", "aftermath_source_url",
-    "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
-    "source_2_url", "date_checked",
+    "why_in_register", "incident_or_hazard", "harm_type", "harm_borne_by",
+    "could_have_prevented", "harm_bearer_had_control", "severity", "severity_basis",
+    "authority", "human_approval", "deploy_evidence_seen", "deploy_evidence_source",
+    "deploy_stop_authority", "deploy_stop_authority_source", "deploy_review_date",
+    "deploy_review_date_source", "failure_pattern", "owasp_code",
+    "said_something_untrue", "control_class", "control_maturity", "missing_control",
+    "test_before_launch", "test_pass_mark", "signal_after_launch",
+    "nist_800_4_category", "control_owner_role", "accountable_role", "nist_ai_rmf",
+    "iso_42001", "eu_ai_act", "what_changed_after", "disputed", "aftermath_status",
+    "aftermath_source_url", "evidence_grade", "source_1_label", "source_1_url",
+    "source_2_label", "source_2_url", "date_checked", "facts_changed_at",
+    "derived_rechecked_at",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
 # else must carry a value.
-OPTIONAL_FIELDS = {"source_2_label", "source_2_url"}
+OPTIONAL_FIELDS = {
+    "source_2_label", "source_2_url",
+    # A deployment source is empty exactly when its answer is "Not disclosed", which is
+    # checked by rule below rather than by presence.
+    "deploy_evidence_source", "deploy_stop_authority_source", "deploy_review_date_source",
+}
 
 # ---- fixed vocabularies ----
 # These exist so that a count means the same thing in every row. If a new row needs a
@@ -116,6 +124,23 @@ AFTERMATH_STATES = {"Documented", "Partial", "Undocumented"}
 # operating is not a missing control.
 CONTROL_MATURITY = {"Absent", "Designed", "Implemented", "Operating", "Unknown"}
 HARM_CONTROL_STATES = {"Yes", "No", "Partly"}
+
+# Whether accountability was locatable when the agent went live. These ask whether the
+# thing existed and could be found, not whether it worked. Whether a control held is
+# carried by control_maturity, and the two are kept apart on purpose: a review date that
+# existed and was ignored is a different finding from one that was never set.
+#
+# "Not disclosed" is the default and the correct answer whenever the record is silent.
+# Both "Yes" and "No" require a source, because "No" is a claim that something was
+# absent, not a note that nothing turned up. Coding "No" from a failed search would mean
+# accusing a deployer of having had no stop authority on no evidence, which is the exact
+# drift this register has already had to correct twice.
+DEPLOY_STATES = {"Yes", "No", "Not disclosed"}
+DEPLOY_PAIRS = (
+    ("deploy_evidence_seen", "deploy_evidence_source"),
+    ("deploy_stop_authority", "deploy_stop_authority_source"),
+    ("deploy_review_date", "deploy_review_date_source"),
+)
 
 # Aggregators are how cases are found. They are never the evidence for one. An index of
 # other people's reporting is weaker than the reporting, and citing the index hides which
@@ -348,6 +373,45 @@ def validate_rows(report, rows, today):
                 "show who runs the control and who answers when it fails. If they are "
                 "genuinely one role, say so in the text rather than duplicating the cell",
             )
+        for answer_field, source_field in DEPLOY_PAIRS:
+            answer = row[answer_field].strip()
+            source = row[source_field].strip()
+            if answer not in DEPLOY_STATES:
+                report.error(f"{where}.{answer_field}", f"must be one of {sorted(DEPLOY_STATES)}")
+                continue
+            if answer in {"Yes", "No"} and not source:
+                report.error(
+                    f"{where}.{answer_field}",
+                    f"is '{answer}' with no source. Both answers are claims about the "
+                    "record and need a link. Use 'Not disclosed' when the record is silent",
+                )
+            if answer == "Not disclosed" and source:
+                report.error(
+                    f"{where}.{source_field}",
+                    "has a source but the answer is 'Not disclosed'. If a source says "
+                    "something, the answer is Yes or No",
+                )
+            if source and not source.startswith("https://"):
+                report.error(f"{where}.{source_field}", f"'{source}' is not an https link")
+
+        # Everything computed from what_happened has to be re-examined when the facts
+        # move. Severity already had this rule. This extends it to the derived fields the
+        # headline actually counts.
+        changed = parse_date(row["facts_changed_at"])
+        rechecked = parse_date(row["derived_rechecked_at"])
+        if changed is None:
+            report.error(f"{where}.facts_changed_at", "is not an ISO date")
+        if rechecked is None:
+            report.error(f"{where}.derived_rechecked_at", "is not an ISO date")
+        if changed and rechecked and rechecked < changed:
+            report.error(
+                where,
+                f"facts changed on {changed} but the derived fields were last re-checked "
+                f"on {rechecked}. control_class, said_something_untrue, "
+                "incident_or_hazard and severity all depend on the facts and must be "
+                "re-examined when they move",
+            )
+
         if row["said_something_untrue"] not in UNTRUE_STATES:
             report.error(f"{where}.said_something_untrue", "must be Yes or No")
 
