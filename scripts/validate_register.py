@@ -35,12 +35,12 @@ from urllib.parse import urlparse
 FIELDS = [
     "id", "title", "event_date", "deployer", "sector", "agent_type",
     "what_happened", "incident_or_hazard", "harm_type", "severity",
-    "authority", "human_approval",
+    "severity_basis", "authority", "human_approval",
     "failure_pattern", "owasp_code", "said_something_untrue", "control_class", "missing_control",
     "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "owner_role",
     "nist_ai_rmf", "iso_42001", "eu_ai_act",
-    "what_changed_after", "disputed", "aftermath_source_url",
+    "what_changed_after", "disputed", "aftermath_status", "aftermath_source_url",
     "evidence_grade", "source_1_label", "source_1_url",
     "source_2_label", "source_2_url", "date_checked",
 ]
@@ -102,6 +102,12 @@ APPROVAL_STATES = {"Yes", "No", "Unknown", "Yes, bypassed"}
 # rather than argued about. A row where the agent stated nothing untrue cannot become an
 # accuracy failure under any ordering of the rubric.
 UNTRUE_STATES = {"Yes", "No"}
+
+# How completely the ending is on the record. An audit of endings in v0.9.4 found that
+# several rows stopped at the dramatic moment: the failure was news, the recovery was a
+# postmortem nobody aggregated. Recording this makes the bias countable rather than
+# merely confessed, and forces a row to say when it does not know how the story ended.
+AFTERMATH_STATES = {"Documented", "Partial", "Undocumented"}
 
 # Aggregators are how cases are found. They are never the evidence for one. An index of
 # other people's reporting is weaker than the reporting, and citing the index hides which
@@ -301,6 +307,19 @@ def validate_rows(report, rows, today):
             report.error(f"{where}.human_approval", f"'{row['human_approval']}' is not one of {sorted(APPROVAL_STATES)}")
         if row["disputed"] not in YES_NO:
             report.error(f"{where}.disputed", "must be Yes or No")
+        if row["aftermath_status"] not in AFTERMATH_STATES:
+            report.error(f"{where}.aftermath_status", f"must be one of {sorted(AFTERMATH_STATES)}")
+        # A row that does not know how the story ended has to say so in the text, not
+        # leave the reader with the failure as the last word.
+        if row["aftermath_status"] in {"Partial", "Undocumented"}:
+            text = row["what_changed_after"].lower()
+            if not any(p in text for p in ("not on the public record", "not documented", "nothing further")):
+                report.error(
+                    where,
+                    f"aftermath_status is {row['aftermath_status']} but what_changed_after "
+                    "does not tell the reader the ending is unknown. Stopping at the "
+                    "failure overstates the harm",
+                )
         if row["said_something_untrue"] not in UNTRUE_STATES:
             report.error(f"{where}.said_something_untrue", "must be Yes or No")
 

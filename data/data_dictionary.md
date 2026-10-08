@@ -1,6 +1,6 @@
 # Data dictionary
 
-One file, `incidents.csv`, 34 fields, one row per case. The app computes every number
+One file, `incidents.csv`, 36 fields, one row per case. The app computes every number
 it shows from this file, so a change here changes the site. `scripts/validate_register.py`
 enforces everything below and fails the build if a row stops obeying it.
 
@@ -65,6 +65,8 @@ text. The Method page says so on the page itself.
 | Field | Allowed values | Notes |
 | --- | --- | --- |
 | `what_changed_after` | Free text | What the deployer did or said. Their position goes here even when it contradicts the reporting, and especially then. |
+| `severity_basis` | Free text, one or two sentences | Which clause of the severity scale this row actually meets. Added because AIR-003's account changed materially and its rating was held without anyone saying why. A rating with no stated basis cannot be re-checked when the facts move, so **severity must be re-evaluated and this field updated whenever `what_happened` changes.** |
+| `aftermath_status` | `Documented`, `Partial`, `Undocumented` | How completely the ending is on the record. A `Partial` or `Undocumented` row **must** say so in `what_changed_after`, and the validator rejects it otherwise. Stopping at the failure overstates the harm. |
 | `aftermath_source_url` | `https://` URL | Which source carries the `what_changed_after` claim. The deployer's response is a **separate claim** from the incident, so it gets a named citation rather than an assumption that the incident sources happen to cover it. Usually this is `source_1_url` or `source_2_url`, named explicitly. Where neither covers it, it is a third link. Required on every row. |
 | `evidence_grade` | `A`, `B`, `C` | See below. Only A and B feed a number anywhere on the site. |
 | `source_1_label` | Free text | The most authoritative source. For grade A this must name a primary record. |
@@ -83,6 +85,20 @@ text. The Method page says so on the page itself.
 
 Where the deployer confirmed the event but the harm is known only from reporting, the
 row stays at B rather than rising to A.
+
+## Endings are evidence too
+
+An audit in v0.9.4 found that rows stopped at the dramatic moment. One said a database
+and its backups were destroyed and the newest copy was three months old. The platform
+had published a postmortem saying the data was recovered two and a half days later.
+
+The error had a direction. Failures generate news, recoveries generate at most a
+postmortem on a vendor's own blog, so a register built from public sources will tend to
+**overstate** harm. That is the opposite of the error a register of failures is usually
+accused of, and it is the one this project's fairness bar specifically claims to avoid.
+
+Hence `aftermath_status`, a required citation for the deployer response, and a validator
+rule that refuses a row whose ending is unknown unless the row says so plainly.
 
 ## Aggregators are not evidence
 

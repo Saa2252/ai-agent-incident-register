@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.3"
+VERSION = "0.9.4"
 UPDATED = "8 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -191,6 +191,9 @@ def headline(frame):
         "would_change_class": int(said_untrue.sum() - accuracy),
         "said_nothing_untrue": int((~said_untrue).sum()),
         "said_untrue": int(said_untrue.sum()),
+        "aftermath_documented": int((counted["aftermath_status"] == "Documented").sum()),
+        "aftermath_partial": int((counted["aftermath_status"] == "Partial").sum()),
+        "aftermath_undocumented": int((counted["aftermath_status"] == "Undocumented").sum()),
         "no_approval": int((counted["human_approval"] != "Yes").sum()),
         "could_act": int(acted.sum()),
         "read_only": int((~acted).sum()),
@@ -303,6 +306,16 @@ def screen_home(frame, rules):
         "no record behind them.** Confident, detailed, cited to each other, traceable to "
         "nothing."
     )
+    st.markdown(
+        "A fourth observation came later, from auditing how each of these stories ended. "
+        f"**{facts['aftermath_documented']} of the {facts['total']} counted cases have a "
+        f"fully documented ending. {facts['aftermath_partial']} stop part way and "
+        f"{facts['aftermath_undocumented']} has no recorded ending at all.** "
+        "When this register was first built, one row said a company's database was "
+        "destroyed and the newest backup was three months old. The platform had published "
+        "a postmortem saying the data was recovered two and a half days later. The "
+        "destruction was news. The recovery was a postmortem nobody aggregated."
+    )
     st.info(
         "**Who documents a failure determines which failures exist on paper.** Every "
         "register of AI incidents, this one included, is a map of the documentation "
@@ -310,6 +323,14 @@ def screen_home(frame, rules):
         "are overrepresented in every count anyone publishes, and the ones handled quietly "
         "between a vendor and a customer are absent from all of them.",
         icon="🔍",
+    )
+    st.markdown(
+        "That bias has a direction as well as a shape. Failures generate coverage and "
+        "recoveries generate, at best, a postmortem on a vendor's own blog. So every "
+        "register of incidents, including this one before it was checked, will tend to "
+        "overstate harm rather than understate it. Each row here now records how "
+        "completely its ending is known, and says so on the card when the record stops "
+        "early."
     )
     st.markdown(
         "That has a practical edge for anyone reading this to decide where to look. The "
@@ -387,6 +408,7 @@ def incident_card(row):
         st.caption(f"OWASP Agentic Top 10 2026: {row['owasp_code']}, {OWASP_CODES[row['owasp_code']]}")
         st.markdown(f"**Harm:** {esc(row['harm_type'])}")
         st.caption(f"{row['severity']} on this register's scale means: {SEVERITY_MEANING[row['severity']][0].lower()}{SEVERITY_MEANING[row['severity']][1:]}")
+        st.caption(f"**Why this row meets it.** {esc(row['severity_basis'])}")
 
     st.error(f"**The missing control.** {esc(row['missing_control'])}", icon="🚫")
     st.warning(
@@ -403,6 +425,12 @@ def incident_card(row):
 
     st.markdown("**What changed after**")
     st.markdown(esc(row["what_changed_after"]))
+    if row["aftermath_status"] != "Documented":
+        st.markdown(
+            f":orange[**The ending is {row['aftermath_status'].lower()}.** The public record "
+            "stops before this story does. Read the harm above as what was reported, not "
+            "as what finally happened.]"
+        )
     if row["aftermath_source_url"]:
         same = row["aftermath_source_url"] in (row["source_1_url"], row["source_2_url"])
         which = "Source 1 below" if row["aftermath_source_url"] == row["source_1_url"] else (
@@ -966,6 +994,13 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.4 | 2026-10-08 | Audit of endings, prompted by AIR-003 turning out to "
+        "overstate harm. Checked how every story finished. Found that the Drift product "
+        "was retired rather than merely disabled, that the eating disorder helpline was "
+        "taken over by another charity and still runs, and that the healthcare vendor "
+        "denied wrongdoing, which the row had omitted. Added a recorded completeness "
+        "status for every ending, a stated basis for every severity rating, and a "
+        "validator rule that refuses a row whose ending is unknown unless it says so. |\n"
         "| 0.9.3 | 2026-10-08 | Audit round. Added an aggregator denylist to the validator "
         "after finding the previous round's audit had been unsystematic and had missed a "
         "violation it introduced itself. Gave every row a named citation for its deployer "
