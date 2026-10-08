@@ -34,7 +34,7 @@ APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
 VERSION = "0.9.7"
-UPDATED = "8 October 2026"
+UPDATED = "9 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
@@ -1143,7 +1143,7 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
-        "| 0.9.7 | 2026-10-08 | Framing round. Withdrew a nine second figure from the home "
+        "| 0.9.7 | 2026-10-09 | Framing round. Withdrew a nine second figure from the home "
         "screen: it was attributed to a platform postmortem that does not contain it, and "
         "it was being used to mean an intervention window, which no source establishes. "
         "Reframed the deployment counts as statements about the public record rather than "
