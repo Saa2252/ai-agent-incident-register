@@ -140,9 +140,18 @@ quietly over months, and the rows most likely to rot are news reports rather tha
 rulings. And several publishers block automated access from some hosts entirely, so for
 those sources the archived copy is the one a reader can actually open.
 
-The archiver merges and never replaces. An earlier version overwrote the column from
-whatever the availability API returned that minute, and silently deleted snapshots that
-had already been recorded.
+The archiver merges and never replaces, and it re-reads the file immediately before
+writing so it touches only the `archive_urls` column. Both of those rules exist because
+earlier versions broke them.
+
+The first version overwrote the column from whatever the availability API returned that
+minute, and silently deleted snapshots already recorded. It was caught because the
+archived count went **down** between runs.
+
+The second version took minutes to run and then wrote back the copy of the file it had
+read at the start, reverting a hand-written correction to one row's account that had
+been made while it ran. It was caught by diffing against the last commit before
+committing, which is now worth doing after any long-running script touches the data.
 
 ## Endings are evidence too
 

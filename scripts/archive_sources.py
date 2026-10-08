@@ -123,10 +123,29 @@ def main(argv):
     if check_only:
         print("\n--check-only: nothing written.")
     else:
+        # Re-read immediately before writing and touch only archive_urls.
+        #
+        # This run can take many minutes. Anything that edited the CSV meanwhile would be
+        # silently reverted if the stale copy held in memory were written back wholesale.
+        # That is not hypothetical: an earlier version of this script did exactly that and
+        # reverted a hand-written correction to one row's account.
+        found = {row["id"]: row["archive_urls"] for row in rows}
+        with open(csv_path, newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            current_fields = list(reader.fieldnames)
+            current = list(reader)
+        if "archive_urls" not in current_fields:
+            current_fields.append("archive_urls")
+        for row in current:
+            merged = [a for a in row.get("archive_urls", "").split() if a]
+            for snapshot in found.get(row["id"], "").split():
+                if snapshot not in merged:
+                    merged.append(snapshot)
+            row["archive_urls"] = " ".join(merged)
         with open(csv_path, "w", newline="", encoding="utf-8") as fh:
-            writer = csv.DictWriter(fh, fieldnames=fields)
+            writer = csv.DictWriter(fh, fieldnames=current_fields)
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows(current)
 
     total = sum(len(r["archive_urls"].split()) for r in rows if r["archive_urls"])
     print(f"\n{total} archived snapshots recorded across {len(rows)} rows.")
