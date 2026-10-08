@@ -68,6 +68,16 @@ of this stops being true.
 - **No em dashes, no semicolons, no double hyphens,** in any field or any rule. The
   register should read as though a person wrote it, because a person did.
 
+## Install the hooks
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+One pre-commit hook, which stamps the page's own "last updated" date from the commit
+rather than from somebody remembering. The validator still refuses a stale date, but as
+a backstop for a clone without the hook installed, not as the mechanism.
+
 ## Run it
 
 ```bash

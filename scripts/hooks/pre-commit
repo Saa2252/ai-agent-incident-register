@@ -1,0 +1,33 @@
+#!/bin/sh
+# Stamp the page's own "last updated" date from the commit, not from memory.
+#
+# The validator refuses a stated date older than the newest commit. That rule can only
+# ever fire after the fact, because a check run before committing cannot see the date of
+# the commit it is about to make. CI caught a stale date exactly that way once.
+#
+# So this removes the need for the rule rather than sharpening it. The field is derived
+# from the act of committing, and the validator becomes a backstop for the case where
+# somebody commits without the hook installed.
+#
+# Install, from the repository root:
+#     git config core.hooksPath scripts/hooks
+
+set -e
+
+# Nothing staged that would change what a reader sees? Leave the date alone.
+if git diff --cached --quiet -- app.py data rules scripts README.md; then
+    exit 0
+fi
+
+today_iso=$(date +%Y-%m-%d)
+today_human=$(date "+%-d %B %Y")
+current=$(sed -n 's/^UPDATED = "\(.*\)"$/\1/p' app.py)
+
+if [ "$current" = "$today_human" ]; then
+    exit 0
+fi
+
+# Portable in-place edit. BSD sed on macOS needs the empty argument after -i.
+sed -i.bak "s/^UPDATED = \".*\"$/UPDATED = \"$today_human\"/" app.py && rm -f app.py.bak
+git add app.py
+echo "pre-commit: stamped UPDATED as $today_human (was $current, commit date $today_iso)"

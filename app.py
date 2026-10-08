@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.7"
+VERSION = "0.9.8"
 UPDATED = "9 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -1091,6 +1091,17 @@ def screen_method(frame, rules):
         "legal advice.\n"
         "- **Tests are not proof.** Every test on this site is a test that would have caught "
         "the specific failure described. Passing all of them does not make an agent safe.\n"
+        "- **This register has already produced its own example of a control that was "
+        "implemented and not operating.** The repository has a validator, a test suite and "
+        "a green build. While all three were passing, a maintenance script was writing back "
+        "a stale copy of the data file and silently reverting edits made while it ran. One "
+        "published commit carried a reverted account of AIR-001, with a fact in the "
+        "deployer's favour missing from it, and the build was green throughout. Nothing in "
+        "the checks was watching for it, because the checks validate the file's contents "
+        "and not whether the contents are the ones somebody meant to write. An audit of "
+        "every commit that touched the data has since bounded the damage to that one row, "
+        "two fields and one commit. The register codes that failure mode as Implemented in "
+        "other people's systems, and it is the honest label for this one.\n"
         "- **The clause references have not been line-checked against every official text.** "
         "The NIST AI RMF and the EU AI Act are public and were used directly. ISO/IEC 42001 "
         "is paywalled, and the Annex A control numbers here come from the standard's "
@@ -1143,6 +1154,12 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.8 | 2026-10-09 | Audit and hygiene round. Walked every commit that touched "
+        "the data file looking for edits lost to the archiver's stale writes, and bounded "
+        "the damage to one row, two fields and one published commit. Moved the page's own "
+        "updated date from hand maintenance to a commit hook, so the validator rule "
+        "becomes a backstop rather than the mechanism. Recorded in the limits that this "
+        "repository produced its own implemented-and-not-operating failure. |\n"
         "| 0.9.7 | 2026-10-09 | Framing round. Withdrew a nine second figure from the home "
         "screen: it was attributed to a platform postmortem that does not contain it, and "
         "it was being used to mean an intervention window, which no source establishes. "
