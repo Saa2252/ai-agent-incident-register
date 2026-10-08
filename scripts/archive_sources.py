@@ -31,15 +31,21 @@ PAUSE = 6  # the Save Page Now endpoint is strict about pacing
 
 
 def existing_snapshot(url):
-    """Return the newest snapshot the Wayback Machine already holds, or None."""
+    """Return (snapshot_url_or_None, reachable).
+
+    `reachable` is False when the availability API itself failed, which is almost always
+    rate limiting after a few runs rather than an absent snapshot. The two cases are
+    reported differently so nobody concludes a source cannot be archived when the truth
+    is that the lookup was throttled.
+    """
     try:
         request = urllib.request.Request(AVAILABLE + urllib.parse.quote(url, safe=""), headers=HEADERS)
         with urllib.request.urlopen(request, timeout=30) as response:
             data = json.load(response)
     except Exception:  # noqa: BLE001
-        return None
+        return None, False
     snap = data.get("archived_snapshots", {}).get("closest") or {}
-    return snap.get("url") if snap.get("available") else None
+    return (snap.get("url") if snap.get("available") else None), True
 
 
 def request_snapshot(url):
@@ -75,6 +81,7 @@ def main(argv):
         fields.append("archive_urls")
 
     seen = {}
+    throttled = []
     for row in rows:
         archived = []
         urls = []
@@ -87,7 +94,12 @@ def main(argv):
                 archived.append(seen[url])
                 continue
             print(f"  {row['id']}  {url[:78]}")
-            snapshot = existing_snapshot(url)
+            snapshot, reachable = existing_snapshot(url)
+            if not reachable:
+                print("      lookup throttled. Existing snapshot kept, try again later")
+                throttled.append(row["id"])
+                time.sleep(PAUSE)
+                continue
             if snapshot:
                 print(f"      already archived")
             elif not check_only:
@@ -118,6 +130,9 @@ def main(argv):
 
     total = sum(len(r["archive_urls"].split()) for r in rows if r["archive_urls"])
     print(f"\n{total} archived snapshots recorded across {len(rows)} rows.")
+    if throttled:
+        print(f"Lookups throttled on: {', '.join(sorted(set(throttled)))}. "
+              "Wait a few minutes and run again.")
     missing = [r["id"] for r in rows if not r["archive_urls"]]
     if missing:
         print(f"No snapshot yet for: {', '.join(missing)}")
