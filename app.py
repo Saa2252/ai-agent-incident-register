@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.9"
+VERSION = "0.9.10"
 UPDATED = "9 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -534,11 +534,8 @@ def incident_card(row):
     st.markdown("**What happened**")
     st.markdown(esc(row["what_happened"]))
 
-    with st.expander("Why is this in the register?"):
-        st.markdown(esc(row["why_in_register"]))
-        st.caption(
-            "The scope line is on the Method page. This is that line applied to this row."
-        )
+    st.info(f"**Why is this in the register?** {esc(row['why_in_register'])}", icon="🔍")
+    st.caption("The scope line is on the Method page. This is that line applied to this row.")
 
     left, right = st.columns(2)
     with left:
@@ -1190,8 +1187,10 @@ def screen_method(frame, rules):
         "the checks was watching for it, because the checks validate the file's contents "
         "and not whether the contents are the ones somebody meant to write. An audit of "
         "every commit that touched the data has since bounded the damage to that one row, "
-        "two fields and one commit. The register codes that failure mode as Implemented in "
-        "other people's systems, and it is the honest label for this one.\n"
+        "two fields and one commit. It happened twice: a crash on the register screen also "
+        "survived six green builds, because the build parsed the app and never rendered "
+        "it. The register codes that failure mode as Implemented in other people's "
+        "systems, and it is the honest label for both of these.\n"
         "- **The clause references have not been line-checked against every official text.** "
         "The NIST AI RMF and the EU AI Act are public and were used directly. ISO/IEC 42001 "
         "is paywalled, and the Annex A control numbers here come from the standard's "
@@ -1244,6 +1243,12 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.10 | 2026-10-09 | Fixed a crash on the register screen. A block inside each "
+        "incident card used an expander, and the card is itself rendered inside one, "
+        "which Streamlit refuses. Every card open raised for six commits while the build "
+        "stayed green, because the build parsed the app and never ran it. Added a "
+        "headless render of all four screens to CI, and checked that it catches the "
+        "original bug when the bug is put back. |\n"
         "| 0.9.9 | 2026-10-09 | Pre-launch round. Marked how the register knows each "
         "missing control, in three tiers, and published the distribution as a statistic "
         "rather than a disclaimer. Left the test and signal columns unmarked, because "

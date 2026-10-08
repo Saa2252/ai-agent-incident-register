@@ -19,7 +19,10 @@ jobs:
         run: python3 rules/evaluate.py
       - name: Run the control tests
         run: python3 -m unittest discover tests
-      - name: Import the app without starting a server
+      - name: Render every screen headlessly
+        # Parsing app.py was never enough. A nested expander shipped for six commits
+        # with this job green, because nothing here ran the page. This renders all four
+        # screens and opens an incident card.
         run: |
           python3 -m pip install --quiet -r requirements.txt
-          python3 -c "import ast; ast.parse(open('app.py').read())"
+          python3 scripts/smoke_test.py .

@@ -86,12 +86,18 @@ python3 -m venv .venv
 .venv/bin/streamlit run app.py
 ```
 
-Check the data and the rules:
+Check the data, the rules and the pages:
 
 ```bash
 python3 scripts/validate_register.py .
 python3 rules/evaluate.py
+python3 -m unittest discover tests
+python3 scripts/smoke_test.py .
 ```
+
+The smoke test renders all four screens headlessly and opens an incident card. It exists
+because parsing `app.py` was never enough: a nested expander crashed the register screen
+for six commits while CI stayed green, since nothing in the build ran the page.
 
 Check that every source link still resolves. This is deliberately not in CI, because a
 link check that fails on somebody's rate limit trains you to ignore a red build:
@@ -134,6 +140,9 @@ rules/watchlist_rules.json    Six questions, 18 fixed rules. Readable without ru
 rules/evaluate.py             Applies the rules. Pure stdlib, with a self-test.
 scripts/validate_register.py  The method as code. Runs in CI.
 scripts/check_links.py        Link checker. Run by hand.
+scripts/smoke_test.py         Renders every screen headlessly. Runs in CI.
+scripts/archive_sources.py    Wayback snapshots for every source. Run by hand.
+scripts/hooks/pre-commit      Stamps the page's own updated date from the commit.
 scripts/keepalive.py          Wakes the published app and checks it rendered. CI only.
 tests/                        Three cases turned into tests that run. Stdlib, no model calls.
 ```
