@@ -1,6 +1,6 @@
 # Data dictionary
 
-One file, `incidents.csv`, 50 fields, one row per case. The app computes every number
+One file, `incidents.csv`, 52 fields, one row per case. The app computes every number
 it shows from this file, so a change here changes the site. `scripts/validate_register.py`
 enforces everything below and fails the build if a row stops obeying it.
 
@@ -35,6 +35,7 @@ Three conventions apply to every field.
 | `failure_pattern` | Free text, one line | The primary pattern in plain words. |
 | `owasp_code` | `ASI01` to `ASI10` | OWASP Top 10 for Agentic Applications 2026, published 9 December 2025. One code per row. |
 | `said_something_untrue` | `Yes`, `No` | Did the agent itself state something untrue? Recorded **independently of `control_class`**, so the rubric's ordering can be measured rather than argued about. A `No` row cannot become an accuracy failure under any ordering, which makes the count of them an order-independent floor under the headline. A row classed `Accuracy` with `No` here is a contradiction and the validator rejects it. |
+| `secondary_class` | Same vocabulary, or blank | The reading the ordered rubric **discarded**. Blank where the case has one clean reading. **Never counted in any figure.** It exists because first-match-wins twice threw away a classification already identified as real: AIR-009 is a vendor failure and also an oversight one, and Vendor simply gets tested first. Must differ from `control_class`. |
 | `control_class` | `Accuracy`, `Authority`, `Boundary`, `Oversight`, `Vendor` | What the missing control governed. **This is the field the headline finding counts.** One per row, assigned by the ordered rubric on the Method page. |
 | `disputed` | `Yes`, `No` | `Yes` means the deployer publicly contests the facts. A `Yes` row must carry the deployer's position in `what_changed_after`, and the validator checks for it. |
 
@@ -128,6 +129,20 @@ Severity already had this rule via `severity_basis`. It now covers everything co
 from `what_happened`: `control_class` (which the headline counts),
 `said_something_untrue`, `incident_or_hazard` and `severity`. When the facts of a case
 move, those four have to be re-examined, not assumed to survive.
+
+## Archived copies
+
+`archive_urls` holds Wayback Machine snapshots for every source on the row, written by
+`scripts/archive_sources.py`. The validator **warns** on a row with no snapshot.
+
+Two reasons this matters more than it looks. Link rot breaks the two-clicks claim
+quietly over months, and the rows most likely to rot are news reports rather than
+rulings. And several publishers block automated access from some hosts entirely, so for
+those sources the archived copy is the one a reader can actually open.
+
+The archiver merges and never replaces. An earlier version overwrote the column from
+whatever the availability API returned that minute, and silently deleted snapshots that
+had already been recorded.
 
 ## Endings are evidence too
 

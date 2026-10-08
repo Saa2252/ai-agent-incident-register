@@ -39,13 +39,13 @@ FIELDS = [
     "authority", "human_approval", "deploy_evidence_seen", "deploy_evidence_source",
     "deploy_stop_authority", "deploy_stop_authority_source", "deploy_review_date",
     "deploy_review_date_source", "failure_pattern", "owasp_code",
-    "said_something_untrue", "control_class", "control_maturity", "missing_control",
-    "test_before_launch", "test_pass_mark", "signal_after_launch",
+    "said_something_untrue", "control_class", "secondary_class", "control_maturity",
+    "missing_control", "test_before_launch", "test_pass_mark", "signal_after_launch",
     "nist_800_4_category", "control_owner_role", "accountable_role", "nist_ai_rmf",
     "iso_42001", "eu_ai_act", "what_changed_after", "disputed", "aftermath_status",
     "aftermath_source_url", "evidence_grade", "source_1_label", "source_1_url",
     "source_2_label", "source_2_url", "date_checked", "facts_changed_at",
-    "derived_rechecked_at",
+    "derived_rechecked_at", "archive_urls",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -55,6 +55,11 @@ OPTIONAL_FIELDS = {
     # A deployment source is empty exactly when its answer is "Not disclosed", which is
     # checked by rule below rather than by presence.
     "deploy_evidence_source", "deploy_stop_authority_source", "deploy_review_date_source",
+    # Blank where the case has one clean reading and no genuine second one.
+    "secondary_class",
+    # Filled by scripts/archive_sources.py. A row may legitimately have no snapshot yet
+    # if the Wayback Machine refused the capture, which is reported as a warning.
+    "archive_urls",
 }
 
 # ---- fixed vocabularies ----
@@ -253,6 +258,13 @@ def check_evidence(report, where, row):
         if label and url:
             sources.append((label, url))
 
+    if not row.get("archive_urls", "").strip():
+        report.warn(
+            where,
+            "no archived snapshot. Run scripts/archive_sources.py. A live link is not a "
+            "durable one, and the rows most likely to rot are the news reports",
+        )
+
     for label, url in sources:
         parsed = urlparse(url)
         if parsed.scheme != "https" or not parsed.netloc:
@@ -330,6 +342,16 @@ def validate_rows(report, rows, today):
             report.error(f"{where}.incident_or_hazard", f"must be one of {sorted(KINDS)}")
         if row["severity"] not in SEVERITIES:
             report.error(f"{where}.severity", f"'{row['severity']}' is not one of {sorted(SEVERITIES)}")
+        second = row["secondary_class"].strip()
+        if second:
+            if second not in CONTROL_CLASSES:
+                report.error(f"{where}.secondary_class", f"'{second}' is not one of {sorted(CONTROL_CLASSES)}")
+            elif second == row["control_class"]:
+                report.error(
+                    where,
+                    "secondary_class repeats control_class. It exists to record the "
+                    "reading the ordered rubric discarded, not to restate the one it kept",
+                )
         if row["control_class"] not in CONTROL_CLASSES:
             report.error(f"{where}.control_class", f"'{row['control_class']}' is not one of {sorted(CONTROL_CLASSES)}")
         if row["nist_800_4_category"] not in NIST_800_4_CATEGORIES:

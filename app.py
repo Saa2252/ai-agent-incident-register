@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.6"
+VERSION = "0.9.7"
 UPDATED = "8 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -327,10 +327,11 @@ def screen_home(frame, rules):
         "Every row also records who bore the harm against who could have prevented it, and "
         "in all of them those are different people. On its own that is unremarkable, since "
         "it is true of most consumer harm. An airline passenger cannot fix airline policy "
-        "either. **What is specific to agents is the clock.** An agent acts for the "
-        "organisation at machine speed, so the window in which anybody could have "
-        "intervened was not a procurement cycle or a review board. In one of these cases "
-        "it was nine seconds from the agent deciding to the backups being gone."
+        "either. **What is specific to agents is that there was no moment to intervene "
+        "in.** In the destructive cases the agent went from hitting a problem to taking "
+        "the irreversible action inside a single uninterrupted task, with no checkpoint "
+        "where a person was asked anything. In one case the path required no user action "
+        "at all: an email nobody opened was enough."
     )
 
     st.markdown("---")
@@ -393,22 +394,34 @@ def screen_home(frame, rules):
     st.markdown("### A fourth instance, about what deployment records contain")
     st.markdown(
         "Each row was asked three questions about the moment the agent went into real "
-        "use. Was there a record that someone reviewed its behaviour beforehand. Was "
-        "there a record of a role that could halt or roll it back. Was there a record of "
-        "a date it would be looked at again."
+        "use, and each question is about **what the public record says**, not about what "
+        "the organisation did."
     )
     st.markdown(
-        f"| Question | Record is silent |\n| --- | --- |\n"
-        f"| Anyone reviewed its behaviour before launch | {facts['no_evidence_recorded']} of {facts['total']} |\n"
-        f"| Any role could halt or roll back the deployment | {facts['no_stop_authority_recorded']} of {facts['total']} |\n"
-        f"| Any date was set to look at it again | {facts['no_review_recorded']} of {facts['total']} |"
+        f"| Does the public record say whether... | Silent |\n| --- | --- |\n"
+        f"| anyone reviewed the agent's behaviour before launch | {facts['no_evidence_recorded']} of {facts['total']} |\n"
+        f"| any role could halt or roll back the deployment | {facts['no_stop_authority_recorded']} of {facts['total']} |\n"
+        f"| any date was set to re-examine it | {facts['no_review_recorded']} of {facts['total']} |"
+    )
+    st.error(
+        "**Read these as statements about the record, not about the deployers.** This "
+        f"register cannot and does not claim that {facts['no_review_recorded']} "
+        "organisations set no review date. Review dates are internal artefacts that "
+        "essentially never appear in press coverage, a tribunal ruling or a CVE. The "
+        "claim is only that the record does not say. Every row defaults to *not "
+        "disclosed*, and both *yes* and *no* require a source, because coding *no* from a "
+        "failed search would be an accusation on no evidence.",
+        icon="⚠️",
     )
     st.markdown(
-        "**This is a finding about incident reporting, not about the deployers.** Silence "
-        "in the record is not evidence that nobody could stop these systems. It is "
-        "evidence that nobody writes it down. Every row defaults to *not disclosed*, and "
-        "both *yes* and *no* require a source, because coding *no* from a failed search "
-        "would be accusing a deployer of something on no evidence."
+        f"**The gradient is the finding, more than any one number.** "
+        f"{facts['no_evidence_recorded']}, then {facts['no_stop_authority_recorded']}, "
+        f"then {facts['no_review_recorded']}. The more internal the governance artefact, "
+        "the less likely it survives into the public record. Evidence that someone "
+        "reviewed the thing sometimes surfaces, usually because a regulator went looking. "
+        "A named role that could halt it, rarely. A scheduled date to look again, never. "
+        "That shape says something about what incident reporting captures, and it is "
+        "harder to argue with than a bare hundred per cent."
     )
 
     st.markdown("---")
@@ -455,6 +468,7 @@ def incident_card(row):
         + badge(row["incident_or_hazard"], "#374151")
         + badge(f"{row['severity']} severity", SEVERITY_COLOR[row["severity"]])
         + badge(f"Missing control: {row['control_class']}", CLASS_COLOR[row["control_class"]])
+        + (badge(f"Also reads as: {row['secondary_class']}", "#6B7280") if row["secondary_class"] else "")
         + badge(f"Evidence grade {row['evidence_grade']}", GRADE_COLOR[row["evidence_grade"]])
         + badge(f"Control was {row['control_maturity'].lower()}", MATURITY_COLOR[row["control_maturity"]])
         + (badge("Facts disputed by the deployer", "#8A4B00") if row["disputed"] == "Yes" else "")
@@ -497,6 +511,13 @@ def incident_card(row):
         st.markdown("**Failure pattern**")
         st.markdown(f"{esc(row['failure_pattern'])}")
         st.caption(f"OWASP Agentic Top 10 2026: {row['owasp_code']}, {OWASP_CODES[row['owasp_code']]}")
+        if row["secondary_class"]:
+            st.caption(
+                f"This case also reads as a **{row['secondary_class']}** failure. The "
+                "rubric tests classes in a fixed order and takes the first match, so only "
+                f"**{row['control_class']}** is counted. The second reading is recorded "
+                "here because discarding it would lose something real."
+            )
         st.markdown(f"**Harm:** {esc(row['harm_type'])}")
         st.caption(f"{row['severity']} on this register's scale means: {SEVERITY_MEANING[row['severity']][0].lower()}{SEVERITY_MEANING[row['severity']][1:]}")
         st.caption(f"**Why this row meets it.** {esc(row['severity_basis'])}")
@@ -562,7 +583,16 @@ def incident_card(row):
     st.markdown(f"1. [{esc(row['source_1_label'])}]({row['source_1_url']})")
     if row["source_2_url"]:
         st.markdown(f"2. [{esc(row['source_2_label'])}]({row['source_2_url']})")
-    st.caption(f"Sources last checked {row['date_checked']}.")
+    archives = [a for a in row.get("archive_urls", "").split() if a]
+    if archives:
+        links = ", ".join(f"[{i}]({a})" for i, a in enumerate(archives, start=1))
+        st.caption(
+            f"Sources last checked {row['date_checked']}. Archived copies: {links}. "
+            "Some publishers block automated access, so the archived copy may be the one "
+            "that opens for you."
+        )
+    else:
+        st.caption(f"Sources last checked {row['date_checked']}. No archived copy yet.")
 
 
 def screen_register(frame):
@@ -861,6 +891,15 @@ def screen_method(frame, rules):
         "question you ask."
     )
 
+    st.markdown(
+        "Every row also carries a `secondary_class`: the reading the ordered rubric "
+        "discarded. It is recorded on the card, it is never counted anywhere, and it "
+        "exists because first-match-wins twice threw away a classification that had "
+        "already been identified as real. AIR-009 is the clearest: a vendor compromise "
+        "that nobody detected for months is an oversight failure as well as a vendor one, "
+        "and Vendor simply gets tested first."
+    )
+
     st.markdown("#### What that ordering does to the finding")
     facts = headline(frame)
     st.markdown(
@@ -1104,6 +1143,16 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.7 | 2026-10-08 | Framing round. Withdrew a nine second figure from the home "
+        "screen: it was attributed to a platform postmortem that does not contain it, and "
+        "it was being used to mean an intervention window, which no source establishes. "
+        "Reframed the deployment counts as statements about the public record rather than "
+        "about deployers, and led on the gradient across the three questions instead of "
+        "the bare hundred per cent. Added a secondary class to record the reading the "
+        "ordered rubric discards. Rewrote AIR-001's aftermath from the tribunal ruling "
+        "itself, read at last through an archived copy, which added a goodwill coupon the "
+        "airline had offered and the row had omitted. Added archived snapshots for every "
+        "source. |\n"
         "| 0.9.6 | 2026-10-08 | Correctness and deployment round. Extended the "
         "re-evaluation rule from severity to every field derived from the facts, enforced "
         "by a pair of dates. Re-checked AIR-009's class after its causal account changed "
