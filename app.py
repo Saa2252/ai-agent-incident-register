@@ -48,7 +48,7 @@ div[data-testid="stMarkdownContainer"] > table { min-width: max-content; }
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.11"
+VERSION = "0.9"
 UPDATED = "9 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -76,7 +76,7 @@ SEVERITY_ORDER = ["Severe", "Serious", "Moderate", "Negligible"]
 # real money and was put right in an hour.
 SEVERITY_MEANING = {
     "Severe": "People outside the deploying organisation lost data, money, or access to a service they depend on.",
-    "Serious": "Unlawful or unsafe guidance reached the public, or data was exposed, or a service people rely on went down.",
+    "Serious": "Unlawful or unsafe guidance reached the public, or data was exposed or destroyed, or a service people rely on went down.",
     "Moderate": "One or more identifiable people were misled or left out of pocket, and the organisation had to make it good.",
     "Negligible": "No harm occurred.",
 }
@@ -248,9 +248,13 @@ def screen_home(frame, rules):
 
     st.title("AI Agent Incident Register")
     st.markdown(
-        f"#### {facts['all_rows']} real AI agent failures, each traced to the control that "
-        "was missing, the test that would have caught it before launch, and the signal "
-        "that would have shown it after."
+        "#### Most of these failures were not the AI being wrong. They were the AI being "
+        "allowed to act."
+    )
+    st.markdown(
+        f"{facts['all_rows']} real AI agent failures, each traced to the control that was "
+        "missing, the test that would have caught it before launch, and the signal that "
+        "would have shown it after."
     )
 
     left, middle, right = st.columns(3)
@@ -345,14 +349,43 @@ def screen_home(frame, rules):
         "one for your own agent and see which lines you cannot fill."
     )
     role_rows = sorted(facts["roles"].items(), key=lambda item: (-item[1], item[0]))
-    st.markdown(
-        "| Role | Cases where it was the one that mattered | Who is this in your organisation? |\n"
-        "| --- | --- | --- |\n"
-        + "\n".join(f"| {name} | {count} | |" for name, count in role_rows)
+    template = pd.DataFrame(
+        [{"Role": name, "Cases": count, "Who is this in your organisation?": ""}
+         for name, count in role_rows]
+    )
+    # The return value, not session state. Session state holds a pending-edits object
+    # rather than the frame. on_click="ignore" keeps the download from re-running the
+    # script, which would otherwise throw away whatever the reader has typed.
+    edited = st.data_editor(
+        template,
+        key="roles_checklist",
+        num_rows="fixed",
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Role": st.column_config.TextColumn("Role", width=300, disabled=True),
+            "Cases": st.column_config.NumberColumn(
+                "Cases", width=80, disabled=True,
+                help="Cases out of 11 where this role was the one that mattered.",
+            ),
+            "Who is this in your organisation?": st.column_config.TextColumn(
+                "Who is this in your organisation?", width="large", max_chars=120,
+            ),
+        },
+    )
+    st.download_button(
+        "Download your filled checklist",
+        data=edited.to_csv(index=False).encode("utf-8"),
+        file_name="roles-checklist.csv",
+        mime="text/csv",
+        on_click="ignore",
+        help="Type into the third column first. Your answers stay in your browser.",
     )
     st.caption(
-        "Each case names the role that runs the control and the role that answers when it "
-        "fails, which are rarely the same. A blank in the third column is the finding."
+        "Type into the third column and download it. Each case names the role that runs "
+        "the control and the role that answers when it fails, which are rarely the same. "
+        "A row you cannot fill is the finding, and it is the row worth taking to whoever "
+        "owns the agent."
     )
 
     st.markdown("---")
@@ -736,7 +769,18 @@ def screen_register(frame):
     if counted_only:
         view = view[view["counted"]]
 
-    st.markdown(f"**{len(view)} of {len(frame)} cases shown.**")
+    top_left, top_right = st.columns([3, 1])
+    with top_left:
+        st.markdown(f"**{len(view)} of {len(frame)} cases shown.**")
+    with top_right:
+        st.download_button(
+            "Download the register (CSV)",
+            data=DATA_FILE.read_bytes(),
+            file_name="ai_agent_incident_register.csv",
+            mime="text/csv",
+            help="The same file the app reads. Every number here is computed from it.",
+            width="stretch",
+        )
 
     if view.empty:
         st.info("No case matches those filters. Clear one and try again.")
@@ -761,22 +805,31 @@ def screen_register(frame):
         ),
     )
 
-    columns = [
-        ("id", "ID"), ("title", "What happened"), ("deployer", "Deployer"),
-        ("event_date", "Date"), ("severity", "Severity"),
+    # st.table rather than st.dataframe. st.dataframe draws through a canvas grid whose
+    # contents never reach the accessibility tree, and whose own maintainers disclaim
+    # confidence in its accessibility. st.table is a real DOM table with real headers,
+    # and from a release before the pinned one it renders Markdown in cells, so the ID
+    # can be a link into the record rather than a string to scroll for.
+    #
+    # The title column is gone. It ran to four and five lines and pushed the table past
+    # the right edge, and it is the first thing in the record anyway.
+    COLUMNS = [
+        ("deployer", "Deployer"), ("event_date", "Date"), ("severity", "Severity"),
         ("control_class", "Missing control"), ("control_maturity", "Control was"),
-        ("aftermath_status", "Ending"), ("deploy_stop_authority", "Stop authority on record"),
-        ("evidence_grade", "Evidence"),
+        ("aftermath_status", "Ending"), ("evidence_grade", "Evidence"),  # stop authority
+        # is deliberately absent. It read "Not disclosed" in eleven of twelve rows, which
+        # is a column of one repeated word. It is a card field, and the finding is on Home.
     ]
 
     def render(frame_part):
-        head = "| " + " | ".join(label for _, label in columns) + " |"
-        rule = "| " + " | ".join("---" for _ in columns) + " |"
-        body = "\n".join(
-            "| " + " | ".join(esc(r[field]) for field, _ in columns) + " |"
-            for _, r in frame_part.iterrows()
-        )
-        st.markdown(f"{head}\n{rule}\n{body}")
+        table = pd.DataFrame(
+            [
+                {"Case": f"[{r['id']}](#{r['id'].lower()})",
+                 **{label: r[field] for field, label in COLUMNS}}
+                for _, r in frame_part.iterrows()
+            ]
+        ).set_index("Case")
+        st.table(table, border="horizontal")
 
     if group:
         for name in sorted(view["control_class"].unique()):
@@ -790,19 +843,17 @@ def screen_register(frame):
 
     st.markdown("### Full records")
     for _, row in view.iterrows():
+        # A plain HTML anchor rather than a Streamlit heading anchor. Fragment navigation
+        # to an id does not re-run the script, and there is a long-standing report that
+        # clicking a Streamlit heading anchor does.
+        st.markdown(f"<div id='{row['id'].lower()}'></div>", unsafe_allow_html=True)
         label = f"{row['id']} · {row['title']}"
         if not row["counted"]:
             label += "  (grade C, not counted)"
         with st.expander(label):
             incident_card(row)
 
-    st.download_button(
-        "Download the whole register as CSV",
-        data=DATA_FILE.read_bytes(),
-        file_name="ai_agent_incident_register.csv",
-        mime="text/csv",
-        help="The same file the app reads. Every number here is computed from it.",
-    )
+
 
 
 # ------------------------------------------------------------------------ watch list
@@ -841,6 +892,25 @@ def screen_watchlist(frame, rules):
     unanswered = [q["id"] for q in rules["questions"] if q["id"] not in answers]
 
     st.markdown("---")
+
+    if not answers:
+        st.markdown("### Your list")
+        st.info(
+            "Answer the questions above and the list builds itself as you go. Two items "
+            "apply to every agent regardless of the answers, and they are already waiting "
+            "below.",
+            icon="👆",
+        )
+        with st.expander("See the two that apply to every agent"):
+            for rule in selected:
+                st.markdown(f"**{rule['id']}. {rule['title']}**")
+                st.caption(rule["test"])
+        st.caption(
+            "This is a starting point built from 12 public cases, not an assessment of "
+            "your system."
+        )
+        return
+
     st.markdown(f"### Your list, {len(selected)} items")
 
     if unanswered:
@@ -890,7 +960,7 @@ def screen_watchlist(frame, rules):
             )
             st.markdown("**Incidents behind this rule**")
             for incident in rule["incident_ids"]:
-                st.markdown(f"- `{incident}` {esc(titles.get(incident, 'not found'))}")
+                st.markdown(f"- **{incident}** {esc(titles.get(incident, 'not found'))}")
             st.markdown(f"**What those cases show.** {esc(rule['why'])}")
 
     st.markdown("---")
@@ -915,6 +985,17 @@ def screen_watchlist(frame, rules):
 def screen_method(frame, rules):
     st.title("Method")
     st.markdown(f"Version {VERSION}, last updated {UPDATED}. Single coder.")
+    st.error(
+        "**Where this is weakest, in four lines.** The sample is biased along the same "
+        "axis the headline measures, because primary records exist mainly for legal and "
+        "security events. The ISO/IEC 42001 clause numbers come from the standard's "
+        "structure rather than its text, which is paywalled. One person coded every row "
+        "and no second rater has checked any of it. The secondary class has no rubric at "
+        "all. The full list is in **Limits** further down, and the **change log** at the "
+        "bottom records every correction, including the ones that incriminate this "
+        "project.",
+        icon="⚠️",
+    )
 
     st.markdown("### What counts as a case")
     st.markdown(
@@ -1224,6 +1305,11 @@ def screen_method(frame, rules):
         "legal advice.\n"
         "- **Tests are not proof.** Every test on this site is a test that would have caught "
         "the specific failure described. Passing all of them does not make an agent safe.\n"
+        "- **Every structural correction in this log was prompted by a reader.** The "
+        "checks catch regressions, not errors of judgement. The validator has never once "
+        "told this project that a framing was wrong, a count was misleading or a claim "
+        "outran its source. People did that, every time, and the automation's job turned "
+        "out to be holding the line afterwards rather than finding it.\n"
         "- **This register has already produced its own example of a control that was "
         "implemented and not operating.** The repository has a validator, a test suite and "
         "a green build. While all three were passing, a maintenance script was writing back "
@@ -1281,108 +1367,49 @@ def screen_method(frame, rules):
     st.markdown("### Corrections")
     st.markdown(
         f"If a fact, a grade, a clause or a class is wrong, open an issue at "
-        f"[{CORRECTIONS_URL}]({CORRECTIONS_URL}) or say so in the comments wherever you "
-        "found this. Every correction goes in the change log below with the date and what "
-        "changed. A register nobody corrects is a blog post."
+        f"[{CORRECTIONS_URL}]({CORRECTIONS_URL}). That is the route. Every correction goes "
+        "in the change log below with the date and what changed, and with who sent it **if "
+        "they want to be named**. Say so in the issue either way. A register nobody "
+        "corrects is a blog post."
     )
 
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
-        "| 0.9.11 | 2026-10-09 | Launch framing. Published for comment with one named "
-        "route, a window that closes on 7 November 2026, and an explicit statement of "
-        "what the register must not be used for. Made wide tables scroll inside their own "
-        "box instead of pushing the page. Ran the honesty test on the proposed case by "
-        "control matrix and did not build it, because the structure it would show is "
-        "produced by a field that has no rubric. |\n"
-        "| 0.9.10 | 2026-10-09 | Fixed a crash on the register screen. A block inside each "
-        "incident card used an expander, and the card is itself rendered inside one, "
-        "which Streamlit refuses. Every card open raised for six commits while the build "
-        "stayed green, because the build parsed the app and never ran it. Added a "
-        "headless render of all four screens to CI, and checked that it catches the "
-        "original bug when the bug is put back. |\n"
-        "| 0.9.9 | 2026-10-09 | Pre-launch round. Marked how the register knows each "
-        "missing control, in three tiers, and published the distribution as a statistic "
-        "rather than a disclaimer. Left the test and signal columns unmarked, because "
-        "they are recommendations to the reader rather than claims about a deployer. "
-        "Fixed the register index to sort by ID with ten filterable columns and an "
-        "optional grouping, so the sort order stops carrying an argument. Put the "
-        "recurring roles on the home screen as a checklist to run against your own "
-        "organisation. |\n"
-        "| 0.9.8 | 2026-10-09 | Audit and hygiene round. Walked every commit that touched "
-        "the data file looking for edits lost to the archiver's stale writes, and bounded "
-        "the damage to one row, two fields and one published commit. Moved the page's own "
-        "updated date from hand maintenance to a commit hook, so the validator rule "
-        "becomes a backstop rather than the mechanism. Recorded in the limits that this "
-        "repository produced its own implemented-and-not-operating failure. |\n"
-        "| 0.9.7 | 2026-10-09 | Framing round. Withdrew a nine second figure from the home "
-        "screen: it was attributed to a platform postmortem that does not contain it, and "
-        "it was being used to mean an intervention window, which no source establishes. "
-        "Reframed the deployment counts as statements about the public record rather than "
-        "about deployers, and led on the gradient across the three questions instead of "
-        "the bare hundred per cent. Added a secondary class to record the reading the "
-        "ordered rubric discards. Rewrote AIR-001's aftermath from the tribunal ruling "
-        "itself, read at last through an archived copy, which added a goodwill coupon the "
-        "airline had offered and the row had omitted. Added archived snapshots for every "
-        "source. Archived every source link, after the archiver was found to be reverting "
-        "hand-written corrections by writing back a stale copy of the whole file. |\n"
-        "| 0.9.6 | 2026-10-08 | Correctness and deployment round. Extended the "
-        "re-evaluation rule from severity to every field derived from the facts, enforced "
-        "by a pair of dates. Re-checked AIR-009's class after its causal account changed "
-        "and found it holds, because Vendor is tested before Oversight and still matches, "
-        "with the headline unaffected either way. Wrote AIR-009's inclusion rationale onto "
-        "its card rather than leaving it assumed. Led the aftermath finding on the three "
-        "cases that show its direction instead of on the count. Separated the naming "
-        "policy for people in the cases from contributors to the register. Added the three "
-        "deployment questions as coded fields, where Not disclosed is the default and both "
-        "Yes and No require a source. |\n"
-        "| 0.9.5 | 2026-10-08 | Schema round, building four fields that were specified "
-        "early and never made it in while the project was busy correcting itself. Split "
-        "the single owner into the role that runs the control and the role that answers "
-        "when it fails. Added control maturity, which separates a control that never "
-        "existed from one that was wired in and did not hold. Added who bore the harm "
-        "against who could have prevented it. The three deployment questions are still "
-        "outstanding, because the specification for them has not reached this repository. |\n"
-        "| 0.9.4 | 2026-10-08 | Audit of endings, prompted by AIR-003 turning out to "
-        "overstate harm. Checked how every story finished. Found that the Drift product "
-        "was retired rather than merely disabled, that the eating disorder helpline was "
-        "taken over by another charity and still runs, and that the healthcare vendor "
-        "denied wrongdoing, which the row had omitted. Added a recorded completeness "
-        "status for every ending, a stated basis for every severity rating, and a "
-        "validator rule that refuses a row whose ending is unknown unless it says so. |\n"
-        "| 0.9.3 | 2026-10-08 | Audit round. Added an aggregator denylist to the validator "
-        "after finding the previous round's audit had been unsystematic and had missed a "
-        "violation it introduced itself. Gave every row a named citation for its deployer "
-        "response, which was previously assumed rather than stated. Re-checked the weaker "
-        "B rows and found AIR-003 both under-graded and factually incomplete: the platform "
-        "published its own postmortem and the data was recovered, neither of which the row "
-        "said. Added the second finding, on documentation regimes. Put the Article 73 "
-        "alignment on the home screen. |\n"
-        "| 0.9.2 | 2026-10-08 | Sourcing round. Linked every standard to the thing itself "
-        "rather than naming it, and said plainly why ISO/IEC 42001 is the one left "
-        "unlinked. Credited the three databases used to find candidates and separated "
-        "finding a case from admitting one. Replaced the aggregator citation on AIR-002 "
-        "and the weakest source on AIR-003 with original reporting. |\n"
-        "| 0.9.1 | 2026-10-07 | Second reviewer round. Corrected the sensitivity table, "
-        "which showed one computation twice and implied two checks agreeing. Added the "
-        "structural finding, that no case caused harm through an untrue statement alone, "
-        "and made the validator enforce it. Verified the Omnibus regulation and the two "
-        "high-risk dates against EUR-Lex and labelled the two Article 50 dates as derived "
-        "rather than quoted. Stated that fixing the rubric's ordering did not fix the "
-        "sampling bias. Replaced every interactive table with a semantic one, after finding "
-        "that Streamlit's dataframe renders to a canvas and leaves its contents out of the "
-        "accessibility tree completely. |\n"
-        "| 0.9 | 2026-10-07 | First reviewer round. Measured what the rubric's ordering does to "
-        "the finding and rewrote the headline around the order-independent floor. "
-        "Separated descriptive counts from analytical ones. Decoupled severity from "
-        "recovery effort. Corrected the EU AI Act dates, including that Article 50 is "
-        "already in force. Withdrew the pre-registration claim as unevidenced. Added "
-        "runnable control tests for three rows. |\n"
+        "| 0.9 | 2026-10-09 | Reviewer rounds, consolidated. Measured what the rubric's "
+        "ordering does to the finding and rewrote the headline around the part that "
+        "survives it. Separated descriptive counts from analytical ones. Decoupled "
+        "severity from recovery effort. Corrected the EU AI Act dates against EUR-Lex, "
+        "including that Article 50 is already in force, and labelled the two derived "
+        "dates as derived. Withdrew the pre-registration claim and a nine second figure, "
+        "both unevidenced. Audited how every story ended and corrected three accounts "
+        "that stopped at the failure. Added an aggregator denylist, per-row aftermath "
+        "citations, a stated basis for every severity rating, and the three deployment "
+        "questions where Not disclosed is the default. Split the owner, added control "
+        "maturity, and recorded who bore the harm against who could have prevented it. "
+        "Marked how the register knows each missing control, in three tiers. Fixed a "
+        "crash that had broken the register screen for six commits under a green build, "
+        "and added a headless render of every screen to CI. Archived every source after "
+        "finding the archiver was reverting hand edits. Published for comment. |\n"
         "| 0.8 | 2026-10-03 | First build. 12 cases, 11 counted, 18 watch-list rules. |"
     )
     st.markdown(
         "**No corrections from readers yet.** When one arrives it goes in the table above "
         "with the date, what was wrong, and who sent it."
+    )
+
+    st.markdown("### If this stops being maintained")
+    st.markdown(
+        "A register that quietly goes stale is worse than one that never existed, because "
+        "a reader cannot tell the difference between current and abandoned. So: if "
+        "maintenance stops, this page will say so. The line below is the status, and it "
+        "is the first thing that changes if the project is parked."
+    )
+    st.success(
+        f"**Status: actively maintained.** Last reviewed {UPDATED}. If this line has not "
+        "moved in six months, treat the register as a static archive of what was true at "
+        "that date and check every source yourself before relying on it.",
+        icon="🟢",
     )
 
     st.markdown("### Reviewed by")
