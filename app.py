@@ -33,7 +33,7 @@ st.set_page_config(
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9.4"
+VERSION = "0.9.5"
 UPDATED = "8 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
@@ -71,6 +71,14 @@ SEVERITY_NOTE = (
     "rated Serious: a zero-click path out of a company's mail and files is a serious "
     "exposure whether or not anyone is known to have walked it."
 )
+
+MATURITY_MEANING = {
+    "Absent": "The control did not exist in any form.",
+    "Designed": "It existed on paper, in a policy or an instruction, with nothing enforcing it.",
+    "Implemented": "It was built and wired in, and it did not stop the thing it was there to stop.",
+    "Unknown": "The public record does not say what state it was in.",
+}
+MATURITY_COLOR = {"Absent": "#B3261E", "Designed": "#8A4B00", "Implemented": "#5B3A8A", "Unknown": "#6B7280"}
 
 GRADE_MEANING = {
     "A": "A primary record. A ruling, a regulator notice, a vendor security advisory or a threat intelligence report, plus a second source.",
@@ -194,6 +202,10 @@ def headline(frame):
         "aftermath_documented": int((counted["aftermath_status"] == "Documented").sum()),
         "aftermath_partial": int((counted["aftermath_status"] == "Partial").sum()),
         "aftermath_undocumented": int((counted["aftermath_status"] == "Undocumented").sum()),
+        "control_absent": int((counted["control_maturity"] == "Absent").sum()),
+        "control_designed": int((counted["control_maturity"] == "Designed").sum()),
+        "control_implemented": int((counted["control_maturity"] == "Implemented").sum()),
+        "bearer_no_control": int((counted["harm_bearer_had_control"] == "No").sum()),
         "no_approval": int((counted["human_approval"] != "Yes").sum()),
         "could_act": int(acted.sum()),
         "read_only": int((~acted).sum()),
@@ -292,6 +304,27 @@ def screen_home(frame, rules):
         )
 
     st.markdown("---")
+    st.markdown("### Who held the control, and who paid for it not being there")
+    st.markdown(
+        f"**In all {facts['total']} counted cases, the people who bore the harm were not "
+        "the people who could have prevented it.** "
+        "Passengers, patients, rental customers, developers, people calling a helpline. "
+        "Not one of them could have changed a credential scope or added a release gate. "
+        "That is not a surprising result, and it is worth stating as a count rather than "
+        "as a sentiment, because it is the reason this is a governance problem and not an "
+        "engineering one."
+    )
+    st.markdown(
+        f"The register also records what state each missing control was in. "
+        f"**{facts['control_absent']} of {facts['total']} did not exist in any form. "
+        f"{facts['control_designed']} existed on paper with nothing enforcing them. "
+        f"{facts['control_implemented']} was built, wired in, and did not hold.** That "
+        "last category is the one worth dwelling on: a control can be designed, "
+        "implemented, evidenced in an audit, and still not be stopping anything. Every "
+        "card says which of these it was."
+    )
+
+    st.markdown("---")
     st.markdown("### The second finding, which is about the evidence rather than the agents")
     st.markdown(
         "Building this register produced three observations that looked separate and are "
@@ -385,6 +418,7 @@ def incident_card(row):
         + badge(f"{row['severity']} severity", SEVERITY_COLOR[row["severity"]])
         + badge(f"Missing control: {row['control_class']}", CLASS_COLOR[row["control_class"]])
         + badge(f"Evidence grade {row['evidence_grade']}", GRADE_COLOR[row["evidence_grade"]])
+        + badge(f"Control was {row['control_maturity'].lower()}", MATURITY_COLOR[row["control_maturity"]])
         + (badge("Facts disputed by the deployer", "#8A4B00") if row["disputed"] == "Yes" else "")
         + (badge("Not counted in any number", "#6B7280") if not row["counted"] else ""),
         unsafe_allow_html=True,
@@ -410,7 +444,11 @@ def incident_card(row):
         st.caption(f"{row['severity']} on this register's scale means: {SEVERITY_MEANING[row['severity']][0].lower()}{SEVERITY_MEANING[row['severity']][1:]}")
         st.caption(f"**Why this row meets it.** {esc(row['severity_basis'])}")
 
-    st.error(f"**The missing control.** {esc(row['missing_control'])}", icon="🚫")
+    st.error(
+        f"**The missing control.** {esc(row['missing_control'])}\n\n"
+        f"**State it was in: {row['control_maturity']}.** {MATURITY_MEANING[row['control_maturity']]}",
+        icon="🚫",
+    )
     st.warning(
         f"**Test before launch.** {esc(row['test_before_launch'])}\n\n"
         f"**Pass mark.** {esc(row['test_pass_mark'])}",
@@ -421,7 +459,17 @@ def incident_card(row):
         f"**Monitoring category, NIST AI 800-4.** {esc(row['nist_800_4_category'])}",
         icon="📈",
     )
-    st.markdown(f"**The role that should hold this control:** {esc(row['owner_role'])}")
+    st.markdown(
+        f"**Runs the control:** {esc(row['control_owner_role'])}  \n"
+        f"**Answers when it fails:** {esc(row['accountable_role'])}"
+    )
+
+    st.markdown("**Who bore it, and who could have stopped it**")
+    st.markdown(
+        f"- **Harm fell on.** {esc(row['harm_borne_by'])}\n"
+        f"- **Could have prevented it.** {esc(row['could_have_prevented'])}\n"
+        f"- **Were they the same people?** {row['harm_bearer_had_control']}"
+    )
 
     st.markdown("**What changed after**")
     st.markdown(esc(row["what_changed_after"]))
@@ -994,6 +1042,13 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9.5 | 2026-10-08 | Schema round, building four fields that were specified "
+        "early and never made it in while the project was busy correcting itself. Split "
+        "the single owner into the role that runs the control and the role that answers "
+        "when it fails. Added control maturity, which separates a control that never "
+        "existed from one that was wired in and did not hold. Added who bore the harm "
+        "against who could have prevented it. The three deployment questions are still "
+        "outstanding, because the specification for them has not reached this repository. |\n"
         "| 0.9.4 | 2026-10-08 | Audit of endings, prompted by AIR-003 turning out to "
         "overstate harm. Checked how every story finished. Found that the Drift product "
         "was retired rather than merely disabled, that the eating disorder helpline was "

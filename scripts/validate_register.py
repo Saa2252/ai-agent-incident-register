@@ -33,16 +33,16 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 FIELDS = [
-    "id", "title", "event_date", "deployer", "sector", "agent_type",
-    "what_happened", "incident_or_hazard", "harm_type", "severity",
-    "severity_basis", "authority", "human_approval",
-    "failure_pattern", "owasp_code", "said_something_untrue", "control_class", "missing_control",
-    "test_before_launch", "test_pass_mark",
-    "signal_after_launch", "nist_800_4_category", "owner_role",
-    "nist_ai_rmf", "iso_42001", "eu_ai_act",
+    "id", "title", "event_date", "deployer", "sector", "agent_type", "what_happened",
+    "incident_or_hazard", "harm_type", "harm_borne_by", "could_have_prevented",
+    "harm_bearer_had_control", "severity", "severity_basis", "authority",
+    "human_approval", "failure_pattern", "owasp_code", "said_something_untrue",
+    "control_class", "control_maturity", "missing_control", "test_before_launch",
+    "test_pass_mark", "signal_after_launch", "nist_800_4_category",
+    "control_owner_role", "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act",
     "what_changed_after", "disputed", "aftermath_status", "aftermath_source_url",
-    "evidence_grade", "source_1_label", "source_1_url",
-    "source_2_label", "source_2_url", "date_checked",
+    "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
+    "source_2_url", "date_checked",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -108,6 +108,14 @@ UNTRUE_STATES = {"Yes", "No"}
 # postmortem nobody aggregated. Recording this makes the bias countable rather than
 # merely confessed, and forces a row to say when it does not know how the story ended.
 AFTERMATH_STATES = {"Documented", "Partial", "Undocumented"}
+
+# What state the missing control was actually in. These are four different findings and
+# collapsing them loses the most useful one. AIR-004 is why the field exists: a two
+# person approval gate that was implemented, wired in, and not operating. "Operating" is
+# in the vocabulary only so the validator can reject it, because a control that was
+# operating is not a missing control.
+CONTROL_MATURITY = {"Absent", "Designed", "Implemented", "Operating", "Unknown"}
+HARM_CONTROL_STATES = {"Yes", "No", "Partly"}
 
 # Aggregators are how cases are found. They are never the evidence for one. An index of
 # other people's reporting is weaker than the reporting, and citing the index hides which
@@ -320,6 +328,26 @@ def validate_rows(report, rows, today):
                     "does not tell the reader the ending is unknown. Stopping at the "
                     "failure overstates the harm",
                 )
+        if row["control_maturity"] not in CONTROL_MATURITY:
+            report.error(f"{where}.control_maturity", f"must be one of {sorted(CONTROL_MATURITY)}")
+        elif row["control_maturity"] == "Operating":
+            report.error(
+                where,
+                "control_maturity is Operating, which contradicts the row existing. A "
+                "control that was operating is not a missing control. Use Implemented "
+                "where it was wired in and did not hold",
+            )
+        if row["harm_bearer_had_control"] not in HARM_CONTROL_STATES:
+            report.error(f"{where}.harm_bearer_had_control", f"must be one of {sorted(HARM_CONTROL_STATES)}")
+        # The split owner has to be a real split. Two names for one role is a field
+        # doing nothing while looking like governance.
+        if row["control_owner_role"].strip().lower() == row["accountable_role"].strip().lower():
+            report.error(
+                where,
+                "control_owner_role and accountable_role are the same. The split exists to "
+                "show who runs the control and who answers when it fails. If they are "
+                "genuinely one role, say so in the text rather than duplicating the cell",
+            )
         if row["said_something_untrue"] not in UNTRUE_STATES:
             report.error(f"{where}.said_something_untrue", "must be Yes or No")
 

@@ -1,6 +1,6 @@
 # Data dictionary
 
-One file, `incidents.csv`, 36 fields, one row per case. The app computes every number
+One file, `incidents.csv`, 41 fields, one row per case. The app computes every number
 it shows from this file, so a change here changes the site. `scripts/validate_register.py`
 enforces everything below and fails the build if a row stops obeying it.
 
@@ -42,12 +42,14 @@ Three conventions apply to every field.
 
 | Field | Allowed values | Notes |
 | --- | --- | --- |
+| `control_maturity` | `Absent`, `Designed`, `Implemented`, `Unknown` | What state the missing control was actually in. `Absent` means it did not exist. `Designed` means it existed in a policy or an instruction with nothing enforcing it. `Implemented` means it was built and wired in and did not stop the thing it was there to stop. `Operating` is in the validator's vocabulary **only so it can be rejected**, because a control that was operating is not a missing control. |
 | `missing_control` | 1 to 2 sentences | One plain sentence on the control that was not there. Not a list of everything that could have been better. |
 | `test_before_launch` | 1 to 2 sentences | A test somebody could actually run next week. |
 | `test_pass_mark` | 1 to 2 sentences | What counts as a pass. A test with no pass mark is a conversation. |
 | `signal_after_launch` | 1 to 2 sentences | The metric or alert that would have shown this once live. |
 | `nist_800_4_category` | `Functionality`, `Operational`, `Human factors`, `Security`, `Compliance`, `Large-scale impacts` | The six categories in NIST AI 800-4, March 2026. |
-| `owner_role` | Free text | The role that should hold the control. A role, never a person. |
+| `control_owner_role` | Free text | The role that runs the control day to day. A role, never a person. |
+| `accountable_role` | Free text | The role that has to answer when it fails. **Must differ from `control_owner_role`**, and the validator rejects a row where they match. Two names for one role is a field doing nothing while looking like governance. |
 
 ## Clauses
 
@@ -65,6 +67,9 @@ text. The Method page says so on the page itself.
 | Field | Allowed values | Notes |
 | --- | --- | --- |
 | `what_changed_after` | Free text | What the deployer did or said. Their position goes here even when it contradicts the reporting, and especially then. |
+| `harm_borne_by` | Free text | Who actually paid for the failure. People, not organisations, wherever the record supports it. |
+| `could_have_prevented` | Free text | Who held the lever. The role or organisation that could have changed the outcome before it happened. |
+| `harm_bearer_had_control` | `Yes`, `No`, `Partly` | Were they the same people? Uniformly `No` across the current twelve, which is the finding rather than a defect in the field. A field with no variance cannot be checked by its own distribution, so it is checked by reading the two fields above it. |
 | `severity_basis` | Free text, one or two sentences | Which clause of the severity scale this row actually meets. Added because AIR-003's account changed materially and its rating was held without anyone saying why. A rating with no stated basis cannot be re-checked when the facts move, so **severity must be re-evaluated and this field updated whenever `what_happened` changes.** |
 | `aftermath_status` | `Documented`, `Partial`, `Undocumented` | How completely the ending is on the record. A `Partial` or `Undocumented` row **must** say so in `what_changed_after`, and the validator rejects it otherwise. Stopping at the failure overstates the harm. |
 | `aftermath_source_url` | `https://` URL | Which source carries the `what_changed_after` claim. The deployer's response is a **separate claim** from the incident, so it gets a named citation rather than an assumption that the incident sources happen to cover it. Usually this is `source_1_url` or `source_2_url`, named explicitly. Where neither covers it, it is a third link. Required on every row. |
