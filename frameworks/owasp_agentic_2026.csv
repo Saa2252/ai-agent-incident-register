@@ -1,11 +1,11 @@
-code,name,verified_against,status,source_url,retrieved
-ASI01,Agent Goal Hijack,secondary,disputed,https://www.giskard.ai/knowledge/owasp-top-10-for-agentic-application-2026,2026-10-10
-ASI02,Tool Misuse and Exploitation,official announcement,confirmed,https://genai.owasp.org/2025/12/09/owasp-genai-security-project-releases-top-10-risks-and-mitigations-for-agentic-ai-security/,2026-10-10
-ASI03,Identity and Privilege Abuse,official announcement,confirmed,https://genai.owasp.org/2025/12/09/owasp-genai-security-project-releases-top-10-risks-and-mitigations-for-agentic-ai-security/,2026-10-10
-ASI04,Agentic Supply Chain Vulnerabilities,secondary,unconfirmed,https://www.giskard.ai/knowledge/owasp-top-10-for-agentic-application-2026,2026-10-10
-ASI05,Unexpected Code Execution,secondary,unconfirmed,https://www.giskard.ai/knowledge/owasp-top-10-for-agentic-application-2026,2026-10-10
-ASI06,Memory and Context Poisoning,secondary,unconfirmed,https://www.giskard.ai/knowledge/owasp-top-10-for-agentic-application-2026,2026-10-10
-ASI07,Insecure Inter-Agent Communication,secondary,unconfirmed,https://www.giskard.ai/knowledge/owasp-top-10-for-agentic-application-2026,2026-10-10
-ASI08,Cascading Failures,secondary,unconfirmed,https://www.giskard.ai/knowledge/owasp-top-10-for-agentic-application-2026,2026-10-10
-ASI09,Human-Agent Trust Exploitation,secondary,unconfirmed,https://www.giskard.ai/knowledge/owasp-top-10-for-agentic-application-2026,2026-10-10
-ASI10,Rogue Agents,secondary,unconfirmed,https://www.giskard.ai/knowledge/owasp-top-10-for-agentic-application-2026,2026-10-10
+code,name,alias,verified_against,status,source_url,retrieved
+ASI01,Agent Goal Hijack,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI02,Tool Misuse,Tool Misuse and Exploitation,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI03,Identity & Privilege Abuse,Identity and Privilege Abuse,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI04,Agentic Supply Chain Vulnerabilities,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI05,Unexpected Code Execution,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI06,Memory & Context Poisoning,Memory and Context Poisoning,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI07,Insecure Inter-Agent Communication,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI08,Cascading Failures,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI09,Human-Agent Trust Exploitation,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+ASI10,Rogue Agents,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10

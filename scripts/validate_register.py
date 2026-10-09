@@ -38,7 +38,7 @@ FIELDS = [
     "could_have_prevented", "harm_bearer_had_control", "severity", "severity_basis",
     "authority", "human_approval", "deploy_evidence_seen", "deploy_evidence_source",
     "deploy_stop_authority", "deploy_stop_authority_source", "deploy_review_date",
-    "deploy_review_date_source", "failure_pattern", "owasp_code",
+    "deploy_review_date_source", "failure_pattern", "owasp_code", "owasp_code_basis",
     "said_something_untrue", "control_class", "secondary_class", "control_maturity",
     "missing_control", "missing_control_basis", "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "control_owner_role",
@@ -105,6 +105,10 @@ def _load_framework(name):
 OWASP_ROWS = _load_framework("owasp_agentic_2026.csv")
 OWASP_CODES = {code: row["name"] for code, row in OWASP_ROWS.items()}
 OWASP_STATUS = {code: row["status"] for code, row in OWASP_ROWS.items()}
+
+# How a framework value was arrived at. Stated means the framework's own publication
+# applied it to this case. Our reading means this register applied it.
+FRAMEWORK_BASIS = {"Stated", "Our reading"}
 
 # What the agent was able to do, not what it was supposed to do.
 AUTHORITIES = {"Read", "Write", "Delete", "Pay", "Promise"}
@@ -376,11 +380,18 @@ def validate_rows(report, rows, today):
                 f"{where}.owasp_code",
                 f"'{row['owasp_code']}' is not in frameworks/owasp_agentic_2026.csv",
             )
-        elif OWASP_STATUS.get(row["owasp_code"]) == "disputed":
+        elif OWASP_STATUS.get(row["owasp_code"]) != "confirmed":
             report.warn(
                 where,
-                f"{row['owasp_code']} has a disputed name. The framework owner's wording "
-                "and the secondary source disagree, and the page must say so",
+                f"{row['owasp_code']} is not marked confirmed in "
+                "frameworks/owasp_agentic_2026.csv, so the page must say so",
+            )
+        # Every framework value carries a basis, the same discipline as
+        # missing_control_basis. Stated means the framework owner picked this code for
+        # this case, not that this register read the framework and chose it.
+        if row["owasp_code_basis"] not in FRAMEWORK_BASIS:
+            report.error(
+                f"{where}.owasp_code_basis", f"must be one of {sorted(FRAMEWORK_BASIS)}"
             )
         if row["human_approval"] not in APPROVAL_STATES:
             report.error(f"{where}.human_approval", f"'{row['human_approval']}' is not one of {sorted(APPROVAL_STATES)}")

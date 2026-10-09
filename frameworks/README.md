@@ -15,34 +15,28 @@ from the framework owner's own publication or from somebody writing about it.
 
 ## owasp_agentic_2026.csv
 
-Published 9 December 2025, confirmed on the OWASP GenAI Security Project's own resource
-page. **The entry names are a different matter.**
+All ten codes and names confirmed on 10 October 2026 from OWASP's own coded list:
+https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent
 
-The full list is in a PDF behind a download form, and the codes do not appear in the
-HTML of either the resource page or the release announcement. So the names in this
-register came from a secondary source.
+**Two OWASP pages published the same day say different things, and which one you read
+matters.** The press release describes the risks in looser prose and gives no codes, and
+it words ASI01 as "Agent Behavior Hijacking". The page above gives the codes and words
+it "Agent Goal Hijack". This register follows the page with the codes, because codes are
+what it uses.
 
-Checking them on 10 October 2026 found a disagreement. OWASP's own release announcement
-names **"Agent Behavior Hijacking"**. The secondary source this register used says
-**"Agent Goal Hijack"** for ASI01. Two of the three names the announcement does mention,
-`ASI02 Tool Misuse and Exploitation` and `ASI03 Identity and Privilege Abuse`, match.
+That disagreement is why the `verified_against` column exists rather than a plain
+yes-or-no. "Confirmed against the owner's own publication" was not specific enough: the
+owner published twice.
 
-ASI01 is coded on three cases, so this is not academic. Until somebody reads the
-official PDF, the app labels ASI01 as disputed and the other seven as unconfirmed.
+The `alias` column holds the longer forms this register used before the check, so a
+reader searching for "Tool Misuse and Exploitation" still finds ASI02.
 
-**To close this:** download the PDF from
-https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/ ,
-copy the ten names from it, set every `status` to `confirmed` and change
-`verified_against` to `official PDF`.
+## Not built yet
 
-## Not built yet, deliberately
+The MIT severity scale, harm categories and risk subdomains. The reachable MIT pages
+state the counts without naming the values: five levels from Negligible to Catastrophic
+with the middle three unnamed, and ten harm categories unnamed. The endpoints, the count
+of ten, the CSET basis and the CC BY 4.0 licence are all confirmed.
 
-The MIT severity scale, harm categories and risk subdomains are **not** in this
-directory, because the reachable MIT pages state the counts without naming the values.
-The severity endpoints (1 Negligible, 5 Catastrophic), the count of 10 harm categories,
-the CSET basis and the CC BY 4.0 licence are all confirmed. The intermediate severity
-names and the category names are not.
-
-Coding 12 cases onto a five-level scale whose middle three names came from a summary
-would put the same error into 12 rows that ASI01 put into three. It waits for the
-source.
+A dated screenshot of the source is being added to the repository, and these files get
+built from that.

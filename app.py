@@ -836,12 +836,12 @@ def incident_card(row):
             f"**How the register knows: {tier}.** "
             f"{esc(row['missing_control_basis'].split('.', 1)[1].strip())}"
         )
-        status = OWASP_STATUS.get(row["owasp_code"], "unconfirmed")
-        mark = {
-            "confirmed": "",
-            "unconfirmed": " (name from a secondary source, not yet read in OWASP's own PDF)",
-            "disputed": " (name disputed: OWASP's own announcement words this differently)",
-        }[status]
+        basis = row["owasp_code_basis"]
+        mark = (
+            ", applied to this case by OWASP's own list"
+            if basis == "Stated"
+            else ", this register's reading"
+        )
         st.caption(
             f"Failure pattern: {esc(row['failure_pattern'])}. OWASP "
             f"{row['owasp_code']}, {OWASP_CODES[row['owasp_code']]}{mark}."
@@ -1532,15 +1532,14 @@ def screen_method(frame, rules):
         "- **[OWASP Top 10 for Agentic Applications 2026]"
         "(https://genai.owasp.org/2025/12/09/owasp-genai-security-project-releases-top-10-"
         "risks-and-mitigations-for-agentic-ai-security/),** published 9 December 2025, for "
-        "the failure pattern code. **The publication date is confirmed on OWASP's own "
-        "resource page. The ten entry names are not.** They sit in a PDF behind a "
-        "download form and do not appear in the HTML of either the resource page or the "
-        "release announcement, so they came from a secondary source. Checking on 10 "
-        "October 2026 found OWASP's own announcement wording ASI01 as Agent Behavior "
-        "Hijacking where the secondary source says Agent Goal Hijack. ASI01 is coded on "
-        "three cases. Every allowed value and its verification status is in "
-        "frameworks/owasp_agentic_2026.csv, the validator reads that file, and a case "
-        "card says when a name is unconfirmed or disputed.\n"
+        "the failure pattern code. All ten codes and names were read on 10 October 2026 "
+        "from [OWASP's own coded list](https://genai.owasp.org/2025/12/09/owasp-top-10-"
+        "for-agentic-applications-the-benchmark-for-agent). OWASP's press release of the "
+        "same day describes the same risks in looser wording and without codes, so this "
+        "register follows the page that gives the codes. The allowed values live in "
+        "frameworks/owasp_agentic_2026.csv with their source and retrieval date, and the "
+        "validator reads that file rather than a list typed into the code. Each case also "
+        "records whether its code was applied by OWASP or by this register.\n"
         "- **[Commission draft guidance and reporting template for serious AI incidents]"
         "(https://digital-strategy.ec.europa.eu/en/consultations/ai-act-commission-issues-"
         "draft-guidance-and-reporting-template-serious-ai-incidents-and-seeks).** A "
@@ -1698,6 +1697,12 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9 | 2026-10-10 | Checked OWASP labels against OWASP's own coded list. No "
+        "change to codes. All ten names confirmed from the page that carries the codes, "
+        "with the shorter official forms adopted and the longer forms kept as aliases. "
+        "The same day's press release uses looser wording without codes, so it is not the "
+        "source. AIR-010's code is now recorded as Stated, because that list cites "
+        "EchoLeak as its own ASI01 example. Every framework value now carries a basis. |\n"
         "| 0.9 | 2026-10-10 | Removed the comment deadline, keeping the route and the "
         "commitment to log everything. Started the framework work by trying to verify the "
         "two lists it depends on, and did not get them. The OWASP entry names sit in a "
