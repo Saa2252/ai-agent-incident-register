@@ -32,6 +32,9 @@ def main(argv):
         "control never built": sum(1 for r in counted if r["control_maturity"] == "Absent"),
         "control did not hold": sum(1 for r in counted if r["control_maturity"] == "Implemented"),
         "missing control not accuracy": sum(1 for r in counted if r["control_class"] != "Accuracy"),
+        "stated": sum(1 for r in counted if r["missing_control_basis"].startswith("Stated")),
+        "entailed": sum(1 for r in counted if r["missing_control_basis"].startswith("Entailed")),
+        "reading": sum(1 for r in counted if r["missing_control_basis"].startswith("Reading")),
         "filled meter bars": sum(
             {"Severe": 4, "Serious": 3, "Moderate": 2, "Negligible": 1}[r["severity"]] for r in rows
         ),
@@ -71,32 +74,40 @@ def main(argv):
     home_markdown = "\n".join(str(getattr(e, "value", "")) for e in home.markdown)
     home_metrics = {m.label: m.value for m in home.metric}
 
-    for label, want in (
-        ("Cases in the register", str(expected["cases"])),
-        ("Cases that feed the numbers", str(expected["counted"])),
+    # Home renders its figures as HTML cards, so they are read back out of the markup.
+    for key, label in (
+        ("no false statement", "said nothing untrue"),
+        ("record silent on stop", "record silent on who could stop it"),
+        ("control never built", "control never built"),
     ):
-        shown = home_metrics.get(label)
-        if shown != want:
-            problems_home = f"home metric '{label}' shows {shown!r}, data says {want!r}"
-            print(f"ERROR {problems_home}", file=sys.stderr)
+        want = expected[key]
+        if f'aria-label="{want} of {expected["counted"]}"' not in home_markdown:
+            print(
+                f"ERROR home card '{label}' has no dot row for {want} of "
+                f"{expected['counted']}",
+                file=sys.stderr,
+            )
             return 1
-        print(f"  ok   home metric '{label}' = {want}")
+        print(f"  ok   home card '{label}' = {want} of {expected['counted']}")
 
-    finding = re.search(
-        r"In (\d+) of the (\d+) counted cases the agent said nothing untrue", home_markdown
+    certainty = (
+        f'aria-label="Stated {expected["stated"]}, Entailed {expected["entailed"]}, '
+        f'Our reading {expected["reading"]}, out of {expected["counted"]}"'
     )
-    if not finding:
-        print("ERROR could not find the headline finding on Home", file=sys.stderr)
+    if certainty not in home_markdown:
+        print("ERROR the certainty bar does not match the data", file=sys.stderr)
         return 1
-    got, of = (int(g) for g in finding.groups())
-    if (got, of) != (expected["no false statement"], expected["counted"]):
-        print(
-            f"ERROR home finding says {got} of {of}, data says "
-            f"{expected['no false statement']} of {expected['counted']}",
-            file=sys.stderr,
-        )
+    print(
+        f"  ok   certainty bar = {expected['stated']} stated, {expected['entailed']} "
+        f"entailed, {expected['reading']} our reading"
+    )
+
+    dots_on = home_markdown.count('<i class="on">')
+    want_dots = expected["no false statement"] + expected["record silent on stop"] + expected["control never built"]
+    if dots_on != want_dots:
+        print(f"ERROR {dots_on} filled dots on Home, data says {want_dots}", file=sys.stderr)
         return 1
-    print(f"  ok   home finding = {got} of {of}")
+    print(f"  ok   filled dots across the three cards = {dots_on}")
 
     rendered = "\n".join(
         str(getattr(element, "value", "")) for element in at.markdown

@@ -107,6 +107,43 @@ table.cases tr.notcounted td { color: var(--muted); }
 .g-a span { color: Canvas; }
 .g-b { border: 1.5px solid currentColor; }
 .g-c { border: 1.5px dashed var(--muted); color: var(--muted); }
+
+.hero-band {
+  background:#0d2440; color:#fff; border-radius:14px; padding:30px 28px; margin:4px 0 8px;
+}
+@media (prefers-color-scheme: dark) { .hero-band { background:#13263d; } }
+.hero-band .kicker {
+  font-size:12px; letter-spacing:.07em; text-transform:uppercase; color:#c9d8ec; margin:0 0 12px;
+}
+.hero-band h1 { font-size:32px; line-height:1.15; margin:0 0 8px; font-weight:700; }
+.hero-band .claim2 { font-size:20px; line-height:1.3; margin:0 0 14px; font-weight:500; }
+.hero-band p.lede { color:#c9d8ec; margin:0; font-size:16px; max-width:720px; }
+
+.fcard {
+  background:var(--surface,#fcfcfb); border:1px solid var(--ring,rgba(11,11,11,.10));
+  border-radius:14px; padding:18px; height:100%;
+}
+.fcard .big { font-size:38px; font-weight:700; line-height:1; }
+.fcard .big small { font-size:16px; color:var(--muted); font-weight:500; margin-left:4px; }
+.dots { display:flex; gap:5px; margin:12px 0; flex-wrap:wrap; }
+.dots i { width:14px; height:14px; border-radius:50%; background:#d6d4cc; display:block; }
+.dots i.on { background:#2a78d6; }
+@media (prefers-color-scheme: dark) { .dots i { background:#3a3a37; } .dots i.on { background:#3987e5; } }
+.fcard .say { font-size:16px; font-weight:600; margin:0 0 6px; line-height:1.35; }
+.fcard .more { color:var(--ink-2); font-size:14px; margin:0; }
+
+.seg { display:flex; gap:2px; height:28px; margin:10px 0 8px; }
+.seg div:first-child { border-radius:6px 0 0 6px; }
+.seg div:last-child { border-radius:0 6px 6px 0; }
+.seglabels { display:flex; gap:2px; font-size:13px; color:var(--ink-2); }
+.seglabels b { color:var(--ink); display:block; font-size:14px; }
+
+.thesis {
+  background:var(--surface,#fcfcfb); border:1px solid var(--ring,rgba(11,11,11,.10));
+  border-left:4px solid #2a78d6; border-radius:10px; padding:18px 20px;
+}
+.thesis .t { font-size:19px; font-weight:650; line-height:1.3; margin:0 0 8px; }
+.thesis p { margin:0; color:var(--ink-2); }
 </style>
 """
 
@@ -114,7 +151,7 @@ APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
 VERSION = "0.9"
-UPDATED = "9 October 2026"
+UPDATED = "10 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
@@ -195,9 +232,11 @@ SEVERITY_COLOR = {
 GRADE_COLOR = {"A": "#2E6B3A", "B": "#1B5E8A", "C": "#6B7280"}
 
 NIST_GAP_QUOTE = (
-    "NIST's March 2026 report on monitoring deployed AI systems names an immature "
-    "information sharing ecosystem and a lack of trusted guidelines for monitoring "
-    "methods and tools among the field's central gaps."
+    "NIST names an immature information sharing ecosystem and a lack of trusted "
+    "guidelines for monitoring methods and tools among the field's central gaps, in "
+    "[AI 800-4, Challenges to the Monitoring of Deployed AI Systems]"
+    "(https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.800-4.pdf), published 6 March 2026. "
+    "Both phrases are gap headings in sections 3.1.1 and 3.1.2."
 )
 
 
@@ -388,86 +427,131 @@ def severity_strip(frame):
     )
 
 
+def dots(filled, total):
+    """A row of dots so "5 of 11" reads without arithmetic."""
+    return (
+        '<div class="dots" role="img" aria-label="' + f"{filled} of {total}" + '">'
+        + "".join(f'<i class="{"on" if i < filled else ""}"></i>' for i in range(total))
+        + "</div>"
+    )
+
+
 def screen_home(frame, rules):
     facts = headline(frame)
+    counts = finding_counts(frame)
+    total = facts["total"]
 
-    st.title("AI Agent Incident Register")
     st.markdown(
-        "#### Most of these failures were not the AI being wrong. They were the AI being "
-        "allowed to act."
+        '<div class="hero-band">'
+        f'<p class="kicker">Version {VERSION} · open for comment until 7 November 2026</p>'
+        "<h1>None of these failures was only the AI being wrong.</h1>"
+        '<p class="claim2">Every one needed the AI to be allowed to act.</p>'
+        f'<p class="lede">{facts["all_rows"]} documented AI agent failures. Each one is '
+        "traced to the control that was missing, the test that would have caught it "
+        "before launch, and the signal that would have shown it after.</p></div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("### Three things the cases show")
+    st.caption(
+        f"Out of the {total} cases with strong enough evidence to count. One more is "
+        "shown and counted nowhere."
+    )
+    cards = [
+        ("no-false-statement", "The agent said nothing untrue, and harm happened anyway.",
+         "What was missing was a limit on what the agent was allowed to do, not on what "
+         "it said."),
+        ("record-silent-on-stop",
+         "The public record does not say who could have stopped the deployment.",
+         "Not that nobody could. The record does not say."),
+        ("control-never-built", "The control that would have prevented it was never built.",
+         f"{counts['control-did-not-hold']} was built and did not hold. The rest are on "
+         "Findings."),
+    ]
+    columns = st.columns(3)
+    for column, (key, say, more) in zip(columns, cards):
+        n = counts[key]
+        with column:
+            st.markdown(
+                f'<div class="fcard"><div class="big">{n}<small>of {total}</small></div>'
+                f'{dots(n, total)}<p class="say">{esc(say)}</p>'
+                f'<p class="more">{esc(more)}</p></div>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("")
+    st.markdown("### How sure is this?")
+    st.caption(
+        "Naming the missing control is the one place this register judges a company, so "
+        "every case says how it knows."
+    )
+    tiers = [
+        ("Stated", facts["basis_stated"], "#104281",
+         "The deployer, a regulator or a ruling said it"),
+        ("Entailed", facts["basis_entailed"], "#2a78d6",
+         "It follows directly from the record"),
+        ("Our reading", facts["basis_reading"], "#86b6ef",
+         "Judgement, labelled on the card"),
+    ]
+    bar = "".join(
+        f'<div style="flex:{n};background:{colour}"></div>' for _, n, colour, _ in tiers
+    )
+    labels = "".join(
+        f'<div style="flex:{n}"><b>{n} · {esc(name)}</b>{esc(blurb)}</div>'
+        for name, n, _, blurb in tiers
     )
     st.markdown(
-        f"{facts['all_rows']} documented AI agent failures, each traced to the control "
-        "that was missing, the test that would have caught it before launch, and the "
-        "signal that would have shown it after."
+        f'<div class="seg" role="img" aria-label="Stated {facts["basis_stated"]}, '
+        f'Entailed {facts["basis_entailed"]}, Our reading {facts["basis_reading"]}, '
+        f'out of {total}">{bar}</div><div class="seglabels">{labels}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"**{facts['basis_stated'] + facts['basis_entailed']} of {total} do not rest on "
+        "this register's opinion.** Every counted case has a primary record plus a second "
+        "source, or two independent reports."
     )
 
-    left, middle, right = st.columns(3)
-    left.metric("Cases in the register", facts["all_rows"])
-    left.caption("Every row of data/incidents.csv.")
-    middle.metric("Cases that feed the numbers", facts["total"])
-    middle.caption("Grade A and B only. One grade C row is shown and counted nowhere.")
-    right.metric("Watch-list rules built from them", len(rules["rules"]))
-    right.caption("Fixed rules. No model runs in the tool.")
+    st.markdown("")
+    st.markdown(
+        '<div class="thesis"><p class="t">Who documents a failure decides which failures '
+        "exist on paper.</p><p>Failures make the news. Recoveries rarely do. When this "
+        "register checked how each story ended, three of its own earlier summaries had "
+        "made the deployer look worse than the record supports. Read any incident count, "
+        "this one included, as a map of what got written down.</p></div>",
+        unsafe_allow_html=True,
+    )
+    st.caption("The second finding, in full, is on Findings.")
+
+    st.markdown("")
+    st.markdown("### Where to start")
+    st.caption("Each one opens the case list with a filter applied, and each is a link you can share.")
+    starts = st.columns(4)
+    starts[0].link_button(
+        f"Harm without a false statement  {counts['no-false-statement']}",
+        "?view=no-false-statement", width="stretch")
+    starts[1].link_button(
+        f"Where the record is silent  {counts['record-silent-on-stop']}",
+        "?view=record-silent-on-stop", width="stretch")
+    starts[2].link_button(
+        f"The control existed and did not hold  {counts['control-did-not-hold']}",
+        "?view=control-did-not-hold", width="stretch")
+    starts[3].download_button(
+        "Download the data", data=DATA_FILE.read_bytes(),
+        file_name="ai_agent_incident_register.csv", mime="text/csv",
+        on_click="ignore", width="stretch")
 
     st.markdown("---")
-    st.markdown("### The finding")
-    st.markdown(
-        f"**In {facts['said_nothing_untrue']} of the {facts['total']} counted cases the "
-        "agent said nothing untrue, and harm happened anyway.** A more accurate model "
-        f"would have changed nothing in those. And in the other {facts['said_untrue']}, "
-        "saying something untrue was never enough on its own: every one of the "
-        f"{facts['total']} also needed authority the agent should not have held, reach it "
-        "should not have had, or a path nobody was watching."
+    foot_left, foot_right = st.columns(2)
+    foot_left.markdown(
+        f"**Open for comment until 7 November 2026.** Corrections go through "
+        f"[GitHub issues]({CORRECTIONS_URL}), the only channel the change log reads. "
+        "Every comment is logged with its date, acted on or not."
     )
-    st.markdown(
-        "So the useful question is not whether the model is accurate. It is **what the "
-        "agent is allowed to do, and who can stop it.**"
-    )
-
-    chart_col, spread_col = st.columns([3, 2])
-    with chart_col:
-        st.markdown("**What the missing control governed**")
-        st.altair_chart(class_chart(frame), use_container_width=True)
-        st.caption(
-            f"{facts['not_accuracy']} of {facts['total']} counted cases sit outside "
-            "Accuracy. The open segment is the grade C row, counted nowhere."
-        )
-    with spread_col:
-        st.markdown("**How bad the harm was**")
-        st.markdown(severity_strip(frame), unsafe_allow_html=True)
-        st.caption(
-            "Severity is the only thing colour means here. Every case card carries the "
-            "word and a bar meter too, so nothing depends on colour alone. The bands are "
-            "defined on Method."
-        )
-
-    st.markdown("---")
-    st.markdown("### Where to go next")
-    one, two, three = st.columns(3)
-    one.markdown(
-        f"**The register**  \nAll {facts['all_rows']} cases, filterable. Each opens into "
-        "what happened, what was missing, the test, the evidence and how it ended. Every "
-        "claim links to its source."
-    )
-    two.markdown(
-        "**Build your watch list**  \nSix plain questions about your own agent. The "
-        f"answers trigger {len(rules['rules'])} fixed rules and return tests and signals "
-        "with the cases behind each. Downloadable."
-    )
-    three.markdown(
-        "**Findings** carries the four findings in full, including the two about this "
-        "register's own evidence. **Method** has the inclusion rule, the grades, the "
-        "rubric and the limits."
-    )
-
-    st.markdown("---")
-    st.error(
-        "**What this register must not be used for.** It is not legal advice and not a "
-        "compliance assessment. Do not use it to decide whether an organisation named "
-        "here met a legal obligation, to assess a vendor, or as evidence in procurement "
-        "or enforcement. Use it to generate questions about your own system.",
-        icon="⛔",
+    foot_right.markdown(
+        "**Not legal advice and not a compliance assessment.** Use it to generate "
+        "questions about your own system. Do not use it to reach conclusions about "
+        "somebody else's. Full terms on Method."
     )
 
 
@@ -498,9 +582,10 @@ def screen_findings(frame, rules):
 
     st.markdown("### Two counts that change where you look")
     st.markdown(
-        f"- In **{facts['no_approval']} of {facts['total']}** cases no person approved "
-        "the action before it took effect, or the gate that should have stopped it did "
-        "not hold.\n"
+        f"- In **{facts['no_approval']} of {facts['total']}** cases the record shows no "
+        "approval step before the action took effect, or shows a gate that did not hold. "
+        "This field carries no source of its own, unlike the stop-authority one, so read "
+        "it as this register's reading of each account rather than a sourced absence.\n"
         f"- **{facts['read_only']} of the {facts['total']}** agents could only read. "
         f"**{facts['read_only_bad']} of those {facts['read_only']}** still produced a "
         "serious or severe outcome. Read-only is not the same as low risk, because an "
@@ -515,53 +600,6 @@ def screen_findings(frame, rules):
         "deployment.** Not that nobody could. That the record does not say. That is a "
         "harder claim than naming anyone, and it is the one the evidence supports."
     )
-    st.markdown(
-        "This register names organisations and never individuals, and that is the "
-        "stronger version rather than the cautious one. A name is unusable to you. A "
-        "**role** is a lookup into your own org chart. These are the roles that came up "
-        "across the twelve cases, and the useful exercise is to put a name against each "
-        "one for your own agent and see which lines you cannot fill."
-    )
-    role_rows = sorted(facts["roles"].items(), key=lambda item: (-item[1], item[0]))
-    template = pd.DataFrame(
-        [{"Role": name, "Cases": count, "Who is this in your organisation?": ""}
-         for name, count in role_rows]
-    )
-    # The return value, not session state. Session state holds a pending-edits object
-    # rather than the frame. on_click="ignore" keeps the download from re-running the
-    # script, which would otherwise throw away whatever the reader has typed.
-    edited = st.data_editor(
-        template,
-        key="roles_checklist",
-        num_rows="fixed",
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "Role": st.column_config.TextColumn("Role", width=300, disabled=True),
-            "Cases": st.column_config.NumberColumn(
-                "Cases", width=80, disabled=True,
-                help="Cases out of 11 where this role was the one that mattered.",
-            ),
-            "Who is this in your organisation?": st.column_config.TextColumn(
-                "Who is this in your organisation?", width="large", max_chars=120,
-            ),
-        },
-    )
-    st.download_button(
-        "Download your filled checklist",
-        data=edited.to_csv(index=False).encode("utf-8"),
-        file_name="roles-checklist.csv",
-        mime="text/csv",
-        on_click="ignore",
-        help="Type into the third column first. Your answers stay in your browser.",
-    )
-    st.caption(
-        "Type into the third column and download it. Each case names the role that runs "
-        "the control and the role that answers when it fails, which are rarely the same. "
-        "A row you cannot fill is the finding, and it is the row worth taking to whoever "
-        "owns the agent."
-    )
-
     st.markdown("---")
     st.markdown("### What state the missing control was in")
     st.markdown(
@@ -582,11 +620,13 @@ def screen_findings(frame, rules):
         "Every row also records who bore the harm against who could have prevented it, and "
         "in all of them those are different people. On its own that is unremarkable, since "
         "it is true of most consumer harm. An airline passenger cannot fix airline policy "
-        "either. **What is specific to agents is that there was no moment to intervene "
-        "in.** In the destructive cases the agent went from hitting a problem to taking "
-        "the irreversible action inside a single uninterrupted task, with no checkpoint "
-        "where a person was asked anything. In one case the path required no user action "
-        "at all: an email nobody opened was enough."
+        "either. **What is specific to agents is that the published accounts describe no "
+        "moment to intervene in.** In the destructive cases they have the agent going "
+        "from hitting a problem to taking the irreversible action inside a single "
+        "uninterrupted task, and none of them records a checkpoint where a person was "
+        "asked anything. In one case the path required no user action at all: an email "
+        "nobody opened was enough, which is AIR-010, "
+        "[CVE-2025-32711](https://msrc.microsoft.com/update-guide/vulnerability/CVE-2025-32711)."
     )
 
     st.markdown("---")
@@ -626,11 +666,12 @@ def screen_findings(frame, rules):
     )
     st.markdown(
         "A fourth observation came from auditing how each of these stories ended, and "
-        "three rows show the direction directly. **One said a database and its backups "
-        "were destroyed with the newest copy three months old, when the platform had "
-        "published a postmortem saying the data was recovered two and a half days later. "
-        "One said an eating disorder helpline was shut, when the number had been taken "
-        "over by another charity and still reaches therapists. One recorded a regulator's "
+        "three rows show the direction directly. All three were this register's own "
+        "errors. **An earlier version of it said a database and its backups were "
+        "destroyed with the newest copy three months old, when the platform had published "
+        "a postmortem saying the data was recovered two and a half days later. It said an "
+        "eating disorder helpline was shut, when the number had been taken over by "
+        "another charity and still reaches therapists. It recorded a regulator's "
         "settlement terms and omitted that the company denied wrongdoing.** Every one of "
         "those omissions made the deployer look worse than the record supports."
     )
@@ -693,26 +734,33 @@ def screen_findings(frame, rules):
         f"{facts['no_evidence_recorded']}, then {facts['no_stop_authority_recorded']}, "
         f"then {facts['no_review_recorded']}. The more internal the governance artefact, "
         "the less likely it survives into the public record. Evidence that someone "
-        "reviewed the thing sometimes surfaces, usually because a regulator went looking. "
-        "A named role that could halt it, rarely. A scheduled date to look again, never. "
+        "reviewed the thing surfaced in two of the eleven, once through a regulator's "
+        "investigation and once through reporting. A named role that could halt it, in "
+        "one. A scheduled date to look again, in none of the eleven. "
         "That shape says something about what incident reporting captures, and it is "
         "harder to argue with than a bare hundred per cent."
     )
 
     st.markdown("---")
-    st.success(
-        "**Every row on this register maps onto the European Commission's own serious "
-        "incident reporting template.** The fields were chosen to sit close to it, so a "
-        "case here can be lifted into an Article 73 report rather than rewritten from "
-        "scratch. That is the point of the format, not a side effect of it.",
+    st.info(
+        "**The fields on each case were chosen to sit close to the European Commission's "
+        "draft serious incident reporting template,** so the structure is familiar to "
+        "anyone who has filled one in. That is deliberate rather than incidental. It is "
+        "not a claim that a case here can be filed as an Article 73 report: that duty "
+        "falls on providers of high-risk AI systems, and most of the systems in this "
+        "register are not high-risk systems under the Act.",
         icon="📋",
     )
     st.caption(
-        "Checked on 8 October 2026: the Commission's guidance and template are still the "
-        "draft of 26 September 2025. Its consultation closed on 7 November 2025 and the "
-        "final was expected to apply from 2 August 2026, which has passed. If a final "
-        "version has landed and this page has not caught up, that is exactly the kind of "
-        "correction worth sending."
+        "Checked on 10 October 2026. The guidance and template are the "
+        "[draft of 26 September 2025](https://digital-strategy.ec.europa.eu/en/"
+        "consultations/ai-act-commission-issues-draft-guidance-and-reporting-template-"
+        "serious-ai-incidents-and-seeks) and its consultation closed on 7 November 2025. "
+        "Article 73 applies from 2 August 2026 and the Digital Omnibus did not move it, "
+        "but the Omnibus did move the high-risk obligations the duty attaches to, to "
+        "2 December 2027 for Annex III systems and 2 August 2028 for Annex I. How those "
+        "two interact is a question for a lawyer and this register does not answer it. "
+        "The dates table further down carries the same figures."
     )
 
 
@@ -1090,6 +1138,55 @@ def screen_watchlist(frame, rules):
 
     st.markdown("---")
 
+    st.markdown("---")
+    st.markdown("### Who holds these controls in your organisation?")
+    st.markdown(
+        "This register names organisations and never individuals, and that is the "
+        "stronger version rather than the cautious one. A name is unusable to you. A "
+        "**role** is a lookup into your own org chart. These are the roles that came up "
+        "across the twelve cases, and the useful exercise is to put a name against each "
+        "one for your own agent and see which lines you cannot fill."
+    )
+    role_rows = sorted(headline(frame)["roles"].items(), key=lambda item: (-item[1], item[0]))
+    template = pd.DataFrame(
+        [{"Role": name, "Cases": count, "Who is this in your organisation?": ""}
+         for name, count in role_rows]
+    )
+    # The return value, not session state. Session state holds a pending-edits object
+    # rather than the frame. on_click="ignore" keeps the download from re-running the
+    # script, which would otherwise throw away whatever the reader has typed.
+    edited = st.data_editor(
+        template,
+        key="roles_checklist",
+        num_rows="fixed",
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Role": st.column_config.TextColumn("Role", width=300, disabled=True),
+            "Cases": st.column_config.NumberColumn(
+                "Cases", width=80, disabled=True,
+                help="Cases out of 11 where this role was the one that mattered.",
+            ),
+            "Who is this in your organisation?": st.column_config.TextColumn(
+                "Who is this in your organisation?", width="large", max_chars=120,
+            ),
+        },
+    )
+    st.download_button(
+        "Download your filled checklist",
+        data=edited.to_csv(index=False).encode("utf-8"),
+        file_name="roles-checklist.csv",
+        mime="text/csv",
+        on_click="ignore",
+        help="Type into the third column first. Your answers stay in your browser.",
+    )
+    st.caption(
+        "Type into the third column and download it. Each case names the role that runs "
+        "the control and the role that answers when it fails, which are rarely the same. "
+        "A row you cannot fill is the finding, and it is the row worth taking to whoever "
+        "owns the agent."
+    )
+
     if not answers:
         st.markdown("### Your list")
         st.info(
@@ -1159,6 +1256,8 @@ def screen_watchlist(frame, rules):
             for incident in rule["incident_ids"]:
                 st.markdown(f"- **{incident}** {esc(titles.get(incident, 'not found'))}")
             st.markdown(f"**What those cases show.** {esc(rule['why'])}")
+
+
 
     st.markdown("---")
     if selected:
@@ -1585,6 +1684,16 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9 | 2026-10-10 | Line-by-line fact check of Home, which found four claims "
+        "the evidence did not carry. The headline said most of these failures were not "
+        "the AI being wrong, which only holds under the accuracy-last rubric the page "
+        "itself says the finding does not rest on. It is now the claim the validator "
+        "enforces: none was only the AI being wrong. Three sentences asserted an absence "
+        "with no source, including one about approval steps whose field, unlike the "
+        "stop-authority field, carries no source at all. The Article 73 note claimed "
+        "every row maps onto the Commission's template and could be lifted into a report, "
+        "when that duty falls on providers of high-risk systems and most of these are "
+        "not. Rebuilt Home as a hero, three dot cards and a certainty bar. |\n"
         "| 0.9 | 2026-10-09 | Home cut from about 2,000 words and eleven headings to 500 "
         "and four, after it was read as information overload. Nothing was deleted: the "
         "analysis moved to a Findings screen somebody can choose. Home now carries the "

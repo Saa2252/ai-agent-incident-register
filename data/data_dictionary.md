@@ -31,7 +31,7 @@ Three conventions apply to every field.
 | `harm_type` | Free text | What kind of harm, in plain words. Not a code, because twelve rows cannot support one. |
 | `severity` | `Negligible`, `Moderate`, `Serious`, `Severe` | Defined on the Method page in terms of what happened to people. |
 | `authority` | Pipe-joined subset of `Read`, `Write`, `Delete`, `Pay`, `Promise` | What the agent was **able** to do at the time, not what it was supposed to do. |
-| `human_approval` | `Yes`, `No`, `Unknown`, `Yes, bypassed` | `Yes, bypassed` is its own state. A gate that existed on paper and did not hold is not the same as no gate. |
+| `human_approval` | `Yes`, `No`, `Unknown`, `Yes, bypassed` | **Weaker discipline than the deployment fields, and prose must say so.** Unlike `deploy_stop_authority`, this carries no paired source, so a `No` is this register's reading of the published account rather than a sourced absence. Any sentence built on it says "the record shows no approval step", never "no person approved". |
 | `failure_pattern` | Free text, one line | The primary pattern in plain words. |
 | `owasp_code` | `ASI01` to `ASI10` | OWASP Top 10 for Agentic Applications 2026, published 9 December 2025. One code per row. |
 | `said_something_untrue` | `Yes`, `No` | Did the agent itself state something untrue? Recorded **independently of `control_class`**, so the rubric's ordering can be measured rather than argued about. A `No` row cannot become an accuracy failure under any ordering, which makes the count of them an order-independent floor under the headline. A row classed `Accuracy` with `No` here is a contradiction and the validator rejects it. |
