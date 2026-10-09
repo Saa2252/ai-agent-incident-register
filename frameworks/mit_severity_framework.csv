@@ -1,0 +1,51 @@
+level,level_name,harm_type,descriptor
+1,Negligible,Physical Harm,None to minor injuries
+1,Negligible,Infrastructure Damage,"None to brief, localized disruption (e.g., brief traffic control outage, localized power outage)"
+1,Negligible,Property Damage,"None to minor damage (<$10,000)"
+1,Negligible,Financial Loss,"None to small direct financial loss (<$10,000)"
+1,Negligible,Environmental Damage,"No damage to minor, reversible damage"
+1,Negligible,Toxic or Malicious Content,"No harmful content to moderately offensive content (e.g., minor profanity, slurs)"
+1,Negligible,Differential Treatment,No differential treatment to noticeable bias
+1,Negligible,Human/Civil Rights,No impact to limited restrictions (minor inconveniences)
+1,Negligible,Democratic Norms,"No impact to minor violations in democratic processes (e.g., slight irregularities, limited misinformation)"
+1,Negligible,Privacy,None or contained breach of basic data
+2,Minor,Physical Harm,"Moderate to severe injuries, no loss of life"
+2,Minor,Infrastructure Damage,"Moderate to significant local disruption (e.g., regional traffic disruptions, city-wide power outage)"
+2,Minor,Property Damage,"Moderate to significant damage ($10,000-$1M)"
+2,Minor,Financial Loss,"Moderate to large direct financial loss ($10,000-$1M)"
+2,Minor,Environmental Damage,"Moderate, mostly reversible to significant, partially reversible damage"
+2,Minor,Toxic or Malicious Content,"Highly offensive content to harmful misinformation affecting thousands (e.g., hate speech, widespread false narratives)"
+2,Minor,Differential Treatment,Clear to systemic discrimination
+2,Minor,Human/Civil Rights,Significant to severe restrictions affecting thousands of people
+2,Minor,Democratic Norms,Election interference and widespread misinformation campaigns
+2,Minor,Privacy,Privacy breach involving identifiable data affecting up to 1000 individuals
+3,Substantial,Physical Harm,Small-scale casualties (1-99)
+3,Substantial,Infrastructure Damage,"Widespread regional disruption to critical service failure (e.g., multiple towns lose services, hospitals unable to function)"
+3,Substantial,Property Damage,Major to extensive damage ($1M-$100M)
+3,Substantial,Financial Loss,Major to severe direct financial loss ($1M-$100M)
+3,Substantial,Environmental Damage,"Major, long-term effects to severe, ecosystem-level damage (e.g., endangering of species)"
+3,Substantial,Toxic or Malicious Content,Targeted harassment to incitement to violence affecting thousands of people
+3,Substantial,Differential Treatment,Widespread to institutionalized discrimination
+3,Substantial,Human/Civil Rights,Major to widespread rights violations affecting thousands of people
+3,Substantial,Democratic Norms,Systematic voter suppression and undermining of democratic institutions
+3,Substantial,Privacy,Privacy breach involving identifiable data affecting up to 1 million individuals
+4,Severe,Physical Harm,Mass casualties to large-scale loss of life (up to 1 million)
+4,Severe,Infrastructure Damage,"Regional to national infrastructure collapse (e.g., multiple cities without power, nationwide internet blackout)"
+4,Severe,Property Damage,Widespread to catastrophic destruction ($100M-$10B)
+4,Severe,Financial Loss,Extreme direct financial loss to catastrophic loss ($100M-$10B)
+4,Severe,Environmental Damage,"Widespread ecosystem collapse to irreversible habitat damage (e.g., extinction of species)"
+4,Severe,Toxic or Malicious Content,"Large-scale coordinated attacks to mass radicalization (e.g., nationwide disinformation, societal unrest)"
+4,Severe,Differential Treatment,Systemic oppression to apartheid-like conditions
+4,Severe,Human/Civil Rights,Systematic rights violations to near-total rights suppression affecting hundreds of thousands to millions
+4,Severe,Democratic Norms,Breakdown of democratic institutions and authoritarian takeover
+4,Severe,Privacy,Privacy breach affecting >1 million individuals to societal-level privacy collapse with widespread surveillance
+5,Catastrophic,Physical Harm,>1 million deaths or existential threat to humanity
+5,Catastrophic,Infrastructure Damage,"Continental to global infrastructure collapse (e.g., multiple countries without power)"
+5,Catastrophic,Property Damage,Extreme catastrophic to global destruction (>$10B)
+5,Catastrophic,Financial Loss,Economic collapse to global economic collapse (>$10B)
+5,Catastrophic,Environmental Damage,Continental-scale devastation to global ecological collapse
+5,Catastrophic,Toxic or Malicious Content,"Societal breakdown to global breakdown of truth and trust (e.g., civil wars, inability to discern facts)"
+5,Catastrophic,Differential Treatment,Systemic oppression at global scale
+5,Catastrophic,Human/Civil Rights,Complete rights abolition to global human rights catastrophe affecting millions across continents
+5,Catastrophic,Democratic Norms,Global democratic collapse or authoritarian lock-in
+5,Catastrophic,Privacy,Total surveillance state or global loss of privacy

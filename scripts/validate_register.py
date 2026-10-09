@@ -551,6 +551,65 @@ def validate_rows(report, rows, today):
         check_style(report, where, row)
 
 
+def validate_mit_framework(report, project_dir, register_ids):
+    """The MIT framework file must be the whole table, and every rating must sit in it.
+
+    Five levels by ten harm types is 50 cells. A transcription that quietly lost a
+    column would still look like a framework file, so the shape is checked rather than
+    assumed.
+    """
+    path = project_dir / "frameworks" / "mit_severity_framework.csv"
+    if not path.exists():
+        report.error("frameworks", "mit_severity_framework.csv is missing")
+        return {}
+    with open(path, newline="", encoding="utf-8") as fh:
+        cells = list(csv.DictReader(fh))
+
+    levels = {row["level"] for row in cells}
+    harms = {row["harm_type"] for row in cells}
+    if len(levels) != 5:
+        report.error("frameworks.mit", f"{len(levels)} severity levels, expected 5")
+    if len(harms) != 10:
+        report.error("frameworks.mit", f"{len(harms)} harm types, expected 10")
+    if len(cells) != 50:
+        report.error(
+            "frameworks.mit",
+            f"{len(cells)} cells, expected 50. The table is five levels by ten harm types",
+        )
+    for row in cells:
+        if not row["descriptor"].strip():
+            report.error(
+                "frameworks.mit",
+                f"level {row['level']} and {row['harm_type']} has no descriptor",
+            )
+
+    ratings_path = project_dir / "data" / "case_harm_ratings.csv"
+    if not ratings_path.exists():
+        report.warn("ratings", "case_harm_ratings.csv is missing, so no case is scored yet")
+        return {}
+    with open(ratings_path, newline="", encoding="utf-8") as fh:
+        ratings = list(csv.DictReader(fh))
+
+    headline = {}
+    for row in ratings:
+        where = f"ratings.{row['case_id']}.{row['harm_type']}"
+        if row["case_id"] not in register_ids:
+            report.error(where, "rates a case that is not in the register")
+        if row["harm_type"] not in harms:
+            report.error(where, "is not one of the framework's ten harm types")
+        if row["level"] not in levels:
+            report.error(where, f"level '{row['level']}' is not one of the framework's five")
+        if row["basis_type"] not in FRAMEWORK_BASIS:
+            report.error(where, f"basis_type must be one of {sorted(FRAMEWORK_BASIS)}")
+        if not row["basis"].strip():
+            report.error(where, "has no basis. A rating without its working cannot be checked")
+        headline[row["case_id"]] = max(headline.get(row["case_id"], 0), int(row["level"]))
+
+    for case in sorted(register_ids - set(headline)):
+        report.error("ratings", f"{case} has no harm rating, so it has no severity")
+    return headline
+
+
 def validate_rules(report, project_dir, register_ids):
     path = project_dir / "rules" / "watchlist_rules.json"
     if not path.exists():
@@ -776,6 +835,7 @@ def main(argv):
     today = date.today()
     validate_rows(report, rows, today)
     validate_rules(report, project_dir, {row["id"] for row in rows})
+    mit = validate_mit_framework(report, project_dir, {row["id"] for row in rows})
     check_analytical_split(report, project_dir, rows)
     check_freshness(report, project_dir)
 
@@ -786,6 +846,13 @@ def main(argv):
         by_class[row["control_class"]] = by_class.get(row["control_class"], 0) + 1
     for name, count in sorted(by_class.items(), key=lambda item: (-item[1], item[0])):
         print(f"  {name}: {count}")
+
+    if mit:
+        names = {1: "Negligible", 2: "Minor", 3: "Substantial", 4: "Severe", 5: "Catastrophic"}
+        spread = {}
+        for case, level in mit.items():
+            spread[names[level]] = spread.get(names[level], 0) + 1
+        print("MIT severity: " + ", ".join(f"{v} {k}" for k, v in sorted(spread.items())))
 
     for line in report.warnings:
         print(f"WARNING {line}")

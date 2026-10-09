@@ -1,0 +1,19 @@
+case_id,harm_type,level,basis,basis_type
+AIR-001,Financial Loss,1,"The tribunal ordered 812.02 Canadian dollars to one passenger, well inside MIT's under-10,000 band for level 1.",Our reading
+AIR-002,Property Damage,2,"Records for roughly 2,400 companies were destroyed and then restored by the platform. Moderate damage, reversed.",Our reading
+AIR-002,Financial Loss,1,"No financial loss is quantified in the record, and the platform refunded the user.",Our reading
+AIR-003,Infrastructure Damage,2,"A rental management platform was down for about 30 hours across multiple businesses. Local disruption, not critical service failure.",Our reading
+AIR-003,Property Damage,2,"The production database and its volume backups were destroyed, then recovered from offsite backups after about two and a half days.",Our reading
+AIR-003,Financial Loss,2,"Rental businesses could not take bookings or release vehicles for the outage. Not quantified in the record, but above the 10,000 floor.",Our reading
+AIR-004,Infrastructure Damage,2,"AWS Cost Explorer was unavailable in one region for about 13 hours. A billing console, not a critical service.",Our reading
+AIR-005,Financial Loss,1,"Some developers cancelled subscriptions and the company issued refunds. No figure in the record, and subscription scale puts it under the level 1 ceiling.",Our reading
+AIR-006,Toxic or Malicious Content,2,"Harmful misinformation on a city government site, live for nearly two years, telling small businesses they could do things the law forbids.",Our reading
+AIR-006,Differential Treatment,1,"The chatbot said landlords could refuse housing vouchers. The record does not establish that any discrimination followed, so this stays at noticeable bias.",Our reading
+AIR-006,Human/Civil Rights,1,Advice touching tenants' and workers' rights. No actual restriction of rights is established in the record.,Our reading
+AIR-007,Financial Loss,1,No sale completed and no money moved.,Our reading
+AIR-008,Toxic or Malicious Content,1,The chatbot swore at one customer and wrote a disparaging poem. MIT's level 1 band names minor profanity explicitly.,Our reading
+AIR-009,Privacy,3,"CRM data exfiltrated from more than 700 corporate Salesforce instances. Identifiable data on well over a thousand individuals, below MIT's one million ceiling for level 3.",Our reading
+AIR-010,Privacy,1,"Microsoft reported no known exploitation in the wild, so no breach occurred. Rated on harm that happened, with the potential noted on the card.",Stated
+AIR-011,Toxic or Malicious Content,2,"Harmful health misinformation from a service promoted as a prevention resource, reaching people seeking help for an eating disorder.",Our reading
+AIR-011,Physical Harm,1,Advice that could worsen an eating disorder. No injuries are documented in the record.,Our reading
+AIR-012,Physical Harm,1,Clinical summaries informed treatment at four hospitals on an unverified accuracy claim. No patient injury is documented in the record.,Our reading
