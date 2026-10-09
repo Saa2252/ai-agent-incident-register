@@ -462,12 +462,6 @@ def screen_home(frame, rules):
     )
 
     st.markdown("---")
-    st.markdown("### Published for comment until 7 November 2026")
-    st.markdown(
-        f"Version {VERSION}. One route for corrections: "
-        f"[open an issue]({CORRECTIONS_URL}). Everything substantive goes in the change "
-        "log with the date, acted on or not."
-    )
     st.error(
         "**What this register must not be used for.** It is not legal advice and not a "
         "compliance assessment. Do not use it to decide whether an organisation named "
@@ -1580,6 +1574,12 @@ def screen_method(frame, rules):
         "in the change log below with the date and what changed, and with who sent it **if "
         "they want to be named**. Say so in the issue either way. A register nobody "
         "corrects is a blog post."
+    )
+    st.markdown(
+        f"**This is version {VERSION}, published for comment rather than as a finished "
+        "reference.** Comments received up to **7 November 2026** will be worked through "
+        "and answered before it moves to 1.0. The window closing does not close the "
+        "route, it marks the point at which the open questions stop being open."
     )
 
     st.markdown("### Change log")
