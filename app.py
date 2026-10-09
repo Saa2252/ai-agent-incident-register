@@ -42,6 +42,14 @@ TABLE_CSS = """
 <style>
 div[data-testid="stMarkdownContainer"]:has(> table) { overflow-x: auto; }
 div[data-testid="stMarkdownContainer"] > table { min-width: max-content; }
+
+/* st.table squeezes columns until short values break mid-word: AIR- / 001, Moderat / e.
+   Nothing here needs to wrap, so nothing does, and the container scrolls instead. */
+div[data-testid="stTable"] { overflow-x: auto; }
+div[data-testid="stTable"] table { min-width: max-content; }
+div[data-testid="stTable"] th,
+div[data-testid="stTable"] td { white-space: nowrap; }
+div[data-testid="stTable"] th[scope="row"] { font-weight: 600; }
 </style>
 """
 
@@ -504,7 +512,7 @@ def screen_home(frame, rules):
         f"| any role could halt or roll back the deployment | {facts['no_stop_authority_recorded']} of {facts['total']} |\n"
         f"| any date was set to re-examine it | {facts['no_review_recorded']} of {facts['total']} |"
     )
-    st.error(
+    st.info(
         "**Read these as statements about the record, not about the deployers.** This "
         f"register cannot and does not claim that {facts['no_review_recorded']} "
         "organisations set no review date. Review dates are internal artefacts that "
@@ -512,7 +520,7 @@ def screen_home(frame, rules):
         "claim is only that the record does not say. Every row defaults to *not "
         "disclosed*, and both *yes* and *no* require a source, because coding *no* from a "
         "failed search would be an accusation on no evidence.",
-        icon="⚠️",
+        icon="📋",
     )
     st.markdown(
         f"**The gradient is the finding, more than any one number.** "
@@ -588,138 +596,124 @@ def screen_home(frame, rules):
 
 
 def incident_card(row):
+    """One record, in four tabs.
+
+    Eight rounds of review each added a field, and nothing was watching the total. The
+    flat version carried thirty-two fields and six coloured boxes in a single scroll,
+    which is unreadable however correct each line is. So the story is always visible and
+    the governance detail sits behind tabs, where a reader who wants it can find it and a
+    reader who does not is not made to scroll past it.
+
+    The repeated definitions went to the Method page. They were the same words on every
+    card, twelve times over.
+    """
     st.markdown(
         badge(row["id"], "#374151")
         + badge(row["incident_or_hazard"], "#374151")
         + badge(f"{row['severity']} severity", SEVERITY_COLOR[row["severity"]])
         + badge(f"Missing control: {row['control_class']}", CLASS_COLOR[row["control_class"]])
-        + (badge(f"Also reads as: {row['secondary_class']}", "#6B7280") if row["secondary_class"] else "")
         + badge(f"Evidence grade {row['evidence_grade']}", GRADE_COLOR[row["evidence_grade"]])
-        + badge(f"Control was {row['control_maturity'].lower()}", MATURITY_COLOR[row["control_maturity"]])
         + (badge("Facts disputed by the deployer", "#8A4B00") if row["disputed"] == "Yes" else "")
         + (badge("Not counted in any number", "#6B7280") if not row["counted"] else ""),
         unsafe_allow_html=True,
     )
-
-    st.markdown(f"**{esc(row['deployer'])}** · {esc(row['sector'])} · {esc(row['agent_type'])} · {esc(row['event_date'])}")
-
-    st.markdown("**What happened**")
+    st.markdown(
+        f"**{esc(row['deployer'])}** · {esc(row['sector'])} · {esc(row['agent_type'])} "
+        f"· {esc(row['event_date'])}"
+    )
     st.markdown(esc(row["what_happened"]))
+    st.markdown(f"**What was missing.** {esc(row['missing_control'])}")
 
-    st.info(f"**Why is this in the register?** {esc(row['why_in_register'])}", icon="🔍")
-    st.caption("The scope line is on the Method page. This is that line applied to this row.")
+    story, control, accountability, evidence = st.tabs(
+        ["What changed after", "The control and the fix", "Who could have stopped it", "Evidence"]
+    )
 
-    left, right = st.columns(2)
-    with left:
-        st.markdown("**What the agent was allowed to do**")
-        granted = [part for part in row["authority"].split("|") if part]
-        st.markdown("\n".join(f"- {esc(item)}" for item in granted))
-        st.markdown(f"**A person approved first:** {esc(row['human_approval'])}")
-        st.caption(APPROVAL_MEANING.get(row["human_approval"], ""))
-        st.markdown("**Was accountability locatable at launch?**")
+    with story:
+        st.markdown(esc(row["what_changed_after"]))
+        if row["aftermath_status"] != "Documented":
+            st.markdown(
+                f":orange[**The ending is {row['aftermath_status'].lower()}.** The public "
+                "record stops before this story does. Read the harm above as what was "
+                "reported, not as what finally happened.]"
+            )
+        if row["disputed"] == "Yes":
+            st.markdown(
+                ":orange[**The facts here are disputed.** The deployer's own position is "
+                "in the paragraph above and in the second source.]"
+            )
+        if row["aftermath_source_url"]:
+            st.caption(f"[The source for this]({row['aftermath_source_url']}).")
+        st.markdown(f"**Why this is in the register.** {esc(row['why_in_register'])}")
+
+    with control:
+        tier = row["missing_control_basis"].split(".")[0].strip()
+        st.markdown(
+            f"**State it was in: {row['control_maturity']}.** "
+            f"{MATURITY_MEANING[row['control_maturity']]}\n\n"
+            f"**How the register knows: {tier}.** "
+            f"{esc(row['missing_control_basis'].split('.', 1)[1].strip())}"
+        )
+        st.markdown(
+            f"**Test before launch.** {esc(row['test_before_launch'])}\n\n"
+            f"**Pass mark.** {esc(row['test_pass_mark'])}\n\n"
+            f"**Signal after launch.** {esc(row['signal_after_launch'])}"
+        )
+        st.caption(
+            f"Failure pattern: {esc(row['failure_pattern'])}. OWASP {row['owasp_code']}, "
+            f"{OWASP_CODES[row['owasp_code']]}. Monitoring category, NIST AI 800-4: "
+            f"{esc(row['nist_800_4_category'])}."
+        )
+
+    with accountability:
+        granted = ", ".join(part for part in row["authority"].split("|") if part)
+        st.markdown(
+            f"**The agent could:** {esc(granted)}.  \n"
+            f"**A person approved first:** {esc(row['human_approval'])}."
+        )
+        st.markdown(
+            f"**Runs the control:** {esc(row['control_owner_role'])}  \n"
+            f"**Answers when it fails:** {esc(row['accountable_role'])}"
+        )
+        st.markdown(
+            f"**Harm fell on.** {esc(row['harm_borne_by'])}  \n"
+            f"**Could have prevented it.** {esc(row['could_have_prevented'])}"
+        )
+        rows_md = []
         for label, answer_field, source_field in (
             ("Someone reviewed its behaviour first", "deploy_evidence_seen", "deploy_evidence_source"),
             ("A role could halt or roll it back", "deploy_stop_authority", "deploy_stop_authority_source"),
             ("A date was set to look at it again", "deploy_review_date", "deploy_review_date_source"),
         ):
-            answer = row[answer_field]
-            link = f" [[source]]({row[source_field]})" if row[source_field] else ""
-            st.markdown(f"- {label}: **{answer}**{link}")
-        st.caption(
-            "Not disclosed means the public record is silent, which is the default. It is "
-            "not a finding that the thing was missing."
+            link = f" [source]({row[source_field]})" if row[source_field] else ""
+            rows_md.append(f"| {label} | {row[answer_field]}{link} |")
+        st.markdown(
+            "**Does the public record say whether...**\n\n"
+            "| | |\n| --- | --- |\n" + "\n".join(rows_md)
         )
-    with right:
-        st.markdown("**Failure pattern**")
-        st.markdown(f"{esc(row['failure_pattern'])}")
-        st.caption(f"OWASP Agentic Top 10 2026: {row['owasp_code']}, {OWASP_CODES[row['owasp_code']]}")
-        if row["secondary_class"]:
+        st.caption("Not disclosed means the record is silent, not that the thing was missing.")
+
+    with evidence:
+        st.markdown(f"**Grade {row['evidence_grade']}.** {GRADE_MEANING[row['evidence_grade']]}")
+        st.markdown(f"1. [{esc(row['source_1_label'])}]({row['source_1_url']})")
+        if row["source_2_url"]:
+            st.markdown(f"2. [{esc(row['source_2_label'])}]({row['source_2_url']})")
+        archives = [a for a in row.get("archive_urls", "").split() if a]
+        if archives:
+            links = ", ".join(f"[{i}]({a})" for i, a in enumerate(archives, start=1))
             st.caption(
-                f"This case also reads as a **{row['secondary_class']}** failure. The "
-                "rubric tests classes in a fixed order and takes the first match, so only "
-                f"**{row['control_class']}** is counted. The second reading is recorded "
-                "here because discarding it would lose something real."
+                f"Checked {row['date_checked']}. Archived copies: {links}. Some publishers "
+                "block automated access, so an archived copy may be the one that opens."
             )
-        st.markdown(f"**Harm:** {esc(row['harm_type'])}")
-        st.caption(f"{row['severity']} on this register's scale means: {SEVERITY_MEANING[row['severity']][0].lower()}{SEVERITY_MEANING[row['severity']][1:]}")
-        st.caption(f"**Why this row meets it.** {esc(row['severity_basis'])}")
-
-    tier = row["missing_control_basis"].split(".")[0].strip()
-    st.error(
-        f"**The missing control.** {esc(row['missing_control'])}\n\n"
-        f"**State it was in: {row['control_maturity']}.** {MATURITY_MEANING[row['control_maturity']]}",
-        icon="🚫",
-    )
-    st.caption(
-        f"**How the register knows this: {tier}.** "
-        f"{esc(row['missing_control_basis'].split('.', 1)[1].strip())}"
-    )
-    st.warning(
-        f"**Test before launch.** {esc(row['test_before_launch'])}\n\n"
-        f"**Pass mark.** {esc(row['test_pass_mark'])}",
-        icon="🧪",
-    )
-    st.success(
-        f"**Signal after launch.** {esc(row['signal_after_launch'])}\n\n"
-        f"**Monitoring category, NIST AI 800-4.** {esc(row['nist_800_4_category'])}",
-        icon="📈",
-    )
-    st.markdown(
-        f"**Runs the control:** {esc(row['control_owner_role'])}  \n"
-        f"**Answers when it fails:** {esc(row['accountable_role'])}"
-    )
-
-    st.markdown("**Who bore it, and who could have stopped it**")
-    st.markdown(
-        f"- **Harm fell on.** {esc(row['harm_borne_by'])}\n"
-        f"- **Could have prevented it.** {esc(row['could_have_prevented'])}\n"
-        f"- **Were they the same people?** {row['harm_bearer_had_control']}"
-    )
-
-    st.markdown("**What changed after**")
-    st.markdown(esc(row["what_changed_after"]))
-    if row["aftermath_status"] != "Documented":
+        else:
+            st.caption(f"Checked {row['date_checked']}. No archived copy yet.")
         st.markdown(
-            f":orange[**The ending is {row['aftermath_status'].lower()}.** The public record "
-            "stops before this story does. Read the harm above as what was reported, not "
-            "as what finally happened.]"
+            f"**Closest clauses.** NIST AI RMF {esc(row['nist_ai_rmf'])} · "
+            f"ISO/IEC 42001 {esc(row['iso_42001'])} · EU AI Act {esc(row['eu_ai_act'])}"
         )
-    if row["aftermath_source_url"]:
-        same = row["aftermath_source_url"] in (row["source_1_url"], row["source_2_url"])
-        which = "Source 1 below" if row["aftermath_source_url"] == row["source_1_url"] else (
-            "Source 2 below" if same else "A separate source")
-        st.caption(f"[{which}]({row['aftermath_source_url']}) carries this claim.")
-    if row["disputed"] == "Yes":
-        st.markdown(
-            ":orange[**The facts here are disputed.** The deployer's own position is in the "
-            "paragraph above and in the second source. Read both before using this case.]"
-        )
-
-    st.markdown("**Closest clauses**")
-    st.markdown(
-        f"- NIST AI RMF 1.0: {esc(row['nist_ai_rmf'])}\n"
-        f"- ISO/IEC 42001:2023 Annex A: {esc(row['iso_42001'])}\n"
-        f"- EU AI Act: {esc(row['eu_ai_act'])}"
-    )
-    st.caption(
-        "Closest clause, not a legal classification. The duty in any real case depends on "
-        "the role, the system and the jurisdiction."
-    )
-
-    st.markdown(f"**Evidence, grade {row['evidence_grade']}.** {GRADE_MEANING[row['evidence_grade']]}")
-    st.markdown(f"1. [{esc(row['source_1_label'])}]({row['source_1_url']})")
-    if row["source_2_url"]:
-        st.markdown(f"2. [{esc(row['source_2_label'])}]({row['source_2_url']})")
-    archives = [a for a in row.get("archive_urls", "").split() if a]
-    if archives:
-        links = ", ".join(f"[{i}]({a})" for i, a in enumerate(archives, start=1))
         st.caption(
-            f"Sources last checked {row['date_checked']}. Archived copies: {links}. "
-            "Some publishers block automated access, so the archived copy may be the one "
-            "that opens for you."
+            f"Severity basis: {esc(row['severity_basis'])} Closest clause, not a legal "
+            "classification."
         )
-    else:
-        st.caption(f"Sources last checked {row['date_checked']}. No archived copy yet.")
 
 
 def screen_register(frame):
@@ -985,16 +979,14 @@ def screen_watchlist(frame, rules):
 def screen_method(frame, rules):
     st.title("Method")
     st.markdown(f"Version {VERSION}, last updated {UPDATED}. Single coder.")
-    st.error(
-        "**Where this is weakest, in four lines.** The sample is biased along the same "
-        "axis the headline measures, because primary records exist mainly for legal and "
-        "security events. The ISO/IEC 42001 clause numbers come from the standard's "
-        "structure rather than its text, which is paywalled. One person coded every row "
-        "and no second rater has checked any of it. The secondary class has no rubric at "
-        "all. The full list is in **Limits** further down, and the **change log** at the "
-        "bottom records every correction, including the ones that incriminate this "
-        "project.",
-        icon="⚠️",
+    st.markdown(
+        "This page is the argument for trusting the register, and the fastest way through "
+        "it is to start with what it cannot do. **Limits** is four sections down and names "
+        "four weaknesses: the sample is biased along the same axis the headline measures, "
+        "the ISO/IEC 42001 clause numbers come from the standard's structure rather than "
+        "its paywalled text, one person coded every row, and the secondary class has no "
+        "rubric. The **change log** at the bottom records every correction, including the "
+        "ones that went against this project. If you only read two things here, read those."
     )
 
     st.markdown("### What counts as a case")
@@ -1062,14 +1054,13 @@ def screen_method(frame, rules):
         "excluded from every count, because dropping it would hide a failure pattern that "
         "no counted row shows as plainly."
     )
-    st.warning(
+    st.markdown(
         "**A note on sources, which turned into a finding of its own.** Searching for these "
         "cases returns a large volume of pages that read as incident write-ups but are "
         "generated summaries of other summaries, often with invented detail and no primary "
         "record. Several candidate cases were dropped because no primary source existed "
         "behind the reporting. If you build something similar, budget most of your time "
-        "for verification rather than for finding cases.",
-        icon="⚠️",
+        "for verification rather than for finding cases."
     )
 
     st.markdown("### The coding rubric")
@@ -1345,7 +1336,7 @@ def screen_method(frame, rules):
         "| High-risk, standalone Annex III systems | 2 December 2027 | **Official Journal text** on EUR-Lex |\n"
         "| High-risk, AI embedded in Annex I regulated products | 2 August 2028 | **Official Journal text** on EUR-Lex |\n"
     )
-    st.warning(
+    st.markdown(
         "**Two of these four are derived rather than quoted, and that distinction matters "
         "more here than anywhere else on this page.** These are the claims a lawyer in the "
         "audience knows better than I do, and an earlier version of this page took them "
@@ -1354,8 +1345,7 @@ def screen_method(frame, rules):
         "dates were not quoted from an article that states them, they were worked out from "
         "Article 113's structure and from a transitional period given in months. That "
         "reasoning is shown so you can check it rather than trust it, and a correction "
-        "here is the most useful one you could send.",
-        icon="⚠️",
+        "here is the most useful one you could send."
     )
     st.markdown(
         "The practical point for this register is that the chatbot cases are not waiting on "
@@ -1376,7 +1366,13 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
-        "| 0.9 | 2026-10-09 | Reviewer rounds, consolidated. Measured what the rubric's "
+        "| 0.9 | 2026-10-09 | Reviewer rounds, consolidated. Late in the day, rebuilt the "
+        "incident card into four tabs after it had accumulated thirty-two fields and six "
+        "coloured boxes in one scroll, which was unreadable however correct each line "
+        "was. Moved the repeated definitions to this page. Replaced the red block at the "
+        "top of Method with plain text, because a page that opens on an alarm reads as an "
+        "apology rather than as a method. |\n"
+        "| 0.9 | 2026-10-09 | Earlier that day. Measured what the rubric's "
         "ordering does to the finding and rewrote the headline around the part that "
         "survives it. Separated descriptive counts from analytical ones. Decoupled "
         "severity from recovery effort. Corrected the EU AI Act dates against EUR-Lex, "
