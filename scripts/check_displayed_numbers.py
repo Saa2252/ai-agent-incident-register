@@ -58,6 +58,46 @@ def main(argv):
             print(f"ERROR the register screen raised: {problem.value}", file=sys.stderr)
         return 1
 
+    register_markdown = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+    register_metrics = {m.label: m.value for m in at.metric}
+
+    # Home carries its own computed figures, so it is read in the same pass.
+    home = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)
+    home.run()
+    if home.exception:
+        for problem in home.exception:
+            print(f"ERROR the home screen raised: {problem.value}", file=sys.stderr)
+        return 1
+    home_markdown = "\n".join(str(getattr(e, "value", "")) for e in home.markdown)
+    home_metrics = {m.label: m.value for m in home.metric}
+
+    for label, want in (
+        ("Cases in the register", str(expected["cases"])),
+        ("Cases that feed the numbers", str(expected["counted"])),
+    ):
+        shown = home_metrics.get(label)
+        if shown != want:
+            problems_home = f"home metric '{label}' shows {shown!r}, data says {want!r}"
+            print(f"ERROR {problems_home}", file=sys.stderr)
+            return 1
+        print(f"  ok   home metric '{label}' = {want}")
+
+    finding = re.search(
+        r"In (\d+) of the (\d+) counted cases the agent said nothing untrue", home_markdown
+    )
+    if not finding:
+        print("ERROR could not find the headline finding on Home", file=sys.stderr)
+        return 1
+    got, of = (int(g) for g in finding.groups())
+    if (got, of) != (expected["no false statement"], expected["counted"]):
+        print(
+            f"ERROR home finding says {got} of {of}, data says "
+            f"{expected['no false statement']} of {expected['counted']}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"  ok   home finding = {got} of {of}")
+
     rendered = "\n".join(
         str(getattr(element, "value", "")) for element in at.markdown
     ) + "\n".join(str(getattr(element, "body", "")) for element in at.markdown)

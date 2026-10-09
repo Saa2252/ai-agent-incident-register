@@ -23,7 +23,7 @@ here rather than in tests/, where everything is standard library on purpose.
 import sys
 from pathlib import Path
 
-SCREENS = ["Home", "The register", "Build your watch list", "Method"]
+SCREENS = ["Home", "The register", "Findings", "Build your watch list", "Method"]
 TIMEOUT = 120
 
 

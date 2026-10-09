@@ -361,6 +361,33 @@ def headline(frame):
 # ------------------------------------------------------------------------------ home
 
 
+def severity_strip(frame):
+    """The severity spread as one bar. Severity is this site's only data colour."""
+    total = len(frame)
+    segments, key = [], []
+    for level in SEVERITY_ORDER:
+        count = int((frame["severity"] == level).sum())
+        if not count:
+            continue
+        segments.append(
+            f'<div style="width:{100 * count / total:.4f}%;'
+            f'background:var(--sev-{SEVERITY_SLUG[level]});height:30px;display:flex;'
+            f'align-items:center;justify-content:center;color:#fff;font-size:13px;'
+            f'font-weight:650" title="{esc(level)}: {count} of {total}">{count}</div>'
+        )
+        key.append(
+            f'<span style="display:inline-flex;align-items:center;gap:6px;'
+            f'margin:0 14px 4px 0"><i style="width:11px;height:11px;border-radius:3px;'
+            f'display:inline-block;background:var(--sev-{SEVERITY_SLUG[level]})"></i>'
+            f"{esc(level)} {count}</span>"
+        )
+    return (
+        '<div style="display:flex;border-radius:8px;overflow:hidden;margin:4px 0 10px">'
+        f'{"".join(segments)}</div>'
+        f'<div style="font-size:13px;color:var(--ink-2)">{"".join(key)}</div>'
+    )
+
+
 def screen_home(frame, rules):
     facts = headline(frame)
 
@@ -370,86 +397,121 @@ def screen_home(frame, rules):
         "allowed to act."
     )
     st.markdown(
-        f"{facts['all_rows']} real AI agent failures, each traced to the control that was "
-        "missing, the test that would have caught it before launch, and the signal that "
-        "would have shown it after."
+        f"{facts['all_rows']} documented AI agent failures, each traced to the control "
+        "that was missing, the test that would have caught it before launch, and the "
+        "signal that would have shown it after."
     )
 
     left, middle, right = st.columns(3)
-    left.metric("Incidents in the register", facts["all_rows"], help="Grades A, B and C. One grade C row is shown but counted nowhere.")
-    middle.metric("Rows that feed the numbers", facts["total"], help="Grade A and grade B only. Every count on this site uses these rows.")
-    right.metric("Watch-list rules built from them", len(rules["rules"]), help="Fixed rules. No model runs in this tool.")
+    left.metric("Cases in the register", facts["all_rows"])
+    left.caption("Every row of data/incidents.csv.")
+    middle.metric("Cases that feed the numbers", facts["total"])
+    middle.caption("Grade A and B only. One grade C row is shown and counted nowhere.")
+    right.metric("Watch-list rules built from them", len(rules["rules"]))
+    right.caption("Fixed rules. No model runs in the tool.")
 
     st.markdown("---")
-
     st.markdown("### The finding")
     st.markdown(
-        f"**In {facts['said_nothing_untrue']} of the {facts['total']} cases the agent said "
-        "nothing untrue, and harm happened anyway.** In those cases a more accurate model "
-        "would have changed nothing. What was missing governed what the agent was allowed "
-        "to do, what it was allowed to treat as an instruction, or who was positioned to "
-        "stop it."
+        f"**In {facts['said_nothing_untrue']} of the {facts['total']} counted cases the "
+        "agent said nothing untrue, and harm happened anyway.** A more accurate model "
+        f"would have changed nothing in those. And in the other {facts['said_untrue']}, "
+        "saying something untrue was never enough on its own: every one of the "
+        f"{facts['total']} also needed authority the agent should not have held, reach it "
+        "should not have had, or a path nobody was watching."
     )
     st.markdown(
-        f"**And in the other {facts['said_untrue']}, saying something untrue was never "
-        f"sufficient on its own.** Every one of the {facts['total']} also required "
-        "authority the agent should not have held, reach it should not have had, or a "
-        "path nobody was monitoring. That is the part that does not flip when you "
-        "rearrange the counting: a control on what an agent may **do** catches both "
-        "groups, and a control on what it **says** catches one."
-    )
-    st.caption(
-        f"The second claim is checkable on every row. No case in the register caused harm "
-        f"through an untrue statement alone, and the validator fails the build if a row is "
-        f"ever added that does."
+        "So the useful question is not whether the model is accurate. It is **what the "
+        "agent is allowed to do, and who can stop it.**"
     )
 
-    order = sorted(facts["by_class"].items(), key=lambda item: (-item[1], item[0]))
-    rows = []
-    for name, count in order:
-        rows.append({
-            "What the missing control governed": name,
-            "Cases": count,
-            "What that means": CONTROL_CLASSES[name],
-        })
-    st.markdown(
-        "| What the missing control governed | Cases | What that means |\n| --- | --- | --- |\n"
-        + "\n".join(
-            f"| {r['What the missing control governed']} | {r['Cases']} | {r['What that means']} |"
-            for r in rows
+    chart_col, spread_col = st.columns([3, 2])
+    with chart_col:
+        st.markdown("**What the missing control governed**")
+        st.altair_chart(class_chart(frame), use_container_width=True)
+        st.caption(
+            f"{facts['not_accuracy']} of {facts['total']} counted cases sit outside "
+            "Accuracy. The open segment is the grade C row, counted nowhere."
         )
+    with spread_col:
+        st.markdown("**How bad the harm was**")
+        st.markdown(severity_strip(frame), unsafe_allow_html=True)
+        st.caption(
+            "Severity is the only thing colour means here. Every case card carries the "
+            "word and a bar meter too, so nothing depends on colour alone. The bands are "
+            "defined on Method."
+        )
+
+    st.markdown("---")
+    st.markdown("### Where to go next")
+    one, two, three = st.columns(3)
+    one.markdown(
+        f"**The register**  \nAll {facts['all_rows']} cases, filterable. Each opens into "
+        "what happened, what was missing, the test, the evidence and how it ended. Every "
+        "claim links to its source."
+    )
+    two.markdown(
+        "**Build your watch list**  \nSix plain questions about your own agent. The "
+        f"answers trigger {len(rules['rules'])} fixed rules and return tests and signals "
+        "with the cases behind each. Downloadable."
+    )
+    three.markdown(
+        "**Findings** carries the four findings in full, including the two about this "
+        "register's own evidence. **Method** has the inclusion rule, the grades, the "
+        "rubric and the limits."
     )
 
-    st.caption(
-        f"How the {facts['total']} grade A and grade B rows fall out under the ordered "
-        f"rubric, events from {facts['years']}. One row per case, one class per row. This "
-        "table describes the register. The finding above does not rest on it, for the "
-        "reason given in the paragraph above."
+    st.markdown("---")
+    st.markdown("### Published for comment until 7 November 2026")
+    st.markdown(
+        f"Version {VERSION}. One route for corrections: "
+        f"[open an issue]({CORRECTIONS_URL}). Everything substantive goes in the change "
+        "log with the date, acted on or not."
+    )
+    st.error(
+        "**What this register must not be used for.** It is not legal advice and not a "
+        "compliance assessment. Do not use it to decide whether an organisation named "
+        "here met a legal obligation, to assess a vendor, or as evidence in procurement "
+        "or enforcement. Use it to generate questions about your own system.",
+        icon="⛔",
+    )
+
+
+def screen_findings(frame, rules):
+    """The analysis that used to live under the landing page.
+
+    Eleven headings and roughly two thousand words were the first thing a reader met,
+    which is an essay rather than a landing page. Nothing was cut. It moved to a screen
+    somebody can choose.
+    """
+    facts = headline(frame)
+    st.title("Findings")
+    st.markdown(
+        f"Every number here is computed from the {facts['all_rows']} rows in "
+        "data/incidents.csv, and the build fails if any of them is ever typed in by "
+        "hand. Two findings are about the agents. Two are about the evidence, including "
+        "this register's own."
+    )
+    st.markdown("### Why this register exists")
+    st.markdown(NIST_GAP_QUOTE)
+    st.markdown(
+        "Teams are asked to monitor agents in production without an agreed way to do it "
+        "and without a shared record of what has already gone wrong. This is a small, "
+        "checkable contribution to the second problem."
     )
 
     st.markdown("---")
 
-    first, second = st.columns(2)
-    with first:
-        st.markdown("### Two counts that change where you look")
-        st.markdown(
-            f"- In **{facts['no_approval']} of {facts['total']}** cases no person approved "
-            "the action before it took effect, or the gate that should have stopped it did "
-            "not hold.\n"
-            f"- **{facts['read_only']} of the {facts['total']}** agents could only read. "
-            f"**{facts['read_only_bad']} of those {facts['read_only']}** still produced a "
-            "serious or severe outcome. Read-only is not the same as low risk, because an "
-            "agent that only reads can still speak, and what it says binds the "
-            "organisation."
-        )
-    with second:
-        st.markdown("### Why this register exists")
-        st.markdown(NIST_GAP_QUOTE)
-        st.markdown(
-            "Teams are asked to monitor agents in production without an agreed way to do "
-            "it and without a shared record of what has already gone wrong. This is a "
-            "small, checkable contribution to the second problem."
-        )
+    st.markdown("### Two counts that change where you look")
+    st.markdown(
+        f"- In **{facts['no_approval']} of {facts['total']}** cases no person approved "
+        "the action before it took effect, or the gate that should have stopped it did "
+        "not hold.\n"
+        f"- **{facts['read_only']} of the {facts['total']}** agents could only read. "
+        f"**{facts['read_only_bad']} of those {facts['read_only']}** still produced a "
+        "serious or severe outcome. Read-only is not the same as low risk, because an "
+        "agent that only reads can still speak, and what it says binds the organisation."
+    )
 
     st.markdown("---")
     st.markdown("### Who could have stopped it, and whether anyone can tell")
@@ -659,50 +721,6 @@ def screen_home(frame, rules):
         "correction worth sending."
     )
 
-    st.markdown("---")
-    st.markdown("### How this works")
-    st.markdown(
-        "**The register** lists every case with its evidence grade and a link you can "
-        "follow. Nothing is on a card that is not in the source.\n\n"
-        "**Build your watch list** asks six plain questions about your own agent and "
-        "returns the tests and signals those answers trigger. It runs on fixed rules, not "
-        "on a model, so every line shows the rule and the incidents behind it.\n\n"
-        "**Method** gives the inclusion rule, the evidence grades, the coding rubric, the "
-        "limits and the change log. Start there if you want to disagree with something."
-    )
-    st.markdown("---")
-    st.markdown("### Published for comment until 7 November 2026")
-    st.markdown(
-        f"This is version {VERSION}. It is published for comment rather than as a "
-        "finished reference, and the version number is the least important part of that "
-        "sentence. What makes it real is the three things below."
-    )
-    st.markdown(
-        f"- **One route.** Open an issue at [{CORRECTIONS_URL}]({CORRECTIONS_URL}). That "
-        "is the only channel. Comments elsewhere are welcome but the change log is driven "
-        "from issues, so a correction sent anywhere else may not reach it.\n"
-        "- **A window with a date on it.** Comments received up to **7 November 2026** "
-        "will be worked through and answered before this moves to 1.0. The window closing "
-        "does not close the route, it just marks the point at which the open questions "
-        "stop being open.\n"
-        "- **Every substantive comment goes in the change log**, with the date, whether "
-        "or not it is acted on. A comment recorded and declined is better served than one "
-        "silently dropped."
-    )
-    st.error(
-        "**What this register must not be used for.** It is not legal advice and not a "
-        "compliance assessment. It must not be used to decide whether any organisation "
-        "named here met a legal obligation, to assess a vendor, or as evidence in a "
-        "procurement or enforcement decision. The clause references are the closest fit "
-        "for a reader who needs a starting point, several of the facts rest on reporting "
-        "rather than on findings, and one person coded all of it. Use it to generate "
-        "questions about your own system. Do not use it to reach conclusions about "
-        "somebody else's.",
-        icon="⛔",
-    )
-
-
-# -------------------------------------------------------------------------- register
 
 
 def incident_card(row):
@@ -1567,6 +1585,11 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9 | 2026-10-09 | Home cut from about 2,000 words and eleven headings to 500 "
+        "and four, after it was read as information overload. Nothing was deleted: the "
+        "analysis moved to a Findings screen somebody can choose. Home now carries the "
+        "finding, a chart of what the missing control governed, and the severity spread "
+        "as a bar. Extended the displayed-number check to cover Home. |\n"
         "| 0.9 | 2026-10-09 | Redesign. Colour now means one thing, severity of harm, and "
         "every severity pill carries a four-bar meter and the word so nothing depends on "
         "colour alone. Evidence grade is monochrome and the chart is one hue. The cases "
@@ -1642,7 +1665,7 @@ def main():
         st.markdown("## AI Agent Incident Register")
         screen = st.radio(
             "Screen",
-            ["Home", "The register", "Build your watch list", "Method"],
+            ["Home", "The register", "Findings", "Build your watch list", "Method"],
             label_visibility="collapsed",
         )
         st.markdown("---")
@@ -1651,6 +1674,8 @@ def main():
         screen_home(frame, rules)
     elif screen == "The register":
         screen_register(frame)
+    elif screen == "Findings":
+        screen_findings(frame, rules)
     elif screen == "Build your watch list":
         screen_watchlist(frame, rules)
     else:
