@@ -3,8 +3,12 @@
   "configurations": [
     {
       "name": "incident-register",
-      "runtimeExecutable": "/Users/tigersaa/myDocs/Agent Incident Register/.venv/bin/streamlit",
-      "runtimeArgs": ["run", "app.py", "--server.port", "8513", "--server.headless", "true"],
+      "autoPort": true,
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": [
+        "-c",
+        "exec \"$PWD/.venv/bin/streamlit\" run app.py --server.port \"${PORT:-8513}\" --server.headless true --server.fileWatcherType poll"
+      ],
       "port": 8513
     }
   ]
