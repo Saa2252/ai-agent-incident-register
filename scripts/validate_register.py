@@ -90,18 +90,21 @@ NIST_800_4_CATEGORIES = {
 }
 
 # OWASP Top 10 for Agentic Applications 2026, published 9 December 2025.
-OWASP_CODES = {
-    "ASI01": "Agent Goal Hijack",
-    "ASI02": "Tool Misuse and Exploitation",
-    "ASI03": "Identity and Privilege Abuse",
-    "ASI04": "Agentic Supply Chain Vulnerabilities",
-    "ASI05": "Unexpected Code Execution",
-    "ASI06": "Memory and Context Poisoning",
-    "ASI07": "Insecure Inter-Agent Communication",
-    "ASI08": "Cascading Failures",
-    "ASI09": "Human-Agent Trust Exploitation",
-    "ASI10": "Rogue Agents",
-}
+# Allowed values come from frameworks/*.csv, copied from the source with a URL, a
+# retrieval date and a status saying whether the framework owner's own publication was
+# reachable. That makes "verified against the framework" something the build enforces
+# rather than something the page asserts.
+def _load_framework(name):
+    path = Path(__file__).parent.parent / "frameworks" / name
+    if not path.exists():
+        return {}
+    with open(path, newline="", encoding="utf-8") as fh:
+        return {row["code"]: row for row in csv.DictReader(fh)}
+
+
+OWASP_ROWS = _load_framework("owasp_agentic_2026.csv")
+OWASP_CODES = {code: row["name"] for code, row in OWASP_ROWS.items()}
+OWASP_STATUS = {code: row["status"] for code, row in OWASP_ROWS.items()}
 
 # What the agent was able to do, not what it was supposed to do.
 AUTHORITIES = {"Read", "Write", "Delete", "Pay", "Promise"}
@@ -369,7 +372,16 @@ def validate_rows(report, rows, today):
         if row["nist_800_4_category"] not in NIST_800_4_CATEGORIES:
             report.error(f"{where}.nist_800_4_category", f"'{row['nist_800_4_category']}' is not a NIST AI 800-4 category")
         if row["owasp_code"] not in OWASP_CODES:
-            report.error(f"{where}.owasp_code", f"'{row['owasp_code']}' is not an OWASP Agentic Top 10 2026 code")
+            report.error(
+                f"{where}.owasp_code",
+                f"'{row['owasp_code']}' is not in frameworks/owasp_agentic_2026.csv",
+            )
+        elif OWASP_STATUS.get(row["owasp_code"]) == "disputed":
+            report.warn(
+                where,
+                f"{row['owasp_code']} has a disputed name. The framework owner's wording "
+                "and the secondary source disagree, and the page must say so",
+            )
         if row["human_approval"] not in APPROVAL_STATES:
             report.error(f"{where}.human_approval", f"'{row['human_approval']}' is not one of {sorted(APPROVAL_STATES)}")
         if row["disputed"] not in YES_NO:

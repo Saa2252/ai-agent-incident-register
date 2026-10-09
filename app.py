@@ -170,6 +170,7 @@ _spec.loader.exec_module(engine)
 COUNTED_GRADES = rules_check.COUNTED_GRADES
 CONTROL_CLASSES = rules_check.CONTROL_CLASSES
 OWASP_CODES = rules_check.OWASP_CODES
+OWASP_STATUS = rules_check.OWASP_STATUS
 
 SEVERITY_ORDER = ["Severe", "Serious", "Moderate", "Negligible"]
 # The scale measures one thing only: who was affected and how badly. Recovery time and
@@ -443,7 +444,7 @@ def screen_home(frame, rules):
 
     st.markdown(
         '<div class="hero-band">'
-        f'<p class="kicker">Version {VERSION} · open for comment until 7 November 2026</p>'
+        f'<p class="kicker">Version {VERSION} · open for comment</p>'
         "<h1>None of these failures was only the AI being wrong.</h1>"
         '<p class="claim2">Every one needed the AI to be allowed to act.</p>'
         f'<p class="lede">{facts["all_rows"]} documented AI agent failures. Each one is '
@@ -544,7 +545,7 @@ def screen_home(frame, rules):
     st.markdown("---")
     foot_left, foot_right = st.columns(2)
     foot_left.markdown(
-        f"**Open for comment until 7 November 2026.** Corrections go through "
+        f"**Open for comment.** Corrections go through "
         f"[GitHub issues]({CORRECTIONS_URL}), the only channel the change log reads. "
         "Every comment is logged with its date, acted on or not."
     )
@@ -835,9 +836,15 @@ def incident_card(row):
             f"**How the register knows: {tier}.** "
             f"{esc(row['missing_control_basis'].split('.', 1)[1].strip())}"
         )
+        status = OWASP_STATUS.get(row["owasp_code"], "unconfirmed")
+        mark = {
+            "confirmed": "",
+            "unconfirmed": " (name from a secondary source, not yet read in OWASP's own PDF)",
+            "disputed": " (name disputed: OWASP's own announcement words this differently)",
+        }[status]
         st.caption(
-            f"Failure pattern: {esc(row['failure_pattern'])}. OWASP {row['owasp_code']}, "
-            f"{OWASP_CODES[row['owasp_code']]}."
+            f"Failure pattern: {esc(row['failure_pattern'])}. OWASP "
+            f"{row['owasp_code']}, {OWASP_CODES[row['owasp_code']]}{mark}."
         )
 
     with test:
@@ -1525,7 +1532,15 @@ def screen_method(frame, rules):
         "- **[OWASP Top 10 for Agentic Applications 2026]"
         "(https://genai.owasp.org/2025/12/09/owasp-genai-security-project-releases-top-10-"
         "risks-and-mitigations-for-agentic-ai-security/),** published 9 December 2025, for "
-        "the failure pattern code.\n"
+        "the failure pattern code. **The publication date is confirmed on OWASP's own "
+        "resource page. The ten entry names are not.** They sit in a PDF behind a "
+        "download form and do not appear in the HTML of either the resource page or the "
+        "release announcement, so they came from a secondary source. Checking on 10 "
+        "October 2026 found OWASP's own announcement wording ASI01 as Agent Behavior "
+        "Hijacking where the secondary source says Agent Goal Hijack. ASI01 is coded on "
+        "three cases. Every allowed value and its verification status is in "
+        "frameworks/owasp_agentic_2026.csv, the validator reads that file, and a case "
+        "card says when a name is unconfirmed or disputed.\n"
         "- **[Commission draft guidance and reporting template for serious AI incidents]"
         "(https://digital-strategy.ec.europa.eu/en/consultations/ai-act-commission-issues-"
         "draft-guidance-and-reporting-template-serious-ai-incidents-and-seeks).** A "
@@ -1676,14 +1691,23 @@ def screen_method(frame, rules):
     )
     st.markdown(
         f"**This is version {VERSION}, published for comment rather than as a finished "
-        "reference.** Comments received up to **7 November 2026** will be worked through "
-        "and answered before it moves to 1.0. The window closing does not close the "
-        "route, it marks the point at which the open questions stop being open."
+        "reference.** Comments are worked through and answered, and the register moves to "
+        "1.0 when the open questions have been closed rather than on a date."
     )
 
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9 | 2026-10-10 | Removed the comment deadline, keeping the route and the "
+        "commitment to log everything. Started the framework work by trying to verify the "
+        "two lists it depends on, and did not get them. The OWASP entry names sit in a "
+        "PDF behind a download form, and checking the ones that are public found OWASP's "
+        "own announcement wording ASI01 differently from the secondary source this "
+        "register used, on three cases. Allowed values now live in frameworks/, each with "
+        "its source, retrieval date and whether the owner's own publication was reachable. "
+        "The validator reads that file and warns on a disputed name, and the cards say so. "
+        "The MIT scales are not coded, because their reachable pages give counts without "
+        "naming the values. |\n"
         "| 0.9 | 2026-10-10 | Line-by-line fact check of Home, which found four claims "
         "the evidence did not carry. The headline said most of these failures were not "
         "the AI being wrong, which only holds under the accuracy-last rubric the page "
