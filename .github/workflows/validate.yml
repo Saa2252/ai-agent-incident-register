@@ -26,3 +26,7 @@ jobs:
         run: |
           python3 -m pip install --quiet -r requirements.txt
           python3 scripts/smoke_test.py .
+      - name: Check every displayed number against the data
+        # The register's whole claim is that no number on screen is typed in. This
+        # recomputes each one from the CSV and compares it with what rendered.
+        run: python3 scripts/check_displayed_numbers.py .

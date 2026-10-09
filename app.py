@@ -38,18 +38,75 @@ st.set_page_config(
 # Markdown on the pinned Streamlit version, so links in cells come out as literal
 # bracket syntax. Markdown gives a real table, with headers, that a screen reader can
 # read and that can hold a link. The only thing it lacks is this, and this is four lines.
-TABLE_CSS = """
+# Colour means severity of harm. Nothing else on the page is a data colour.
+#
+# A page with a colour per class, per grade and per status reads as marketing to a
+# governance audience, and colour carrying three meanings carries none. Grade is
+# monochrome, the bar chart is one hue, and every severity pill pairs its colour with a
+# four-bar meter and the word, so nothing depends on colour alone.
+SEVERITY_RANK = {"Severe": 4, "Serious": 3, "Moderate": 2, "Negligible": 1}
+SEVERITY_SLUG = {"Severe": "sev", "Serious": "ser", "Moderate": "mod", "Negligible": "neg"}
+
+PAGE_CSS = """
 <style>
+:root {
+  --sev-sev:#d03b3b; --sev-ser:#ec835a; --sev-mod:#fab219; --sev-neg:#898781;
+  --tint-sev:rgba(208,59,59,0.14); --tint-ser:rgba(236,131,90,0.18);
+  --tint-mod:rgba(250,178,25,0.18); --tint-neg:rgba(137,135,129,0.14);
+  --meter-off:#c3c2b7; --grid-line:#e1e0d9; --ink-2:#52514e; --muted:#898781;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tint-sev:rgba(208,59,59,0.26); --tint-ser:rgba(236,131,90,0.22);
+    --tint-mod:rgba(250,178,25,0.20); --tint-neg:rgba(137,135,129,0.22);
+    --meter-off:#66655f; --grid-line:#2c2c2a; --ink-2:#c3c2b7;
+  }
+}
+
+/* Wide tables scroll in their own box rather than pushing the page sideways. */
 div[data-testid="stMarkdownContainer"]:has(> table) { overflow-x: auto; }
 div[data-testid="stMarkdownContainer"] > table { min-width: max-content; }
-
-/* st.table squeezes columns until short values break mid-word: AIR- / 001, Moderat / e.
-   Nothing here needs to wrap, so nothing does, and the container scrolls instead. */
 div[data-testid="stTable"] { overflow-x: auto; }
 div[data-testid="stTable"] table { min-width: max-content; }
-div[data-testid="stTable"] th,
-div[data-testid="stTable"] td { white-space: nowrap; }
-div[data-testid="stTable"] th[scope="row"] { font-weight: 600; }
+div[data-testid="stTable"] th, div[data-testid="stTable"] td { white-space: nowrap; }
+
+/* The case table. A real table with real headers, built as HTML because a severity
+   meter cannot be expressed in a dataframe cell. */
+.case-table-wrap { overflow-x: auto; border: 1px solid var(--grid-line); border-radius: 12px; }
+table.cases { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+table.cases th, table.cases td {
+  text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--grid-line);
+  vertical-align: middle;
+}
+table.cases th {
+  font-size: 12px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+table.cases tr:last-child td { border-bottom: 0; }
+table.cases td.id { white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.cases tr.notcounted td { color: var(--muted); }
+
+.sev {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 3px 10px 3px 8px; border-radius: 999px; font-size: 13px; white-space: nowrap;
+}
+.meter { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; }
+.meter i { width: 3px; border-radius: 1px; background: var(--meter-off); display: block; }
+.meter i:nth-child(1){height:5px} .meter i:nth-child(2){height:7px}
+.meter i:nth-child(3){height:10px} .meter i:nth-child(4){height:12px}
+.s-neg{background:var(--tint-neg)} .s-neg .meter i.f{background:var(--sev-neg)}
+.s-mod{background:var(--tint-mod)} .s-mod .meter i.f{background:var(--sev-mod)}
+.s-ser{background:var(--tint-ser)} .s-ser .meter i.f{background:var(--sev-ser)}
+.s-sev{background:var(--tint-sev)} .s-sev .meter i.f{background:var(--sev-sev)}
+
+.grade {
+  display:inline-block; min-width:26px; text-align:center; padding:1px 7px;
+  border-radius:6px; font-size:12px; font-weight:650;
+}
+.g-a { background: currentColor; }
+.g-a span { color: Canvas; }
+.g-b { border: 1.5px solid currentColor; }
+.g-c { border: 1.5px dashed var(--muted); color: var(--muted); }
 </style>
 """
 
@@ -178,6 +235,59 @@ def badge(text, color):
 
 
 # --------------------------------------------------------------------------- findings
+
+
+RUNNABLE_TESTS = {
+    "AIR-002": ("tests/test_authority.py", "DestructiveActionsNeedAGate"),
+    "AIR-004": ("tests/test_authority.py", "TheGateMustBeOperating"),
+    "AIR-010": ("tests/test_injection.py", "UntrustedContentCannotAct"),
+}
+
+def severity_pill(level):
+    """Colour, a four-bar meter and the word. Never colour alone."""
+    rank = SEVERITY_RANK[level]
+    bars = "".join(f'<i class="{"f" if i <= rank else ""}"></i>' for i in range(1, 5))
+    return (
+        f'<span class="sev s-{SEVERITY_SLUG[level]}">'
+        f'<span class="meter" aria-hidden="true">{bars}</span>{esc(level)}</span>'
+    )
+
+
+def grade_badge(grade):
+    """Monochrome. A filled, B outlined, C dashed and followed by the words."""
+    badge = f'<span class="grade g-{grade.lower()}"><span>{esc(grade)}</span></span>'
+    if grade == "C":
+        badge += ' <span style="font-size:12px;color:var(--muted)">not counted</span>'
+    return badge
+
+
+def case_table(view):
+    """The case index as HTML.
+
+    An HTML table rather than st.table or st.dataframe, because a severity meter cannot
+    be expressed in a dataframe cell and st.dataframe draws to a canvas its contents
+    never leave. This is a real table with real headers, so a screen reader reads it.
+    """
+    head = (
+        "<thead><tr><th>ID</th><th>What happened</th><th>Missing control</th>"
+        "<th>Severity</th><th>Evidence</th></tr></thead>"
+    )
+    body = []
+    for _, row in view.iterrows():
+        klass = ' class="notcounted"' if not row["counted"] else ""
+        body.append(
+            f"<tr{klass}>"
+            f'<td class="id"><a href="#{row["id"].lower()}">{esc(row["id"])}</a></td>'
+            f"<td>{esc(row['title'])}</td>"
+            f"<td>{esc(row['control_class'])}</td>"
+            f"<td>{severity_pill(row['severity'])}</td>"
+            f"<td>{grade_badge(row['evidence_grade'])}</td>"
+            "</tr>"
+        )
+    return (
+        f'<div class="case-table-wrap"><table class="cases">{head}'
+        f"<tbody>{''.join(body)}</tbody></table></div>"
+    )
 
 
 def describe_count(total, counted):
@@ -624,11 +734,24 @@ def incident_card(row):
     st.markdown(esc(row["what_happened"]))
     st.markdown(f"**What was missing.** {esc(row['missing_control'])}")
 
-    story, control, accountability, evidence = st.tabs(
-        ["What changed after", "The control and the fix", "Who could have stopped it", "Evidence"]
+    happened, missing, test, evidence, aftermath = st.tabs(
+        ["What happened", "What was missing", "Test before launch", "Evidence", "Aftermath"]
     )
 
-    with story:
+    with happened:
+        st.markdown(esc(row["what_happened"]))
+        st.markdown(f"**Why this is in the register.** {esc(row['why_in_register'])}")
+        granted = ", ".join(part for part in row["authority"].split("|") if part)
+        st.markdown(
+            f"**The agent could:** {esc(granted)}.  \n"
+            f"**A person approved first:** {esc(row['human_approval'])}."
+        )
+        st.markdown(
+            f"**Harm fell on.** {esc(row['harm_borne_by'])}  \n"
+            f"**Could have prevented it.** {esc(row['could_have_prevented'])}"
+        )
+
+    with aftermath:
         st.markdown(esc(row["what_changed_after"]))
         if row["aftermath_status"] != "Documented":
             st.markdown(
@@ -643,9 +766,8 @@ def incident_card(row):
             )
         if row["aftermath_source_url"]:
             st.caption(f"[The source for this]({row['aftermath_source_url']}).")
-        st.markdown(f"**Why this is in the register.** {esc(row['why_in_register'])}")
 
-    with control:
+    with missing:
         tier = row["missing_control_basis"].split(".")[0].strip()
         st.markdown(
             f"**State it was in: {row['control_maturity']}.** "
@@ -653,31 +775,31 @@ def incident_card(row):
             f"**How the register knows: {tier}.** "
             f"{esc(row['missing_control_basis'].split('.', 1)[1].strip())}"
         )
+        st.caption(
+            f"Failure pattern: {esc(row['failure_pattern'])}. OWASP {row['owasp_code']}, "
+            f"{OWASP_CODES[row['owasp_code']]}."
+        )
+
+    with test:
         st.markdown(
             f"**Test before launch.** {esc(row['test_before_launch'])}\n\n"
             f"**Pass mark.** {esc(row['test_pass_mark'])}\n\n"
             f"**Signal after launch.** {esc(row['signal_after_launch'])}"
         )
         st.caption(
-            f"Failure pattern: {esc(row['failure_pattern'])}. OWASP {row['owasp_code']}, "
-            f"{OWASP_CODES[row['owasp_code']]}. Monitoring category, NIST AI 800-4: "
-            f"{esc(row['nist_800_4_category'])}."
+            f"Monitoring category, NIST AI 800-4: {esc(row['nist_800_4_category'])}. "
+            f"Runs the control: {esc(row['control_owner_role'])}. Answers when it fails: "
+            f"{esc(row['accountable_role'])}."
         )
+        if row["id"] in RUNNABLE_TESTS:
+            path, cls = RUNNABLE_TESTS[row["id"]]
+            st.success(
+                f"**This one runs.** `{path}` · `{cls}`\n\n"
+                "`python3 -m unittest discover tests`",
+                icon="🧪",
+            )
 
-    with accountability:
-        granted = ", ".join(part for part in row["authority"].split("|") if part)
-        st.markdown(
-            f"**The agent could:** {esc(granted)}.  \n"
-            f"**A person approved first:** {esc(row['human_approval'])}."
-        )
-        st.markdown(
-            f"**Runs the control:** {esc(row['control_owner_role'])}  \n"
-            f"**Answers when it fails:** {esc(row['accountable_role'])}"
-        )
-        st.markdown(
-            f"**Harm fell on.** {esc(row['harm_borne_by'])}  \n"
-            f"**Could have prevented it.** {esc(row['could_have_prevented'])}"
-        )
+    with evidence:
         rows_md = []
         for label, answer_field, source_field in (
             ("Someone reviewed its behaviour first", "deploy_evidence_seen", "deploy_evidence_source"),
@@ -691,8 +813,6 @@ def incident_card(row):
             "| | |\n| --- | --- |\n" + "\n".join(rows_md)
         )
         st.caption("Not disclosed means the record is silent, not that the thing was missing.")
-
-    with evidence:
         st.markdown(f"**Grade {row['evidence_grade']}.** {GRADE_MEANING[row['evidence_grade']]}")
         st.markdown(f"1. [{esc(row['source_1_label'])}]({row['source_1_url']})")
         if row["source_2_url"]:
@@ -716,130 +836,172 @@ def incident_card(row):
         )
 
 
+# Every finding is a filter, and every filter is a link that can be posted on its own.
+# The predicates are the single source for the tile numbers, the chip counts and the
+# filtering, so a chip saying 10 and a table showing 9 is not a state this can reach.
+#
+# "Record silent" is the wording throughout, never "nobody could". The field says the
+# public record does not say. Turning that into a claim about the deployer is the same
+# error as coding a sourceless No.
+FINDINGS = {
+    "no-false-statement": {
+        "chip": "Said nothing untrue",
+        "tile": "The agent said nothing untrue, and harm happened anyway.",
+        "test": lambda r: r["said_something_untrue"] == "No",
+    },
+    "record-silent-on-stop": {
+        "chip": "Record silent on who could stop it",
+        "tile": "The public record does not say who could have stopped the deployment.",
+        "test": lambda r: r["deploy_stop_authority"] == "Not disclosed",
+    },
+    "control-never-built": {
+        "chip": "Control never built",
+        "tile": "The control that would have prevented it was never built.",
+        "test": lambda r: r["control_maturity"] == "Absent",
+    },
+    "control-did-not-hold": {
+        "chip": "Control existed, did not hold",
+        "tile": "A control was built and wired in, and it did not stop the thing.",
+        "test": lambda r: r["control_maturity"] == "Implemented",
+    },
+}
+
+
+def finding_counts(frame):
+    """How many counted cases each finding covers. Computed, never typed."""
+    counted = frame[frame["counted"]]
+    return {
+        key: int(counted.apply(spec["test"], axis=1).sum())
+        for key, spec in FINDINGS.items()
+    }
+
+
 def screen_register(frame):
-    st.title("The register")
+    counts = finding_counts(frame)
+    total_counted = int(frame["counted"].sum())
+
+    st.markdown("### When AI agents caused harm, what was actually missing?")
     st.markdown(
-        "Every case on one page. Filter it, then open a row for the full record. The "
-        "sources are links, so you can check any claim in two clicks."
+        f"{len(frame)} documented failures, each traced to the control that was not "
+        "there, the test that would have caught it before launch, and the signal that "
+        "would have caught it after."
     )
+
+    head = st.columns(3)
+    with head[0]:
+        st.download_button(
+            "Download the data (CSV)", data=DATA_FILE.read_bytes(),
+            file_name="ai_agent_incident_register.csv", mime="text/csv",
+            on_click="ignore", width="stretch",
+        )
+    with head[1]:
+        st.link_button("Comment on GitHub", CORRECTIONS_URL, width="stretch")
+    with head[2]:
+        with st.popover("Cite this register", width="stretch"):
+            st.code(
+                f"Ahmad, S. A. ({UPDATED.split()[-1]}). AI Agent Incident Register, "
+                f"version {VERSION}. Retrieved {UPDATED}. {CORRECTIONS_URL.rsplit('/', 1)[0]}",
+                language=None,
+            )
+
+    # The three tiles are the three findings, each a link that applies its own filter.
+    st.markdown("")
+    tiles = st.columns(3)
+    for column, key in zip(tiles, list(FINDINGS)[:3]):
+        spec = FINDINGS[key]
+        with column:
+            st.metric(spec["chip"], f"{counts[key]} of {total_counted}")
+            st.caption(spec["tile"])
+
+    st.markdown("---")
 
     with st.sidebar:
         st.markdown("### Filter the register")
-        classes = st.multiselect(
-            "What the missing control governed",
-            sorted(frame["control_class"].unique()),
-            help="One class per case, assigned by the rubric on the Method page.",
+        chosen = st.pills(
+            "Findings",
+            options=list(FINDINGS),
+            format_func=lambda k: f"{FINDINGS[k]['chip']}  {counts[k]}",
+            selection_mode="multi",
+            default=[k for k in st.query_params.get_all("view") if k in FINDINGS],
+            help="Each one is a claim on the home screen. Selecting it shows the cases behind it.",
         )
+        classes = st.multiselect("Missing control", sorted(frame["control_class"].unique()))
         severities = st.multiselect(
-            "Severity",
-            [s for s in SEVERITY_ORDER if s in set(frame["severity"])],
+            "Severity", [s for s in SEVERITY_ORDER if s in set(frame["severity"])]
         )
-        kinds = st.multiselect("Incident or hazard", sorted(frame["incident_or_hazard"].unique()))
         grades = st.multiselect("Evidence grade", sorted(frame["evidence_grade"].unique()))
-        authority_filter = st.multiselect(
-            "The agent could",
-            sorted(rules_check.AUTHORITIES),
-            help="What the agent was actually able to do at the time of the event.",
-        )
-        counted_only = st.checkbox(
-            "Only rows that feed the numbers",
-            value=False,
-            help="Grade A and grade B. This is the set every count on this site uses.",
-        )
+        query = st.text_input("Search", placeholder="Case, deployer, pattern")
+        counted_only = st.checkbox("Only rows that feed the numbers", value=False)
+
+    # The selection lives in the URL, so a filtered view is a link somebody can post.
+    if chosen:
+        st.query_params["view"] = chosen
+    elif "view" in st.query_params:
+        del st.query_params["view"]
 
     view = frame
+    for key in chosen:
+        view = view[view.apply(FINDINGS[key]["test"], axis=1)]
     if classes:
         view = view[view["control_class"].isin(classes)]
     if severities:
         view = view[view["severity"].isin(severities)]
-    if kinds:
-        view = view[view["incident_or_hazard"].isin(kinds)]
     if grades:
         view = view[view["evidence_grade"].isin(grades)]
-    if authority_filter:
-        view = view[view["authority"].apply(
-            lambda value: bool(set(authority_filter) & set(value.split("|")))
-        )]
     if counted_only:
         view = view[view["counted"]]
+    if query:
+        needle = query.lower()
+        haystack = view[["id", "title", "deployer", "failure_pattern", "control_class"]]
+        view = view[haystack.apply(lambda r: needle in " ".join(r).lower(), axis=1)]
 
-    top_left, top_right = st.columns([3, 1])
-    with top_left:
-        st.markdown(f"**{len(view)} of {len(frame)} cases shown.**")
-    with top_right:
-        st.download_button(
-            "Download the register (CSV)",
-            data=DATA_FILE.read_bytes(),
-            file_name="ai_agent_incident_register.csv",
-            mime="text/csv",
-            help="The same file the app reads. Every number here is computed from it.",
-            width="stretch",
+    view = view.sort_values("id")
+    shown_counted = int(view["counted"].sum())
+    st.markdown(
+        f"**Showing {len(view)} of {len(frame)} cases** · {shown_counted} counted in the "
+        "findings"
+    )
+    if chosen:
+        st.caption(
+            "Filtered by: "
+            + ", ".join(FINDINGS[k]["chip"] for k in chosen)
+            + ". This view has its own link in your address bar."
         )
 
     if view.empty:
-        st.info("No case matches those filters. Clear one and try again.")
+        st.info(
+            "No cases match these filters. Clear one in the sidebar, or reload the page "
+            "to start again.",
+            icon="🔍",
+        )
         return
 
-    # Sorted by ID ascending, always. A register that opens sorted by severity is making
-    # an editorial claim in its furniture, and the sort order is the one piece of
-    # furniture a reader cannot see the reasoning behind. CVE, the AI Incident Database
-    # and ATLAS all do the same. The filters in the sidebar do the real work.
-    #
-    # Rendered as Markdown rather than st.dataframe because Streamlit's dataframe draws
-    # to a canvas, leaving its contents out of the accessibility tree entirely.
-    view = view.sort_values("id")
-
-    group = st.toggle(
-        "Group by what the missing control governed",
-        value=False,
-        help=(
-            "Off by default. Grouping by control class arranges the register around this "
-            "site's own argument, so it is offered as a view you choose rather than the "
-            "order you are given."
-        ),
+    st.markdown(case_table(view), unsafe_allow_html=True)
+    st.caption(
+        "Colour appears in one place on this page: severity. Every pill also carries a "
+        "bar meter and the word, so nothing depends on colour alone. Grade A is filled, "
+        "B is outlined, C is dashed and says so."
     )
 
-    # st.table rather than st.dataframe. st.dataframe draws through a canvas grid whose
-    # contents never reach the accessibility tree, and whose own maintainers disclaim
-    # confidence in its accessibility. st.table is a real DOM table with real headers,
-    # and from a release before the pinned one it renders Markdown in cells, so the ID
-    # can be a link into the record rather than a string to scroll for.
-    #
-    # The title column is gone. It ran to four and five lines and pushed the table past
-    # the right edge, and it is the first thing in the record anyway.
-    COLUMNS = [
-        ("deployer", "Deployer"), ("event_date", "Date"), ("severity", "Severity"),
-        ("control_class", "Missing control"), ("control_maturity", "Control was"),
-        ("aftermath_status", "Ending"), ("evidence_grade", "Evidence"),  # stop authority
-        # is deliberately absent. It read "Not disclosed" in eleven of twelve rows, which
-        # is a column of one repeated word. It is a card field, and the finding is on Home.
-    ]
+    st.markdown("---")
+    not_accuracy = total_counted - int(
+        (frame[frame["counted"]]["control_class"] == "Accuracy").sum()
+    )
+    floor = int((frame[frame["counted"]]["said_something_untrue"] == "No").sum())
+    st.markdown(
+        f"#### In {not_accuracy} of {total_counted} counted cases, the missing control "
+        "was not accuracy"
+    )
+    st.caption(
+        "Accuracy is tested last in the rubric. Test it first instead and "
+        f"{floor} of {total_counted} still land elsewhere. Grade C is shown as an open "
+        "segment and counted nowhere."
+    )
+    st.altair_chart(class_chart(frame), use_container_width=True)
 
-    def render(frame_part):
-        table = pd.DataFrame(
-            [
-                {"Case": f"[{r['id']}](#{r['id'].lower()})",
-                 **{label: r[field] for field, label in COLUMNS}}
-                for _, r in frame_part.iterrows()
-            ]
-        ).set_index("Case")
-        st.table(table, border="horizontal")
-
-    if group:
-        for name in sorted(view["control_class"].unique()):
-            part = view[view["control_class"] == name]
-            st.markdown(f"**{name}**  ({len(part)})")
-            st.caption(CONTROL_CLASSES[name])
-            render(part)
-            st.markdown("")
-    else:
-        render(view)
-
+    st.markdown("---")
     st.markdown("### Full records")
     for _, row in view.iterrows():
-        # A plain HTML anchor rather than a Streamlit heading anchor. Fragment navigation
-        # to an id does not re-run the script, and there is a long-standing report that
-        # clicking a Streamlit heading anchor does.
         st.markdown(f"<div id='{row['id'].lower()}'></div>", unsafe_allow_html=True)
         label = f"{row['id']} · {row['title']}"
         if not row["counted"]:
@@ -848,6 +1010,35 @@ def screen_register(frame):
             incident_card(row)
 
 
+def class_chart(frame):
+    """Cases by missing control. One hue, because the classes have no order and the bar
+    length already carries the count. Grade C is a separate open mark."""
+    import altair as alt
+
+    counted = frame[frame["counted"]]
+    data = []
+    for name in sorted(frame["control_class"].unique()):
+        data.append({
+            "Missing control": name,
+            "Cases": int((counted["control_class"] == name).sum()),
+            "Not counted": int(((frame["control_class"] == name) & ~frame["counted"]).sum()),
+        })
+    table = pd.DataFrame(data).sort_values("Cases", ascending=False)
+    table["Label"] = table.apply(
+        lambda r: f"{r['Cases']}" + (f" +{r['Not counted']}" if r["Not counted"] else ""),
+        axis=1,
+    )
+    base = alt.Chart(table).encode(
+        y=alt.Y("Missing control:N", sort="-x", title=None),
+    )
+    bars = base.mark_bar(color="#2a78d6", cornerRadiusEnd=4, height=18).encode(
+        x=alt.X("Cases:Q", title="cases", axis=alt.Axis(tickMinStep=1)),
+        tooltip=["Missing control", "Cases", "Not counted"],
+    )
+    labels = base.mark_text(align="left", dx=6, fontWeight="bold").encode(
+        x="Cases:Q", text="Label:N",
+    )
+    return (bars + labels).properties(height=max(150, 34 * len(table)))
 
 
 # ------------------------------------------------------------------------ watch list
@@ -1144,13 +1335,23 @@ def screen_method(frame, rules):
         "effort are deliberately not in it. A failure that happened to be cheap to fix is "
         "not a smaller failure."
     )
+    bands = []
     for level in SEVERITY_ORDER:
         count = int((frame["severity"] == level).sum())
         counted_count = int(((frame["severity"] == level) & frame["counted"]).sum())
-        st.markdown(
-            f"- **{level}** ({describe_count(count, counted_count)}). "
-            f"{SEVERITY_MEANING[level]}"
+        bands.append(
+            f'<tr class="s-{SEVERITY_SLUG[level]}">'
+            f'<td style="width:170px">{severity_pill(level)}</td>'
+            f'<td>{esc(SEVERITY_MEANING[level])}</td>'
+            f'<td style="width:130px;text-align:right;white-space:nowrap">'
+            f"{describe_count(count, counted_count)}</td></tr>"
         )
+    st.markdown(
+        '<div class="case-table-wrap"><table class="cases">'
+        "<thead><tr><th>Band</th><th>What it means</th><th>Cases</th></tr></thead>"
+        f"<tbody>{''.join(bands)}</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
     st.markdown(SEVERITY_NOTE)
     st.caption("Descriptive, over all rows in the register.")
 
@@ -1366,6 +1567,14 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9 | 2026-10-09 | Redesign. Colour now means one thing, severity of harm, and "
+        "every severity pill carries a four-bar meter and the word so nothing depends on "
+        "colour alone. Evidence grade is monochrome and the chart is one hue. The cases "
+        "screen leads with the question, three findings as tiles, and filters where each "
+        "selection writes itself into the URL so a filtered view can be posted. Each case "
+        "opens into five tabs, and the three cases with a runnable test name the file and "
+        "class that runs it. Added a check that recomputes every number on screen from the "
+        "data file and fails the build if a typed number ever diverges. |\n"
         "| 0.9 | 2026-10-09 | Reviewer rounds, consolidated. Late in the day, rebuilt the "
         "incident card into four tabs after it had accumulated thirty-two fields and six "
         "coloured boxes in one scroll, which was unreadable however correct each line "
@@ -1425,7 +1634,7 @@ def screen_method(frame, rules):
 
 
 def main():
-    st.markdown(TABLE_CSS, unsafe_allow_html=True)
+    st.markdown(PAGE_CSS, unsafe_allow_html=True)
     frame = load_register()
     rules = load_rules()
 

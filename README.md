@@ -93,6 +93,7 @@ python3 scripts/validate_register.py .
 python3 rules/evaluate.py
 python3 -m unittest discover tests
 python3 scripts/smoke_test.py .
+python3 scripts/check_displayed_numbers.py .
 ```
 
 The smoke test renders all four screens headlessly and opens an incident card. It exists
@@ -141,6 +142,7 @@ rules/evaluate.py             Applies the rules. Pure stdlib, with a self-test.
 scripts/validate_register.py  The method as code. Runs in CI.
 scripts/check_links.py        Link checker. Run by hand.
 scripts/smoke_test.py         Renders every screen headlessly. Runs in CI.
+scripts/check_displayed_numbers.py  Recomputes every on-screen number from the CSV. Runs in CI.
 scripts/archive_sources.py    Wayback snapshots for every source. Run by hand.
 scripts/hooks/pre-commit      Stamps the page's own updated date from the commit.
 scripts/keepalive.py          Wakes the published app and checks it rendered. CI only.
