@@ -17,3 +17,6 @@ AIR-010,Privacy,1,No,"Microsoft reported no known exploitation in the wild, so n
 AIR-011,Toxic or Malicious Content,2,Yes,"Harmful health misinformation from a service promoted as a prevention resource, reaching people seeking help for an eating disorder.",Our reading
 AIR-011,Physical Harm,1,No,Advice that could worsen an eating disorder. No injuries are documented in the record.,Our reading
 AIR-012,Physical Harm,1,No,Clinical summaries informed treatment at four hospitals on an unverified accuracy claim. No patient injury is documented in the record.,Our reading
+AIR-013,Privacy,3,Yes,"Credential harvesting and data extraction across roughly 30 organisations. No source counts individuals, so this is the level the record supports.",Our reading
+AIR-013,Human/Civil Rights,1,No,Targets included government agencies. No rights violation is established in the record.,Our reading
+AIR-014,Privacy,2,Yes,"Email contents copied from organisations running the tool. Around 1,643 downloads and an estimate of 300 production installs, with no count of individuals.",Our reading

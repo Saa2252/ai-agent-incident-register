@@ -1725,6 +1725,17 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 1.0 in progress | 2026-10-11 | Census under the inclusion rule, running. Two "
+        "cases admitted so far. AIR-013, a coding agent driven through most of a cyber "
+        "espionage campaign against around 30 organisations, graded A on the platform's own "
+        "threat intelligence report. AIR-014, a counterfeit email tool on a package registry "
+        "that copied every message an agent sent to its author, graded A on the impersonated "
+        "vendor's own statement. Numbers moved: 12 cases to 14, 11 counted to 13, said "
+        "nothing untrue 5 of 11 to 7 of 13, record silent on who could stop it 10 of 11 to 11 "
+        "of 13, control never built 6 of 11 to 7 of 13, missing control was not accuracy 8 of "
+        "11 to 10 of 13. Vendor moved from one case to two, so it is no longer a class resting "
+        "on a single row. Severity: one more Minor and one more Substantial. Four leads were "
+        "checked and rejected in the same pass and are listed with the test each failed. |\n"
         "| 0.9 | 2026-10-11 | Committed a dated inclusion rule before adding any case "
         "under it. Six tests, all of which must pass, with the window set to events and "
         "publication between 1 January 2025 and 30 September 2026. The decision never "
