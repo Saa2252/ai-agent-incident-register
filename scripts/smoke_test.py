@@ -23,7 +23,7 @@ here rather than in tests/, where everything is standard library on purpose.
 import sys
 from pathlib import Path
 
-SCREENS = ["Home", "The register", "Findings", "Build your watch list", "Method"]
+SCREENS = ["Home", "Findings", "Build your watch list", "Method"]
 TIMEOUT = 120
 
 
@@ -65,13 +65,21 @@ def main(argv):
         at.radio[0].set_value(screen).run()
         clean = report(screen, at) and clean
 
-        # Opening an incident card is the path that was broken, so it is exercised
-        # rather than assumed. Expanders render their contents on the same run.
-        if screen == "The register":
-            count = len(at.expander) if hasattr(at, "expander") else 0
-            print(f"          {count} expandable records rendered")
-            if count == 0:
-                print("          FAIL no incident cards rendered at all")
+        # Home carries the case table and one open case. Both are checked rather than
+        # assumed: the table used to be a separate page, and the open case replaced an
+        # accordion of twelve expanders.
+        if screen == "Home":
+            rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+            rows = rendered.count('<td class="id">')
+            print(f"          {rows} rows in the case table")
+            if rows == 0:
+                print("          FAIL the case table rendered no rows")
+                clean = False
+            if not at.selectbox:
+                print("          FAIL no case selector rendered")
+                clean = False
+            elif "What happened" not in "\n".join(t.label for t in at.tabs):
+                print("          FAIL the open case rendered no tabs")
                 clean = False
 
     # The watch list only produces rules once questions are answered, so answer them.

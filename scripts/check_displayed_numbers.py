@@ -59,26 +59,9 @@ def main(argv):
     if not at.radio:
         print("ERROR no navigation rendered, so no screen could be checked", file=sys.stderr)
         return 1
-    at.radio[0].set_value("The register").run()
-    if at.exception:
-        for problem in at.exception:
-            print(f"ERROR the register screen raised: {problem.value}", file=sys.stderr)
-        return 1
+    problems = []
+    home_markdown = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
 
-    register_markdown = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
-    register_metrics = {m.label: m.value for m in at.metric}
-
-    # Home carries its own computed figures, so it is read in the same pass.
-    home = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)
-    home.run()
-    if home.exception:
-        for problem in home.exception:
-            print(f"ERROR the home screen raised: {problem.value}", file=sys.stderr)
-        return 1
-    home_markdown = "\n".join(str(getattr(e, "value", "")) for e in home.markdown)
-    home_metrics = {m.label: m.value for m in home.metric}
-
-    # Home renders its figures as HTML cards, so they are read back out of the markup.
     for key, label in (
         ("no false statement", "said nothing untrue"),
         ("record silent on stop", "record silent on who could stop it"),
@@ -86,90 +69,65 @@ def main(argv):
     ):
         want = expected[key]
         if f'aria-label="{want} of {expected["counted"]}"' not in home_markdown:
-            print(
-                f"ERROR home card '{label}' has no dot row for {want} of "
-                f"{expected['counted']}",
-                file=sys.stderr,
+            problems.append(
+                f"home card '{label}' has no dot row for {want} of {expected['counted']}"
             )
-            return 1
-        print(f"  ok   home card '{label}' = {want} of {expected['counted']}")
-
-    certainty = (
-        f'aria-label="Stated {expected["stated"]}, Entailed {expected["entailed"]}, '
-        f'Our reading {expected["reading"]}, out of {expected["counted"]}"'
-    )
-    if certainty not in home_markdown:
-        print("ERROR the certainty bar does not match the data", file=sys.stderr)
-        return 1
-    print(
-        f"  ok   certainty bar = {expected['stated']} stated, {expected['entailed']} "
-        f"entailed, {expected['reading']} our reading"
-    )
+        else:
+            print(f"  ok   home card '{label}' = {want} of {expected['counted']}")
 
     dots_on = home_markdown.count('<i class="on">')
-    want_dots = expected["no false statement"] + expected["record silent on stop"] + expected["control never built"]
+    want_dots = (
+        expected["no false statement"] + expected["record silent on stop"]
+        + expected["control never built"]
+    )
     if dots_on != want_dots:
-        print(f"ERROR {dots_on} filled dots on Home, data says {want_dots}", file=sys.stderr)
-        return 1
-    print(f"  ok   filled dots across the three cards = {dots_on}")
+        problems.append(f"{dots_on} filled dots on Home, data says {want_dots}")
+    else:
+        print(f"  ok   filled dots across the three cards = {dots_on}")
 
-    rendered = "\n".join(
-        str(getattr(element, "value", "")) for element in at.markdown
-    ) + "\n".join(str(getattr(element, "body", "")) for element in at.markdown)
-    metrics = {m.label: m.value for m in at.metric}
-
-    problems = []
-
-    # The three tiles are metrics, and each should read "N of TOTAL".
-    for label, key in (
-        ("Said nothing untrue", "no false statement"),
-        ("Record silent on who could stop it", "record silent on stop"),
-        ("Control never built", "control never built"),
-    ):
-        shown = metrics.get(label)
-        want = f"{expected[key]} of {expected['counted']}"
-        if shown != want:
-            problems.append(f"tile '{label}' shows {shown!r}, data says {want!r}")
-        else:
-            print(f"  ok   tile '{label}' = {want}")
-
-    # The counter and the chart title are computed, so they are read back too.
-    counter = re.search(r"Showing (\d+) of (\d+) cases\W+(\d+) counted", rendered)
+    counter = re.search(r"Showing (\d+) of (\d+) cases", home_markdown)
     if not counter:
-        problems.append("could not find the case counter in what was rendered")
+        problems.append("could not find the case counter")
     else:
-        shown, total, shown_counted = (int(g) for g in counter.groups())
-        if (total, shown, shown_counted) != (expected["cases"], expected["cases"], expected["counted"]):
-            problems.append(
-                f"counter says {shown}/{total}, {shown_counted} counted. Data says "
-                f"{expected['cases']}/{expected['cases']}, {expected['counted']} counted"
-            )
+        shown, total = (int(g) for g in counter.groups())
+        if (shown, total) != (expected["cases"], expected["cases"]):
+            problems.append(f"counter says {shown} of {total}, data says {expected['cases']}")
         else:
-            print(f"  ok   counter = {shown} of {total}, {shown_counted} counted")
+            print(f"  ok   counter = {shown} of {total}")
 
-    claim = re.search(r"In (\d+) of (\d+) counted cases, the missing control was not accuracy", rendered)
-    if not claim:
-        problems.append("could not find the chart's claim title")
-    else:
-        got, of = (int(g) for g in claim.groups())
-        if (got, of) != (expected["missing control not accuracy"], expected["counted"]):
-            problems.append(
-                f"chart title says {got} of {of}, data says "
-                f"{expected['missing control not accuracy']} of {expected['counted']}"
-            )
-        else:
-            print(f"  ok   chart title = {got} of {of}")
-
-    # Severity meters are generated per row, so the total filled bars is a checksum on
-    # the whole severity column reaching the page intact.
-    filled = sum(block.count('class="f"') for block in
-                 [str(getattr(e, "value", "")) for e in at.markdown])
+    # Count only inside the case table. The open case below it renders its own pill, so
+    # a whole-page count would include that case twice.
+    table = re.search(r'<table class="cases">.*?</table>', home_markdown, re.S)
+    filled = table.group(0).count('class="f"') if table else 0
     if filled and filled != expected["filled meter bars"]:
         problems.append(
             f"severity meters have {filled} filled bars, data says {expected['filled meter bars']}"
         )
     elif filled:
         print(f"  ok   severity meters = {filled} filled bars")
+
+    # The not-accuracy claim moved to the Findings tab, so it is read there.
+    findings = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)
+    findings.run()
+    findings.radio[0].set_value("Findings").run()
+    if findings.exception:
+        problems.append(f"the findings screen raised: {findings.exception[0].value}")
+    else:
+        text = "\n".join(str(getattr(e, "value", "")) for e in findings.markdown)
+        claim = re.search(
+            r"In (\d+) of (\d+) counted cases the missing control was not accuracy", text
+        )
+        if not claim:
+            problems.append("could not find the not-accuracy claim on Findings")
+        else:
+            got, of = (int(g) for g in claim.groups())
+            if (got, of) != (expected["missing control not accuracy"], expected["counted"]):
+                problems.append(
+                    f"findings claim says {got} of {of}, data says "
+                    f"{expected['missing control not accuracy']} of {expected['counted']}"
+                )
+            else:
+                print(f"  ok   findings claim = {got} of {of}")
 
     for line in problems:
         print(f"ERROR {line}", file=sys.stderr)
