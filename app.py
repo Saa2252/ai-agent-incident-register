@@ -15,6 +15,7 @@ Three rules run through this file.
    inside this app, and every output line shows the rule and the incidents behind it.
 """
 
+import csv
 import html
 import importlib.util
 import sys
@@ -44,21 +45,44 @@ st.set_page_config(
 # governance audience, and colour carrying three meanings carries none. Grade is
 # monochrome, the bar chart is one hue, and every severity pill pairs its colour with a
 # four-bar meter and the word, so nothing depends on colour alone.
-SEVERITY_RANK = {"Severe": 4, "Serious": 3, "Moderate": 2, "Negligible": 1}
-SEVERITY_SLUG = {"Severe": "sev", "Serious": "ser", "Moderate": "mod", "Negligible": "neg"}
+# MIT AI Risk Initiative, AI Incident Tracker harm severity framework, CSET-based as
+# modified by MIT. Captured 10 October 2026 and transcribed into
+# frameworks/mit_severity_framework.csv. A case's headline level is the highest level it
+# reached on any harm type.
+MATURITY_MEANING = {
+    "Absent": "The control did not exist in any form.",
+    "Designed": "It existed on paper, in a policy or an instruction, with nothing enforcing it.",
+    "Implemented": "It was built and wired in, and it did not stop the thing it was there to stop.",
+    "Unknown": "The public record does not say what state it was in.",
+}
+
+MIT_LEVELS = {
+    1: "Negligible", 2: "Minor", 3: "Substantial", 4: "Severe", 5: "Catastrophic",
+}
+MIT_SLUG = {1: "neg", 2: "min", 3: "sub", 4: "sev", 5: "cat"}
+MIT_ORDER = [5, 4, 3, 2, 1]
+
+MIT_ATTRIBUTION = (
+    "Framework: MIT AI Risk Initiative, AI Incident Tracker (CC BY 4.0), based on CSET's "
+    "Taxonomy of AI Harm, as modified by MIT. Captured 10 October 2026. Scores are this "
+    "register's, not MIT's."
+)
 
 PAGE_CSS = """
 <style>
 :root {
-  --sev-sev:#d03b3b; --sev-ser:#ec835a; --sev-mod:#fab219; --sev-neg:#898781;
-  --tint-sev:rgba(208,59,59,0.14); --tint-ser:rgba(236,131,90,0.18);
-  --tint-mod:rgba(250,178,25,0.18); --tint-neg:rgba(137,135,129,0.14);
+  --sev-cat:#8f1d1d; --sev-sev:#d03b3b; --sev-sub:#ec835a; --sev-min:#fab219; --sev-neg:#898781;
+  --tint-cat:rgba(143,29,29,0.16); --tint-sev:rgba(208,59,59,0.14);
+  --tint-sub:rgba(236,131,90,0.18); --tint-min:rgba(250,178,25,0.18);
+  --tint-neg:rgba(137,135,129,0.14);
   --meter-off:#c3c2b7; --grid-line:#e1e0d9; --ink-2:#52514e; --muted:#898781;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --tint-sev:rgba(208,59,59,0.26); --tint-ser:rgba(236,131,90,0.22);
-    --tint-mod:rgba(250,178,25,0.20); --tint-neg:rgba(137,135,129,0.22);
+    --sev-cat:#f08a8a;
+    --tint-cat:rgba(240,138,138,0.22); --tint-sev:rgba(208,59,59,0.26);
+    --tint-sub:rgba(236,131,90,0.22); --tint-min:rgba(250,178,25,0.20);
+    --tint-neg:rgba(137,135,129,0.22);
     --meter-off:#66655f; --grid-line:#2c2c2a; --ink-2:#c3c2b7;
   }
 }
@@ -92,12 +116,14 @@ table.cases tr.notcounted td { color: var(--muted); }
 }
 .meter { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; }
 .meter i { width: 3px; border-radius: 1px; background: var(--meter-off); display: block; }
-.meter i:nth-child(1){height:5px} .meter i:nth-child(2){height:7px}
-.meter i:nth-child(3){height:10px} .meter i:nth-child(4){height:12px}
+.meter i:nth-child(1){height:4px} .meter i:nth-child(2){height:6px}
+.meter i:nth-child(3){height:8px} .meter i:nth-child(4){height:10px}
+.meter i:nth-child(5){height:12px}
 .s-neg{background:var(--tint-neg)} .s-neg .meter i.f{background:var(--sev-neg)}
-.s-mod{background:var(--tint-mod)} .s-mod .meter i.f{background:var(--sev-mod)}
-.s-ser{background:var(--tint-ser)} .s-ser .meter i.f{background:var(--sev-ser)}
+.s-min{background:var(--tint-min)} .s-min .meter i.f{background:var(--sev-min)}
+.s-sub{background:var(--tint-sub)} .s-sub .meter i.f{background:var(--sev-sub)}
 .s-sev{background:var(--tint-sev)} .s-sev .meter i.f{background:var(--sev-sev)}
+.s-cat{background:var(--tint-cat)} .s-cat .meter i.f{background:var(--sev-cat)}
 
 .grade {
   display:inline-block; min-width:26px; text-align:center; padding:1px 7px;
@@ -151,7 +177,7 @@ APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
 VERSION = "0.9"
-UPDATED = "10 October 2026"
+UPDATED = "11 October 2026"
 CORRECTIONS_URL = "https://github.com/Saa2252/ai-agent-incident-register/issues"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
@@ -171,32 +197,6 @@ COUNTED_GRADES = rules_check.COUNTED_GRADES
 CONTROL_CLASSES = rules_check.CONTROL_CLASSES
 OWASP_CODES = rules_check.OWASP_CODES
 OWASP_STATUS = rules_check.OWASP_STATUS
-
-SEVERITY_ORDER = ["Severe", "Serious", "Moderate", "Negligible"]
-# The scale measures one thing only: who was affected and how badly. Recovery time and
-# effort are deliberately not in it. A failure that happened to be cheap to fix is not a
-# smaller failure, and bundling the two axes leaves no home for a case that cost someone
-# real money and was put right in an hour.
-SEVERITY_MEANING = {
-    "Severe": "People outside the deploying organisation lost data, money, or access to a service they depend on.",
-    "Serious": "Unlawful or unsafe guidance reached the public, or data was exposed or destroyed, or a service people rely on went down.",
-    "Moderate": "One or more identifiable people were misled or left out of pocket, and the organisation had to make it good.",
-    "Negligible": "No harm occurred.",
-}
-SEVERITY_NOTE = (
-    "A hazard is rated on the harm it could have caused, not on harm that occurred, and "
-    "its card says Hazard next to the rating. That is why one hazard in this register is "
-    "rated Serious: a zero-click path out of a company's mail and files is a serious "
-    "exposure whether or not anyone is known to have walked it."
-)
-
-MATURITY_MEANING = {
-    "Absent": "The control did not exist in any form.",
-    "Designed": "It existed on paper, in a policy or an instruction, with nothing enforcing it.",
-    "Implemented": "It was built and wired in, and it did not stop the thing it was there to stop.",
-    "Unknown": "The public record does not say what state it was in.",
-}
-MATURITY_COLOR = {"Absent": "#B3261E", "Designed": "#8A4B00", "Implemented": "#5B3A8A", "Unknown": "#6B7280"}
 
 GRADE_MEANING = {
     "A": "A primary record. A ruling, a regulator notice, a vendor security advisory or a threat intelligence report, plus a second source.",
@@ -224,12 +224,6 @@ CLASS_COLOR = {
     "Oversight": "#5B3A8A",
     "Vendor": "#2E6B3A",
 }
-SEVERITY_COLOR = {
-    "Severe": "#B3261E",
-    "Serious": "#8A4B00",
-    "Moderate": "#1B5E8A",
-    "Negligible": "#4A5568",
-}
 GRADE_COLOR = {"A": "#2E6B3A", "B": "#1B5E8A", "C": "#6B7280"}
 
 NIST_GAP_QUOTE = (
@@ -249,6 +243,34 @@ def load_register():
     frame = pd.read_csv(DATA_FILE, dtype=str).fillna("")
     frame["counted"] = frame["evidence_grade"].isin(COUNTED_GRADES)
     frame["year"] = frame["event_date"].str.slice(0, 4)
+    ratings = pd.read_csv(APP_DIR / "data" / "case_harm_ratings.csv", dtype=str).fillna("")
+    ratings["level"] = ratings["level"].astype(int)
+    frame["mit_level"] = frame["id"].map(ratings.groupby("case_id")["level"].max())
+    frame["mit_floored"] = frame["id"].map(
+        ratings[ratings["at_least"] == "Yes"].groupby("case_id")["level"].max()
+    ).notna() & (
+        frame["id"].map(ratings[ratings["at_least"] == "Yes"].groupby("case_id")["level"].max())
+        == frame["id"].map(ratings.groupby("case_id")["level"].max())
+    )
+    return frame
+
+
+@st.cache_data
+def load_harm_ratings():
+    """Per-case harm ratings on MIT's framework, and the headline level per case."""
+    ratings = pd.read_csv(APP_DIR / "data" / "case_harm_ratings.csv", dtype=str).fillna("")
+    ratings["level"] = ratings["level"].astype(int)
+    headline = ratings.groupby("case_id")["level"].max().to_dict()
+    floored = (
+        ratings[ratings["at_least"] == "Yes"].groupby("case_id")["level"].max().to_dict()
+    )
+    return ratings, headline, floored
+
+
+@st.cache_data
+def load_mit_framework():
+    frame = pd.read_csv(APP_DIR / "frameworks" / "mit_severity_framework.csv", dtype=str)
+    frame["level"] = frame["level"].astype(int)
     return frame
 
 
@@ -283,13 +305,14 @@ RUNNABLE_TESTS = {
     "AIR-010": ("tests/test_injection.py", "UntrustedContentCannotAct"),
 }
 
-def severity_pill(level):
-    """Colour, a four-bar meter and the word. Never colour alone."""
-    rank = SEVERITY_RANK[level]
-    bars = "".join(f'<i class="{"f" if i <= rank else ""}"></i>' for i in range(1, 5))
+def severity_pill(level, floored=False):
+    """Colour, a five-bar meter and the word. Never colour alone."""
+    name = MIT_LEVELS[level]
+    bars = "".join(f'<i class="{"f" if i <= level else ""}"></i>' for i in range(1, 6))
+    prefix = "at least " if floored else ""
     return (
-        f'<span class="sev s-{SEVERITY_SLUG[level]}">'
-        f'<span class="meter" aria-hidden="true">{bars}</span>{esc(level)}</span>'
+        f'<span class="sev s-{MIT_SLUG[level]}">'
+        f'<span class="meter" aria-hidden="true">{bars}</span>{esc(prefix + name)}</span>'
     )
 
 
@@ -320,7 +343,7 @@ def case_table(view):
             f'<td class="id"><a href="#{row["id"].lower()}">{esc(row["id"])}</a></td>'
             f"<td>{esc(row['title'])}</td>"
             f"<td>{esc(row['control_class'])}</td>"
-            f"<td>{severity_pill(row['severity'])}</td>"
+            f"<td>{severity_pill(row['mit_level'], row['mit_floored'])}</td>"
             f"<td>{grade_badge(row['evidence_grade'])}</td>"
             "</tr>"
         )
@@ -393,7 +416,7 @@ def headline(frame):
         "no_approval": int((counted["human_approval"] != "Yes").sum()),
         "could_act": int(acted.sum()),
         "read_only": int((~acted).sum()),
-        "read_only_bad": int((~acted & counted["severity"].isin(["Serious", "Severe"])).sum()),
+
         "years": f"{counted['year'].min()} to {counted['year'].max()}",
     }
 
@@ -402,24 +425,25 @@ def headline(frame):
 
 
 def severity_strip(frame):
-    """The severity spread as one bar. Severity is this site's only data colour."""
+    """The MIT severity spread as one bar. Severity is this site's only data colour."""
     total = len(frame)
     segments, key = [], []
-    for level in SEVERITY_ORDER:
-        count = int((frame["severity"] == level).sum())
+    for level in MIT_ORDER:
+        count = int((frame["mit_level"] == level).sum())
         if not count:
             continue
         segments.append(
             f'<div style="width:{100 * count / total:.4f}%;'
-            f'background:var(--sev-{SEVERITY_SLUG[level]});height:30px;display:flex;'
+            f'background:var(--sev-{MIT_SLUG[level]});height:30px;display:flex;'
             f'align-items:center;justify-content:center;color:#fff;font-size:13px;'
-            f'font-weight:650" title="{esc(level)}: {count} of {total}">{count}</div>'
+            f'font-weight:650" title="{esc(MIT_LEVELS[level])}: {count} of {total}">'
+            f"{count}</div>"
         )
         key.append(
             f'<span style="display:inline-flex;align-items:center;gap:6px;'
             f'margin:0 14px 4px 0"><i style="width:11px;height:11px;border-radius:3px;'
-            f'display:inline-block;background:var(--sev-{SEVERITY_SLUG[level]})"></i>'
-            f"{esc(level)} {count}</span>"
+            f'display:inline-block;background:var(--sev-{MIT_SLUG[level]})"></i>'
+            f"{esc(MIT_LEVELS[level])} {count}</span>"
         )
     return (
         '<div style="display:flex;border-radius:8px;overflow:hidden;margin:4px 0 10px">'
@@ -556,6 +580,135 @@ def screen_home(frame, rules):
     )
 
 
+def frameworks_severity(frame):
+    """Both severity views, each labelled by the question it answers."""
+    ratings, headline, floored = load_harm_ratings()
+    definitions = load_mit_framework()
+    harms = list(definitions["harm_type"].drop_duplicates())
+
+    st.markdown("### Severity")
+    st.markdown(
+        "On a scale built for all AI harm, up to the global level, these cases are small. "
+        "The register's argument rests on how the harm happened, not how large it was."
+    )
+
+    mit_tab, eu_tab = st.tabs(
+        ["How big, compared with all AI harm", "Would it cross the EU threshold"]
+    )
+
+    with mit_tab:
+        rows_html = []
+        for level in MIT_ORDER:
+            cells = []
+            for harm in harms:
+                hits = ratings[(ratings["level"] == level) & (ratings["harm_type"] == harm)]
+                chips = " ".join(
+                    f'<a href="#{r.case_id.lower()}" title="{esc(r.basis)}" '
+                    f'style="text-decoration:none;font-size:12px;font-weight:600">'
+                    f"{esc(r.case_id)}{'*' if r.at_least == 'Yes' else ''}</a>"
+                    for r in hits.itertuples()
+                )
+                descriptor = definitions[
+                    (definitions["level"] == level) & (definitions["harm_type"] == harm)
+                ]["descriptor"].iloc[0]
+                cells.append(
+                    f'<td title="{esc(descriptor)}" style="min-width:86px">{chips}</td>'
+                )
+            rows_html.append(
+                f'<tr class="s-{MIT_SLUG[level]}">'
+                f'<td style="white-space:nowrap">{severity_pill(level)}</td>'
+                + "".join(cells)
+                + "</tr>"
+            )
+        header = "".join(f"<th>{esc(h)}</th>" for h in harms)
+        st.markdown(
+            '<div class="case-table-wrap"><table class="cases">'
+            f"<thead><tr><th>Level</th>{header}</tr></thead>"
+            f"<tbody>{''.join(rows_html)}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "One chip per harm type a case affected, linking to the case. An asterisk "
+            "means the record does not establish the magnitude, so the rating is the "
+            "level the record supports rather than a measurement. Hover a cell for MIT's "
+            "descriptor, a chip for the case's basis."
+        )
+
+        st.markdown("**Cases by headline severity**, the highest level each case reached.")
+        bars = []
+        for level in MIT_ORDER:
+            n = sum(1 for v in headline.values() if v == level)
+            width = 100 * n / max(1, len(headline))
+            bars.append(
+                f'<div style="display:flex;align-items:center;gap:10px;margin:4px 0">'
+                f'<span style="width:150px;flex:none">{severity_pill(level)}</span>'
+                f'<span style="flex:1;background:var(--grid-line);border-radius:4px">'
+                f'<span style="display:block;width:{width:.2f}%;height:16px;'
+                f'border-radius:4px;background:var(--sev-{MIT_SLUG[level]})"></span></span>'
+                f'<b style="width:28px;text-align:right">{n}</b></div>'
+            )
+        st.markdown("".join(bars), unsafe_allow_html=True)
+
+        with st.expander("MIT's full definitions"):
+            grid = []
+            for level in MIT_ORDER:
+                cells = "".join(
+                    "<td>"
+                    + esc(
+                        definitions[
+                            (definitions["level"] == level)
+                            & (definitions["harm_type"] == harm)
+                        ]["descriptor"].iloc[0]
+                    )
+                    + "</td>"
+                    for harm in harms
+                )
+                grid.append(
+                    f'<tr><td style="white-space:nowrap">{severity_pill(level)}</td>{cells}</tr>'
+                )
+            st.markdown(
+                '<div class="case-table-wrap"><table class="cases">'
+                f"<thead><tr><th>Level</th>{header}</tr></thead>"
+                f"<tbody>{''.join(grid)}</tbody></table></div>",
+                unsafe_allow_html=True,
+            )
+        st.caption(MIT_ATTRIBUTION)
+
+    with eu_tab:
+        counts = frame["eu_serious_incident"].value_counts().to_dict()
+        columns = st.columns(3)
+        for column, label in zip(
+            columns, ["Meets", "Does not meet", "Not determinable from the record"]
+        ):
+            column.metric(label, counts.get(label, 0))
+        limbs = {
+            r["limb"]: r["text"]
+            for r in csv.DictReader(
+                open(APP_DIR / "frameworks" / "eu_ai_act_serious_incident.csv",
+                     encoding="utf-8")
+            )
+        }
+        body = "".join(
+            f'<tr><td class="id"><a href="#{r.id.lower()}">{esc(r.id)}</a></td>'
+            f"<td>{esc(r.eu_serious_incident)}</td>"
+            f'<td>({esc(r.eu_closest_limb)}) {esc(limbs[r.eu_closest_limb])}</td>'
+            f"<td>{esc(r.eu_basis)}</td></tr>"
+            for r in frame.sort_values("id").itertuples()
+        )
+        st.markdown(
+            '<div class="case-table-wrap"><table class="cases">'
+            "<thead><tr><th>Case</th><th>Value</th><th>Closest limb</th>"
+            "<th>Basis</th></tr></thead>"
+            f"<tbody>{body}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Closest limb, not a legal classification. Article 3(49) of Regulation (EU) "
+            "2024/1689, read on 11 October 2026. Every value here is this register's "
+            "reading, and several of these deployers are outside the Act's scope entirely."
+        )
+
+
 def screen_findings(frame, rules):
     """The analysis that used to live under the landing page.
 
@@ -581,16 +734,19 @@ def screen_findings(frame, rules):
 
     st.markdown("---")
 
+    st.markdown("---")
+    frameworks_severity(frame)
+
+    st.markdown("---")
     st.markdown("### Two counts that change where you look")
     st.markdown(
         f"- In **{facts['no_approval']} of {facts['total']}** cases the record shows no "
         "approval step before the action took effect, or shows a gate that did not hold. "
         "This field carries no source of its own, unlike the stop-authority one, so read "
         "it as this register's reading of each account rather than a sourced absence.\n"
-        f"- **{facts['read_only']} of the {facts['total']}** agents could only read. "
-        f"**{facts['read_only_bad']} of those {facts['read_only']}** still produced a "
-        "serious or severe outcome. Read-only is not the same as low risk, because an "
-        "agent that only reads can still speak, and what it says binds the organisation."
+        f"- **{facts['read_only']} of the {facts['total']}** agents could only read. That "
+        "did not keep them out of this register: an agent that only reads can still "
+        "speak, and what it says binds the organisation."
     )
 
     st.markdown("---")
@@ -781,7 +937,13 @@ def incident_card(row):
     st.markdown(
         badge(row["id"], "#374151")
         + badge(row["incident_or_hazard"], "#374151")
-        + badge(f"{row['severity']} severity", SEVERITY_COLOR[row["severity"]])
+        + badge(
+            ("at least " if row["mit_floored"] else "")
+            + f"{MIT_LEVELS[row['mit_level']]} harm",
+            {1: "#898781", 2: "#fab219", 3: "#ec835a", 4: "#d03b3b", 5: "#8f1d1d"}[
+                row["mit_level"]
+            ],
+        )
         + badge(f"Missing control: {row['control_class']}", CLASS_COLOR[row["control_class"]])
         + badge(f"Evidence grade {row['evidence_grade']}", GRADE_COLOR[row["evidence_grade"]])
         + (badge("Facts disputed by the deployer", "#8A4B00") if row["disputed"] == "Yes" else "")
@@ -898,8 +1060,7 @@ def incident_card(row):
             f"ISO/IEC 42001 {esc(row['iso_42001'])} · EU AI Act {esc(row['eu_ai_act'])}"
         )
         st.caption(
-            f"Severity basis: {esc(row['severity_basis'])} Closest clause, not a legal "
-            "classification."
+            "Closest clause, not a legal classification."
         )
 
 
@@ -994,7 +1155,8 @@ def screen_register(frame):
         )
         classes = st.multiselect("Missing control", sorted(frame["control_class"].unique()))
         severities = st.multiselect(
-            "Severity", [s for s in SEVERITY_ORDER if s in set(frame["severity"])]
+            "Harm severity (MIT)",
+            [MIT_LEVELS[l] for l in MIT_ORDER if l in set(frame["mit_level"])],
         )
         grades = st.multiselect("Evidence grade", sorted(frame["evidence_grade"].unique()))
         query = st.text_input("Search", placeholder="Case, deployer, pattern")
@@ -1012,7 +1174,7 @@ def screen_register(frame):
     if classes:
         view = view[view["control_class"].isin(classes)]
     if severities:
-        view = view[view["severity"].isin(severities)]
+        view = view[view["mit_level"].map(MIT_LEVELS).isin(severities)]
     if grades:
         view = view[view["evidence_grade"].isin(grades)]
     if counted_only:
@@ -1447,31 +1609,30 @@ def screen_method(frame, rules):
         "not produce a single case where a wrong answer alone did the damage."
     )
 
-    st.markdown("### Severity")
+    st.markdown("### Why these two scales")
     st.markdown(
-        "The scale measures one thing: who was affected and how badly. Recovery time and "
-        "effort are deliberately not in it. A failure that happened to be cheap to fix is "
-        "not a smaller failure."
+        "Severity is reported on two recognised scales, because they answer different "
+        "questions and neither answers the other's.\n\n"
+        "- **How big was this, compared with all AI harm?** MIT's harm severity "
+        "framework, five levels across ten harm types, built on CSET's Taxonomy of AI "
+        "Harm as modified by MIT. It puts these cases on the same scale as the 1,700-odd "
+        "incidents in MIT's own tracker.\n"
+        "- **Would it cross the EU AI Act's serious-incident threshold?** Article 3(49). "
+        "A legal reporting threshold rather than a measure of size, recorded as the "
+        "closest limb and never as a legal classification."
     )
-    bands = []
-    for level in SEVERITY_ORDER:
-        count = int((frame["severity"] == level).sum())
-        counted_count = int(((frame["severity"] == level) & frame["counted"]).sum())
-        bands.append(
-            f'<tr class="s-{SEVERITY_SLUG[level]}">'
-            f'<td style="width:170px">{severity_pill(level)}</td>'
-            f'<td>{esc(SEVERITY_MEANING[level])}</td>'
-            f'<td style="width:130px;text-align:right;white-space:nowrap">'
-            f"{describe_count(count, counted_count)}</td></tr>"
-        )
     st.markdown(
-        '<div class="case-table-wrap"><table class="cases">'
-        "<thead><tr><th>Band</th><th>What it means</th><th>Cases</th></tr></thead>"
-        f"<tbody>{''.join(bands)}</tbody></table></div>",
-        unsafe_allow_html=True,
+        "**The register used to carry its own four-level scale: Negligible, Moderate, "
+        "Serious, Severe.** It had no external source. It was written for this register "
+        "and it ranked these twelve cases against each other, which meant its middle was "
+        "wherever these cases happened to sit. It has been retired rather than converted, "
+        "and the old labels are gone from the site and from the data, because the word "
+        "Severe does not mean on MIT's scale what it meant on that one."
     )
-    st.markdown(SEVERITY_NOTE)
-    st.caption("Descriptive, over all rows in the register.")
+    st.caption(
+        "NIST SP 800-61 Rev 2's impact tables were considered and not used: Rev 2 was "
+        "withdrawn on 3 April 2025."
+    )
 
     st.markdown("### Naming policy")
     st.markdown(
@@ -1697,6 +1858,12 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9 | 2026-10-11 | Severity moved from the register's own 4-level scale, which "
+        "ranked cases against each other and had no external source, to MIT's 5-level "
+        "harm severity framework (CSET-based, up to global scale). The two scales use "
+        "different reference points, so old labels were retired, not converted. Each case "
+        "was re-scored from its facts: 6 Negligible, 5 Minor, 1 Substantial. An EU AI Act "
+        "serious-incident threshold view was added alongside it. |\n"
         "| 0.9 | 2026-10-10 | Checked OWASP labels against OWASP's own coded list. No "
         "change to codes. All ten names confirmed from the page that carries the codes, "
         "with the shorter official forms adopted and the longer forms kept as aliases. "

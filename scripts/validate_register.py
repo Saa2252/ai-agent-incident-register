@@ -35,12 +35,13 @@ from urllib.parse import urlparse
 FIELDS = [
     "id", "title", "event_date", "deployer", "sector", "agent_type", "what_happened",
     "why_in_register", "incident_or_hazard", "harm_type", "harm_borne_by",
-    "could_have_prevented", "harm_bearer_had_control", "severity", "severity_basis",
-    "authority", "human_approval", "deploy_evidence_seen", "deploy_evidence_source",
-    "deploy_stop_authority", "deploy_stop_authority_source", "deploy_review_date",
-    "deploy_review_date_source", "failure_pattern", "owasp_code", "owasp_code_basis",
-    "said_something_untrue", "control_class", "secondary_class", "control_maturity",
-    "missing_control", "missing_control_basis", "test_before_launch", "test_pass_mark",
+    "could_have_prevented", "harm_bearer_had_control", "eu_serious_incident",
+    "eu_closest_limb", "eu_basis", "eu_basis_type", "authority", "human_approval",
+    "deploy_evidence_seen", "deploy_evidence_source", "deploy_stop_authority",
+    "deploy_stop_authority_source", "deploy_review_date", "deploy_review_date_source",
+    "failure_pattern", "owasp_code", "owasp_code_basis", "said_something_untrue",
+    "control_class", "secondary_class", "control_maturity", "missing_control",
+    "missing_control_basis", "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "control_owner_role",
     "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act", "what_changed_after",
     "disputed", "aftermath_status", "aftermath_source_url", "evidence_grade",
@@ -71,7 +72,10 @@ KINDS = {"Incident", "Hazard"}
 
 # Four levels, defined on the Method page in terms of what happened to people, not in
 # terms of how it felt to read about.
-SEVERITIES = {"Negligible", "Moderate", "Serious", "Severe"}
+# Severity lives in data/case_harm_ratings.csv on MIT's framework. The register's own
+# four-level scale was retired in the same change, not converted.
+EU_SERIOUS = {"Meets", "Does not meet", "Not determinable from the record"}
+EU_LIMBS = {"a", "b", "c", "d"}
 
 # What the missing control governed. This is the field the headline finding counts, so
 # a row gets exactly one, chosen by the rubric on the Method page.
@@ -359,8 +363,6 @@ def validate_rows(report, rows, today):
 
         if row["incident_or_hazard"] not in KINDS:
             report.error(f"{where}.incident_or_hazard", f"must be one of {sorted(KINDS)}")
-        if row["severity"] not in SEVERITIES:
-            report.error(f"{where}.severity", f"'{row['severity']}' is not one of {sorted(SEVERITIES)}")
         second = row["secondary_class"].strip()
         if second:
             if second not in CONTROL_CLASSES:
@@ -425,6 +427,14 @@ def validate_rows(report, rows, today):
                 "a label, not a basis",
             )
 
+        if row["eu_serious_incident"] not in EU_SERIOUS:
+            report.error(f"{where}.eu_serious_incident", f"must be one of {sorted(EU_SERIOUS)}")
+        if row["eu_closest_limb"] not in EU_LIMBS:
+            report.error(f"{where}.eu_closest_limb", "must be a, b, c or d")
+        if row["eu_basis_type"] not in FRAMEWORK_BASIS:
+            report.error(f"{where}.eu_basis_type", f"must be one of {sorted(FRAMEWORK_BASIS)}")
+        if not row["eu_basis"].strip():
+            report.error(f"{where}.eu_basis", "has no basis")
         if row["control_maturity"] not in CONTROL_MATURITY:
             report.error(f"{where}.control_maturity", f"must be one of {sorted(CONTROL_MATURITY)}")
         elif row["control_maturity"] == "Operating":
@@ -505,8 +515,6 @@ def validate_rows(report, rows, today):
 
         # A hazard is a near miss, so it cannot also claim that harm occurred. The OECD
         # definitions are the point of the field and the register has to honour them.
-        if row["incident_or_hazard"] == "Hazard" and row["severity"] == "Severe":
-            report.warn(where, "a hazard graded Severe. Check this is potential harm, not harm that occurred")
 
         # The register's own argument is that a deletion by an agent with no approval is
         # an authority failure, so the data has to agree with the argument.

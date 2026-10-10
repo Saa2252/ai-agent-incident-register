@@ -23,6 +23,8 @@ def main(argv):
     with open(project_dir / "data" / "incidents.csv", newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
     counted = [r for r in rows if r["evidence_grade"] in {"A", "B"}]
+    with open(project_dir / "data" / "case_harm_ratings.csv", newline="", encoding="utf-8") as fh:
+        ratings = list(csv.DictReader(fh))
 
     expected = {
         "cases": len(rows),
@@ -35,8 +37,10 @@ def main(argv):
         "stated": sum(1 for r in counted if r["missing_control_basis"].startswith("Stated")),
         "entailed": sum(1 for r in counted if r["missing_control_basis"].startswith("Entailed")),
         "reading": sum(1 for r in counted if r["missing_control_basis"].startswith("Reading")),
+        # Severity now lives in its own file on MIT's five-level framework. The checksum
+        # is the total filled meter bars across every case's headline level.
         "filled meter bars": sum(
-            {"Severe": 4, "Serious": 3, "Moderate": 2, "Negligible": 1}[r["severity"]] for r in rows
+            max(int(x["level"]) for x in ratings if x["case_id"] == r["id"]) for r in rows
         ),
     }
 

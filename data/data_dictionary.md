@@ -1,6 +1,6 @@
 # Data dictionary
 
-One file, `incidents.csv`, 53 fields, one row per case. The app computes every number
+Two files. `incidents.csv`, 56 fields, one row per case. `case_harm_ratings.csv`, one row per harm type a case affected. The app computes every number
 it shows from this file, so a change here changes the site. `scripts/validate_register.py`
 enforces everything below and fails the build if a row stops obeying it.
 
@@ -29,52 +29,20 @@ Three conventions apply to every field.
 | --- | --- | --- |
 | `incident_or_hazard` | `Incident`, `Hazard` | OECD definitions. An incident means harm occurred. A hazard is a near miss. |
 | `harm_type` | Free text | What kind of harm, in plain words. Not a code, because twelve rows cannot support one. |
-| `severity` | `Negligible`, `Moderate`, `Serious`, `Severe` | Defined on the Method page in terms of what happened to people. |
-| `authority` | Pipe-joined subset of `Read`, `Write`, `Delete`, `Pay`, `Promise` | What the agent was **able** to do at the time, not what it was supposed to do. |
-| `human_approval` | `Yes`, `No`, `Unknown`, `Yes, bypassed` | **Weaker discipline than the deployment fields, and prose must say so.** Unlike `deploy_stop_authority`, this carries no paired source, so a `No` is this register's reading of the published account rather than a sourced absence. Any sentence built on it says "the record shows no approval step", never "no person approved". |
-| `failure_pattern` | Free text, one line | The primary pattern in plain words. |
-| `owasp_code` | `ASI01` to `ASI10` | Allowed values and names come from `frameworks/owasp_agentic_2026.csv`, which the validator reads. All ten were confirmed on 10 October 2026 from OWASP's own coded list. OWASP's press release of the same day uses looser wording and no codes, so it is not the source. |
-| `owasp_code_basis` | `Stated`, `Our reading` | Who applied the code to this case. `Stated` means OWASP's own list cites this case as an example of that code, which is true of AIR-010 under ASI01. Everything else is this register's reading. |
-| `said_something_untrue` | `Yes`, `No` | Did the agent itself state something untrue? Recorded **independently of `control_class`**, so the rubric's ordering can be measured rather than argued about. A `No` row cannot become an accuracy failure under any ordering, which makes the count of them an order-independent floor under the headline. A row classed `Accuracy` with `No` here is a contradiction and the validator rejects it. |
-| `secondary_class` | Same vocabulary, or blank | The reading the ordered rubric **discarded**. Blank where the case has one clean reading. **Never counted in any figure.** It exists because first-match-wins twice threw away a classification already identified as real: AIR-009 is a vendor failure and also an oversight one, and Vendor simply gets tested first. Must differ from `control_class`. |
-| `control_class` | `Accuracy`, `Authority`, `Boundary`, `Oversight`, `Vendor` | What the missing control governed. **This is the field the headline finding counts.** One per row, assigned by the ordered rubric on the Method page. |
-| `disputed` | `Yes`, `No` | `Yes` means the deployer publicly contests the facts. A `Yes` row must carry the deployer's position in `what_changed_after`, and the validator checks for it. |
+| `eu_serious_incident` | `Meets`, `Does not meet`, `Not determinable from the record` | Whether the case crosses the EU AI Act's serious-incident threshold in Article 3(49). Not determinable is the honest answer where the record cannot settle it, the same rule as the deployment questions. |
+| `eu_closest_limb` | `a`, `b`, `c`, `d` | The limb of Article 3(49) nearest to this case, from `frameworks/eu_ai_act_serious_incident.csv`. **Closest limb, never a legal classification**, and several deployers here are outside the Act's scope entirely. |
+| `eu_basis`, `eu_basis_type` | Free text, `Stated` or `Our reading` | The working behind the value. |
 
-## The control
+**Severity is not in this file.** It lives in `case_harm_ratings.csv`, one row per harm
+type a case affected, scored on MIT's framework in `frameworks/mit_severity_framework.csv`.
+A case's headline severity is the highest level it reached. `at_least` marks a rating
+where the record does not establish the magnitude, so the level is a floor rather than a
+measurement.
 
-| Field | Allowed values | Notes |
-| --- | --- | --- |
-| `control_maturity` | `Absent`, `Designed`, `Implemented`, `Unknown` | What state the missing control was actually in. `Absent` means it did not exist. `Designed` means it existed in a policy or an instruction with nothing enforcing it. `Implemented` means it was built and wired in and did not stop the thing it was there to stop. `Operating` is in the validator's vocabulary **only so it can be rejected**, because a control that was operating is not a missing control. |
-| `missing_control` | 1 to 2 sentences | One plain sentence on the control that was not there. Not a list of everything that could have been better. |
-| `missing_control_basis` | Starts with `Stated`, `Entailed` or `Reading`, then a full stop and the working | How the register knows the control was missing. **`Stated`**: the deployer, a regulator or a ruling said it. **`Entailed`**: it follows from the record, and a control added afterwards is evidence of its prior absence. **`Reading`**: neither, and the card says so. The tier alone is rejected by the validator: it has to carry the reason. |
-| `test_before_launch` | 1 to 2 sentences | A test somebody could actually run next week. |
-| `test_pass_mark` | 1 to 2 sentences | What counts as a pass. A test with no pass mark is a conversation. |
-| `signal_after_launch` | 1 to 2 sentences | The metric or alert that would have shown this once live. |
-| `nist_800_4_category` | `Functionality`, `Operational`, `Human factors`, `Security`, `Compliance`, `Large-scale impacts` | The six categories in NIST AI 800-4, March 2026. |
-| `control_owner_role` | Free text | The role that runs the control day to day. A role, never a person. |
-| `accountable_role` | Free text | The role that has to answer when it fails. **Must differ from `control_owner_role`**, and the validator rejects a row where they match. Two names for one role is a field doing nothing while looking like governance. |
-
-## Clauses
-
-Shape is checked. Meaning is not, because that check is a human reading the official
-text. The Method page says so on the page itself.
-
-| Field | Required shape | Example |
-| --- | --- | --- |
-| `nist_ai_rmf` | `FUNCTION N.N` | `MANAGE 4.1, MEASURE 2.4` |
-| `iso_42001` | `A.N.N` or `A.N.N.N` | `A.6.2.6, A.8.4` |
-| `eu_ai_act` | `Article N` or `Article N(N)` | `Article 14, Article 26` |
-
-## Aftermath and evidence
-
-| Field | Allowed values | Notes |
-| --- | --- | --- |
-| `what_changed_after` | Free text | What the deployer did or said. Their position goes here even when it contradicts the reporting, and especially then. |
-| `harm_borne_by` | Free text | Who actually paid for the failure. People, not organisations, wherever the record supports it. |
-| `could_have_prevented` | Free text | Who held the lever. The role or organisation that could have changed the outcome before it happened. |
-| `harm_bearer_had_control` | `Yes`, `No`, `Partly` | Were they the same people? Uniformly `No` across the current twelve, which is the finding rather than a defect in the field. A field with no variance cannot be checked by its own distribution, so it is checked by reading the two fields above it. |
-| `why_in_register` | Free text | The scope line applied to this row. Why this is an **agent** incident rather than a generic failure that involved software. Added after a reviewer asked whether AIR-009 was an agent incident or a supply-chain one that happened to involve an AI product. |
-| `severity_basis` | Free text, one or two sentences | Which clause of the severity scale this row actually meets. Added because AIR-003's account changed materially and its rating was held without anyone saying why. A rating with no stated basis cannot be re-checked when the facts move, so **severity must be re-evaluated and this field updated whenever `what_happened` changes.** |
+The register's own four-level scale, Negligible / Moderate / Serious / Severe, was
+**retired** in version 0.9 rather than converted. It had no external source and it ranked
+these twelve cases against each other, so its middle sat wherever these cases happened to
+sit. Severe does not mean on MIT's scale what it meant on that one.
 | `aftermath_status` | `Documented`, `Partial`, `Undocumented` | How completely the ending is on the record. A `Partial` or `Undocumented` row **must** say so in `what_changed_after`, and the validator rejects it otherwise. Stopping at the failure overstates the harm. |
 | `aftermath_source_url` | `https://` URL | Which source carries the `what_changed_after` claim. The deployer's response is a **separate claim** from the incident, so it gets a named citation rather than an assumption that the incident sources happen to cover it. Usually this is `source_1_url` or `source_2_url`, named explicitly. Where neither covers it, it is a third link. Required on every row. |
 | `evidence_grade` | `A`, `B`, `C` | See below. Only A and B feed a number anywhere on the site. |
