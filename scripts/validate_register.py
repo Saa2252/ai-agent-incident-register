@@ -44,9 +44,10 @@ FIELDS = [
     "missing_control_basis", "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "control_owner_role",
     "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act", "what_changed_after",
-    "disputed", "aftermath_status", "aftermath_source_url", "evidence_grade",
-    "source_1_label", "source_1_url", "source_2_label", "source_2_url", "date_checked",
-    "facts_changed_at", "derived_rechecked_at", "archive_urls",
+    "disputed", "aftermath_status", "aftermath_source_url", "inclusion",
+    "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
+    "source_2_url", "date_checked", "facts_changed_at", "derived_rechecked_at",
+    "archive_urls",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -75,6 +76,10 @@ KINDS = {"Incident", "Hazard"}
 # Severity lives in data/case_harm_ratings.csv on MIT's framework. The register's own
 # four-level scale was retired in the same change, not converted.
 EU_SERIOUS = {"Meets", "Does not meet", "Not determinable from the record"}
+
+# Whether a case was admitted under the dated inclusion rule or predates it. A rule
+# written after the fact cannot be claimed to have governed the cases that came first.
+INCLUSION_STATES = {"Passed the inclusion rule", "Included before the inclusion rule"}
 EU_LIMBS = {"a", "b", "c", "d"}
 
 # What the missing control governed. This is the field the headline finding counts, so
@@ -427,6 +432,19 @@ def validate_rows(report, rows, today):
                 "a label, not a basis",
             )
 
+        if row["inclusion"] not in INCLUSION_STATES:
+            report.error(f"{where}.inclusion", f"must be one of {sorted(INCLUSION_STATES)}")
+        # The window is part of the rule, so a row claiming to have passed it is checked
+        # against it rather than trusted.
+        elif row["inclusion"] == "Passed the inclusion rule" and not (
+            "2025-01-01" <= row["event_date"] <= "2026-09-30"
+        ):
+            report.error(
+                where,
+                f"claims to have passed the inclusion rule but its event date "
+                f"{row['event_date']} is outside the window of 1 January 2025 to "
+                "30 September 2026",
+            )
         if row["eu_serious_incident"] not in EU_SERIOUS:
             report.error(f"{where}.eu_serious_incident", f"must be one of {sorted(EU_SERIOUS)}")
         if row["eu_closest_limb"] not in EU_LIMBS:

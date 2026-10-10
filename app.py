@@ -795,7 +795,9 @@ def incident_card(row):
         + tag(f"Missing control: {row['control_class']}")
         + tag(f"Evidence grade {row['evidence_grade']}")
         + (tag("Facts disputed by the deployer") if row["disputed"] == "Yes" else "")
-        + (tag("Not counted in any number") if not row["counted"] else ""),
+        + (tag("Not counted in any number") if not row["counted"] else "")
+        + (tag("Included before the inclusion rule")
+           if row["inclusion"] == "Included before the inclusion rule" else ""),
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -1324,6 +1326,42 @@ def screen_method(frame, rules):
         "ordered-rubric count."
     )
 
+    st.markdown("### Which cases get in")
+    st.markdown(
+        "Dated 11 October 2026 and committed before any case was added under it. A lead "
+        "is included only if it passes all six tests."
+    )
+    tests = [
+        ("1. Agent action", "An AI agent took an action, a tool call, a data change or deletion, a send, a purchase, a post, or made a commitment binding an organisation. Not output that nobody acted on. Not robotics or vehicles."),
+        ("2. Harm", "Actual harm, or a near miss confirmed by the organisation."),
+        ("3. Organisation", "At least one named organisation, deployer, platform or vendor, whose control failed. Personal use only is excluded."),
+        ("4. Evidence", "Grade A or B: a primary record, meaning a postmortem, advisory, CVE, ruling, regulator notice or company statement, plus one independent report."),
+        ("5. Traceable", "The record describes the sequence well enough to name the missing control."),
+        ("6. Window", "Event and publication both between 1 January 2025 and 30 September 2026, and not already in the register."),
+    ]
+    st.markdown(
+        '<div class="case-table-wrap"><table class="cases"><thead><tr><th>Test</th>'
+        "<th>What it asks</th></tr></thead><tbody>"
+        + "".join(f"<tr><td>{esc(a)}</td><td>{esc(b)}</td></tr>" for a, b in tests)
+        + "</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "**Census, not selection.** Every lead that passes is included. The inclusion "
+        "decision never looks at a case's missing-control class, its severity or whether "
+        "the agent said something untrue, because those are the things the findings "
+        "count. They are coded after a case is in."
+    )
+    pre = int((frame["inclusion"] == "Included before the inclusion rule").sum())
+    st.markdown(
+        f"**{pre} of the {len(frame)} cases predate this rule** and are marked *Included "
+        "before the inclusion rule* on their cards. A rule written after the fact cannot "
+        "be claimed to have governed the cases that came first. Every lead that was "
+        "checked and not admitted is listed in data/leads/considered_not_included.csv "
+        "with the test it failed, so the shape of what the evidence rule excluded can be "
+        "seen rather than guessed at."
+    )
+
     st.markdown("### Incident or hazard")
     for kind, meaning in KIND_MEANING.items():
         count = int((frame["incident_or_hazard"] == kind).sum())
@@ -1687,6 +1725,14 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 0.9 | 2026-10-11 | Committed a dated inclusion rule before adding any case "
+        "under it. Six tests, all of which must pass, with the window set to events and "
+        "publication between 1 January 2025 and 30 September 2026. The decision never "
+        "looks at a case's class, severity or whether the agent said something untrue, "
+        "because those are what the findings count. Six of the original twelve predate "
+        "the rule and are marked as such rather than retrofitted into it. The validator "
+        "rejects any row claiming to have passed the rule with an event date outside the "
+        "window. |\n"
         "| 0.9 | 2026-10-11 | Layout pass, no numbers changed. The case list merged into "
         "Home, which had been showing the same twelve rows under a second set of headline "
         "numbers. Removed every comment and review invitation, the citation block, the "
