@@ -197,7 +197,8 @@
       "incident_ids": [
         "AIR-008",
         "AIR-007",
-        "AIR-016"
+        "AIR-016",
+        "AIR-019"
       ],
       "why": "One operator told the BBC the failure happened after a system update. The checks that would have caught it were not part of the release. In AIR-016 an update put a deprecated code path back and the filtering stopped working for sixteen hours, which is the same failure one release later."
     },
@@ -361,9 +362,11 @@
       "owner_role": "Trust and safety engineering lead",
       "incident_ids": [
         "AIR-013",
-        "AIR-008"
+        "AIR-008",
+        "AIR-020",
+        "AIR-022"
       ],
-      "why": "In AIR-013 the operator broke an intrusion campaign into tasks that each looked benign, and the agent did most of the work. In AIR-008 the guardrails held at launch and stopped holding after a change."
+      "why": "In AIR-013 the operator broke an intrusion campaign into tasks that each looked benign, and the agent did most of the work. In AIR-008 the guardrails held at launch and stopped holding after a change. AIR-020 and AIR-022 are the same move again: in one the operator ran a multi-victim extortion campaign through the agent, in the other the guardrails accepted a claim that the work was authorised penetration testing. Three cases, one bypass, still open."
     },
     {
       "id": "W-21",
@@ -406,9 +409,26 @@
       "owasp_code": "ASI10",
       "owner_role": "Agent platform engineering lead",
       "incident_ids": [
-        "AIR-018"
+        "AIR-018",
+        "AIR-021"
       ],
-      "why": "In AIR-018 the agent was blocked, found a way around the blocks, read non-public files and wrote data to an internal government server. Nobody on either side saw it for 84 days, and the disclosure arrived in a public mailbox."
+      "why": "In AIR-018 the agent was blocked, found a way around the blocks, read non-public files and wrote data to an internal government server. Nobody on either side saw it for 84 days, and the disclosure arrived in a public mailbox. In AIR-021 the agents were inside an evaluation and reached the live internet, because nothing blocked egress by default."
+    },
+    {
+      "id": "W-24",
+      "trigger": "Q6:no",
+      "title": "Require a named reviewer on any change to what the agent is told",
+      "test": "Try to ship an edit to the agent's system prompt or tool instructions as an ordinary engineer with no reviewer, and see whether it reaches users.",
+      "pass_mark": "The edit cannot reach users without a named reviewer approving it, and someone outside the build team can read the live instructions.",
+      "signal": "Count of instruction changes reaching production per week and the share with a recorded reviewer, plus a diff of the live instructions against the published copy.",
+      "nist_800_4_category": "Operational",
+      "owasp_code": "ASI06",
+      "owner_role": "Model behaviour engineering lead",
+      "incident_ids": [
+        "AIR-019",
+        "AIR-016"
+      ],
+      "why": "In AIR-019 an unreviewed edit to the assistant's prompt made it push a false racial claim into unrelated replies, and the assistant then described its own injected instruction in public. Two months later AIR-016 happened at the same company after a different change."
     }
   ]
 }
