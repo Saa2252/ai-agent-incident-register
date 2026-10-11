@@ -43,8 +43,9 @@ st.set_page_config(
 #
 # A page with a colour per class, per grade and per status reads as marketing to a
 # governance audience, and colour carrying three meanings carries none. Grade is
-# monochrome, the bar chart is one hue, and every severity pill pairs its colour with a
-# four-bar meter and the word, so nothing depends on colour alone.
+# monochrome, and every severity pill pairs its colour with a five-bar meter and the word,
+# so nothing depends on colour alone. The bar chart this comment used to mention was
+# removed in the layout pass of 11 October 2026.
 # MIT AI Risk Initiative, AI Incident Tracker harm severity framework, CSET-based as
 # modified by MIT. Captured 10 October 2026 and transcribed into
 # frameworks/mit_severity_framework.csv. A case's headline level is the highest level it
@@ -177,7 +178,7 @@ table.cases tr.notcounted td { color: var(--muted); }
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "0.9"
+VERSION = "1.0"
 UPDATED = "12 October 2026"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
@@ -1155,8 +1156,8 @@ def screen_watchlist(frame, rules):
         "This register names organisations and never individuals, and that is the "
         "stronger version rather than the cautious one. A name is unusable to you. A "
         "**role** is a lookup into your own org chart. These are the roles that came up "
-        "across the twelve cases, and the useful exercise is to put a name against each "
-        "one for your own agent and see which lines you cannot fill."
+        f"across all {headline(frame)['all_rows']} cases, and the useful exercise is to put a "
+        "name against each one for your own agent and see which lines you cannot fill."
     )
     role_rows = sorted(headline(frame)["roles"].items(), key=lambda item: (-item[1], item[0]))
     template = pd.DataFrame(
@@ -1231,10 +1232,14 @@ def screen_watchlist(frame, rules):
             )
         st.warning(note, icon="⚠️")
 
-    if answers and not any(answers.values()) and answers.get("Q6") is True:
+    # Q6 is "does a person approve", so a yes there is the narrow case rather than a risk.
+    # Counting it inside any() made this branch unsatisfiable and the message never showed.
+    risk_answers = [value for key, value in answers.items() if key != "Q6"]
+    if answers and not any(risk_answers) and answers.get("Q6") is True:
         st.success(
             "A read-only agent with a person approving its actions is the narrowest case "
-            "in this register, and two of the twelve cases still apply to it.",
+            f"in this register, and {_narrowest(frame)} of the {headline(frame)['all_rows']} "
+            "cases still apply to it.",
             icon="✅",
         )
 
@@ -1287,6 +1292,25 @@ def screen_watchlist(frame, rules):
 
 
 # ---------------------------------------------------------------------------- method
+
+
+def _narrowest(frame):
+    """Cases a read-only agent with a human approval step still applies to. Computed."""
+    acts = {"Write", "Delete", "Pay", "Promise"}
+    return int(
+        frame.apply(
+            lambda row: not (acts & set(row["authority"].split("|")))
+            and row["human_approval"].startswith("Yes"),
+            axis=1,
+        ).sum()
+    )
+
+
+def _leads():
+    """How many leads were checked and not included. Read from the file, never typed."""
+    path = Path(__file__).parent / "data" / "leads" / "considered_not_included.csv"
+    with open(path, encoding="utf-8") as handle:
+        return sum(1 for _ in csv.DictReader(handle))
 
 
 def screen_method(frame, rules):
@@ -1502,8 +1526,8 @@ def screen_method(frame, rules):
     st.markdown(
         "**The register used to carry its own four-level scale: Negligible, Moderate, "
         "Serious, Severe.** It had no external source. It was written for this register "
-        "and it ranked these twelve cases against each other, which meant its middle was "
-        "wherever these cases happened to sit. It has been retired rather than converted, "
+        "and it ranked the twelve cases it then covered against each other, which meant its "
+        "middle was wherever those cases happened to sit. It has been retired rather than converted, "
         "and the old labels are gone from the site and from the data, because the word "
         "Severe does not mean on MIT's scale what it meant on that one."
     )
@@ -1644,16 +1668,18 @@ def screen_method(frame, rules):
         "confused. The cases where the agent stated nothing untrue are largely the "
         "security and legal ones, which are precisely the cases that generate primary "
         "records, so the current headline is at least as exposed to this bias as the one "
-        "it replaced. The honest repair is to publish the long list of candidates that "
-        "were considered and dropped, with the reason for each, so the shape of what the "
-        "evidence rule excluded can be seen rather than guessed at. That is not done yet "
-        "and it is the largest hole in this method.\n"
-        "- **A convenience sample, not a population.** These twelve cases are the ones with "
+        "it replaced. The repair was to publish the long list of candidates that were "
+        "considered and dropped, with the test each failed, so the shape of what the rules "
+        f"excluded can be read rather than guessed at. That is now done: {_leads()} leads are "
+        "listed in data/leads/considered_not_included.csv, and the largest group by far is "
+        "cases where an AI system produced text and a person read it, which this register "
+        "excludes by design and which is where most public reporting of AI harm sits.\n"
+        "- **A convenience sample, not a population.** These cases are the ones with "
         "a usable public record. Agent failures that were handled quietly are the majority "
         "and none of them are here, which also biases the counts toward the visible and "
         "the embarrassing.\n"
-        "- **Twelve is a small number.** A count of 12 is an illustration of a pattern, not "
-        "evidence of its distribution. Treat the finding as a hypothesis worth testing "
+        f"- **{headline(frame)['total']} is a small number.** A count this size is an "
+        "illustration of a pattern, not evidence of its distribution. Treat the finding as a hypothesis worth testing "
         "against your own incidents.\n"
         "- **Closest clause, not legal classification.** The clause references are the "
         "nearest fit for a reader who needs a starting point. Whether any obligation "
@@ -1729,6 +1755,39 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 1.0 | 2026-10-12 | **Release. Twelve cases to twenty one, eleven counted to twenty.** "
+        "Every number below is recomputed from the data on each page load, including the case "
+        "count itself. Old is version 0.9, new is this release. Said nothing untrue 5 of 11 to "
+        "10 of 20. Record silent on who could stop it 10 of 11 to 19 of 20. Control never built "
+        "6 of 11 to 9 of 20. Control existed and did not hold 1 of 11 to 6 of 20, plus one case "
+        "in a new state, Bypassable, where the gate was built and the caller could switch it "
+        "off. Missing control was not accuracy 8 of 11 to 17 of 20. Read-only agents 6 of 11 to "
+        "6 of 20, the only count that did not move at all. Evidence grades 5 A and 6 B to 7 A "
+        "and 13 B. Endings 8 documented, 2 partial, 1 undocumented to 14, 5 and 1. Severity on "
+        "MIT's scale, counted rows only, 5 Minor, 5 Negligible and 1 Substantial to 7, 7 and 6. "
+        "Missing control class 3 Accuracy, 3 Authority, 2 Boundary, 2 Oversight and 1 Vendor to "
+        "3, 7, 6, 3 and 1. Event years unchanged at 2022 to 2026. |\n"
+        "| 1.0 | 2026-10-12 | **Which findings held and which moved.** Held: no case in the "
+        "register was only the AI being wrong, which is still true at 20 counted cases as it was "
+        "at 11. Held and strengthened: the record is almost always silent on who could have "
+        "halted the deployment, now 19 of 20, and a scheduled date to look again appears in "
+        "none of the 20. Moved against the register's own framing: Accuracy did not grow at "
+        "all, staying at 3 cases while Authority went from 3 to 7 and Boundary from 2 to 6, so "
+        "the register is now mostly about what agents were allowed to do rather than what they "
+        "got wrong. Weakened: Vendor is still a single case after nine admissions, so any "
+        "statement about that class remains a description of one row. Worth saying rather than "
+        "hiding: the two strongest Vendor candidates found in the census both failed, one on the "
+        "organisation test and one on evidence. |\n"
+        "| 1.0 | 2026-10-12 | **What the census says about selection.** 115 leads were checked "
+        "and not included, each listed with the test it failed: 59 on agent action, 23 on harm, "
+        "21 on organisation, 9 on evidence, 2 on traceability and 1 already in the register. "
+        "That shape is the honest answer to how narrow this register is. The largest group is "
+        "cases where an AI system produced text and a person read it, which the register "
+        "excludes on purpose and which is where most public AI harm reporting sits. The "
+        "evidence test excluded nine, including a first-hand postmortem of an agent destroying "
+        "two and a half years of production data, which no reputable outlet covered. A single "
+        "source is grade C and the inclusion rule admits only A and B, so the rule excluded a "
+        "case better documented than some that are in. |\n"
         "| 1.0 in progress | 2026-10-12 | Census complete against the lead lists. Every lead in "
         "the window was screened and 115 are listed with the test each failed. Nine cases "
         "admitted: AIR-013 and AIR-020, two campaigns run through one platform's coding agent, "
