@@ -45,7 +45,7 @@ these twelve cases against each other, so its middle sat wherever these cases ha
 sit. Severe does not mean on MIT's scale what it meant on that one.
 | `aftermath_status` | `Documented`, `Partial`, `Undocumented` | How completely the ending is on the record. A `Partial` or `Undocumented` row **must** say so in `what_changed_after`, and the validator rejects it otherwise. Stopping at the failure overstates the harm. |
 | `aftermath_source_url` | `https://` URL | Which source carries the `what_changed_after` claim. The deployer's response is a **separate claim** from the incident, so it gets a named citation rather than an assumption that the incident sources happen to cover it. Usually this is `source_1_url` or `source_2_url`, named explicitly. Where neither covers it, it is a third link. Required on every row. |
-| `evidence_grade` | `A`, `B`, `C` | See below. Only A and B feed a number anywhere on the site. |
+| `evidence_grade` | `A`, `B`, `C` | See below. Only A and B feed a number anywhere on the site. Grade A needs its second source on a different host from the primary record, and that source has to corroborate rather than restate it. Tightened on 11 October 2026, when AIR-013 was moved to B because its only second source was a summary of the primary record. The host part is enforced by the validator. Whether a source corroborates is a human reading. |
 | `source_1_label` | Free text | The most authoritative source. For grade A this must name a primary record. |
 | `source_1_url` | `https://` URL | Required. |
 | `source_2_label` | Free text, blank only on grade C | Required for A and B. |
@@ -80,7 +80,10 @@ hedging the wrong thing.
 Three questions asked of the moment each agent went into real use, coded from the public
 record. They measure whether accountability could be **found**, not whether the deployer
 was careless, and not whether anything worked. Whether a control held is
-`control_maturity`, and the two are kept apart deliberately: a review date that existed
+`control_maturity` (one of `Absent`, `Designed`, `Implemented`, `Bypassable`, `Unknown`, where
+`Bypassable` was added on 11 October 2026 for a gate that was built and wired in and that the
+caller could switch off with a documented flag), and the two are kept apart deliberately: a
+review date that existed
 and was ignored is a different finding from one that was never set.
 
 | Field | Values |

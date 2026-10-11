@@ -341,10 +341,10 @@
       "owasp_code": "ASI04",
       "owner_role": "Platform engineering lead",
       "incident_ids": [
-        "AIR-014",
+        "AIR-015",
         "AIR-009"
       ],
-      "why": "In AIR-014 the backdoor arrived in a version update to a tool that had been installed for its advertised purpose, and it ran for eight days before an outside researcher found it. In AIR-009 the route in was a third-party integration holding tokens into other companies."
+      "why": "In AIR-015 the payload arrived in a version update to packages that had been installed for their advertised purpose, and it ran for hours before anyone outside noticed. In AIR-009 the route in was a third-party integration holding tokens into other companies. Diffing what an update changes is what catches both."
     },
     {
       "id": "W-20",

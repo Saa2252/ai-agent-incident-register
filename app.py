@@ -53,6 +53,7 @@ MATURITY_MEANING = {
     "Absent": "The control did not exist in any form.",
     "Designed": "It existed on paper, in a policy or an instruction, with nothing enforcing it.",
     "Implemented": "It was built and wired in, and it did not stop the thing it was there to stop.",
+    "Bypassable": "It was built and wired in, and whatever it was there to stop could switch it off.",
     "Unknown": "The public record does not say what state it was in.",
 }
 
@@ -198,7 +199,7 @@ OWASP_CODES = rules_check.OWASP_CODES
 OWASP_STATUS = rules_check.OWASP_STATUS
 
 GRADE_MEANING = {
-    "A": "A primary record. A ruling, a regulator notice, a vendor security advisory or a threat intelligence report, plus a second source.",
+    "A": "A primary record, meaning a ruling, a regulator notice, a vendor security advisory or a threat intelligence report, plus a second source on another site that corroborates it rather than restating it.",
     "B": "Two independent reputable reports on different sites, usually including the deployer's own public statement.",
     "C": "A single source, or an account the deployer has not addressed. Shown here, counted nowhere.",
 }
@@ -402,6 +403,7 @@ def headline(frame):
         ),
         "control_designed": int((counted["control_maturity"] == "Designed").sum()),
         "control_implemented": int((counted["control_maturity"] == "Implemented").sum()),
+        "control_bypassable": int((counted["control_maturity"] == "Bypassable").sum()),
         "control_unknown": int((counted["control_maturity"] == "Unknown").sum()),
         "no_stop_authority_recorded": int((counted["deploy_stop_authority"] == "Not disclosed").sum()),
         "no_review_recorded": int((counted["deploy_review_date"] == "Not disclosed").sum()),
@@ -502,7 +504,9 @@ def tab_what_was_missing(frame):
         f"**{facts['control_absent']} of {facts['total']} had no such control in any form.**"
     )
     labels = [("Absent", "Never built"), ("Designed", "On paper only"),
-              ("Implemented", "Built but did not hold"), ("Unknown", "Record does not say")]
+              ("Implemented", "Built but did not hold"),
+              ("Bypassable", "Built but the attacker could switch it off"),
+              ("Unknown", "Record does not say")]
     rows = []
     for key, label in labels:
         subset = counted[counted["control_maturity"] == key]
@@ -1725,21 +1729,38 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
-        "| 1.0 in progress | 2026-10-11 | Census under the inclusion rule, running. "
-        "Three cases admitted so far, all grade A on a primary record. AIR-013, a coding agent "
-        "driven through most of a cyber espionage campaign against around 30 organisations. "
-        "AIR-014, a counterfeit email tool on a package registry that copied every message an "
-        "agent sent to its author. AIR-015, malware that asked the coding agents already "
-        "installed on a machine to find its secrets, launching each one with the flag that "
-        "skips the approval prompt. Numbers moved: 12 cases to 15, 11 counted to 14, said "
-        "nothing untrue 5 of 11 to 8 of 14, record silent on who could stop it 10 of 11 to 11 "
-        "of 14, control never built 6 of 11 to 7 of 14, control existed and did not hold 1 of "
-        "11 to 3 of 14, missing control was not accuracy 8 of 11 to 11 of 14. Vendor moved from "
-        "one case to two, so it no longer rests on a single row. Severity gained one Minor and "
-        "two Substantial. Five leads were checked and rejected in the same pass and are listed "
-        "with the test each failed. The three new cases are all developer tooling, which is a "
-        "concentration worth stating rather than hiding: it is where agents act with the least "
-        "supervision and where the evidence bar is easiest to clear. |\n"
+        "| 1.0 in progress | 2026-10-11 | Census under the inclusion rule, running. Two "
+        "cases admitted. AIR-013, a coding agent driven through most of a cyber espionage "
+        "campaign, graded B rather than A because its primary record is the platform's own "
+        "report, its scale and autonomy figures are that platform's estimates and no "
+        "indicators of compromise were published, so nothing outside it corroborates the "
+        "intrusions. AIR-015, malware that asked the coding agents already installed on a "
+        "machine to find its secrets, launching each with the flag that skips the approval "
+        "prompt. A third case, a counterfeit email tool on a package registry, was admitted "
+        "and withdrawn the same day: the impersonated vendor had no involvement, the registry "
+        "published no account of its own, and the organisations that installed it are not "
+        "named, so no named organisation's control failure is on the record. It is in "
+        "Considered, not included, as failing the organisation test. Numbers moved: 12 cases "
+        "to 14, 11 counted to 13, said nothing untrue 5 of 11 to 6 of 13, missing control was "
+        "not accuracy 8 of 11 to 10 of 13. Record silent on who could stop it stayed at 10 and "
+        "control never built stayed at 6, so both now sit against a larger denominator. Five "
+        "leads were checked and rejected and are listed with the test each failed. |\n"
+        "| 1.0 in progress | 2026-10-11 | Three method changes forced by reviewing the first "
+        "batch. Grade A now requires its second source to be on a different host from the "
+        "primary record and to corroborate rather than restate it, which is what moved AIR-013 "
+        "to B. A fifth control state, Bypassable, was added for a gate that was built and wired "
+        "in and that the caller could switch off with a documented flag, which is a different "
+        "failure from a gate that engaged and did not hold. And the pre-commit hook now runs "
+        "the validator: a row had been committed with the register invalid, because the "
+        "validator printed the error, the output was read by its last few lines, and nothing "
+        "local refused the commit. |\n"
+        "| 1.0 in progress | 2026-10-11 | Lead sources amended, with the six inclusion tests "
+        "unchanged. The MIT AI Incident Tracker was dropped as a lead list, because its "
+        "incidents sit behind an embedded spreadsheet application rather than in the page and "
+        "it is built from AI Incident Database reports in any case. The database's own weekly "
+        "export is used instead, recorded in data/leads with its URL, download date and a "
+        "checksum. Both remain lead lists and neither is ever cited: the denylist that keeps "
+        "aggregators out of the evidence fields is unchanged. |\n"
         "| 0.9 | 2026-10-11 | Committed a dated inclusion rule before adding any case "
         "under it. Six tests, all of which must pass, with the window set to events and "
         "publication between 1 January 2025 and 30 September 2026. The decision never "

@@ -19,6 +19,18 @@ if git diff --cached --quiet -- app.py data rules scripts README.md; then
     exit 0
 fi
 
+# Run the method before the commit lands. Added 11 October 2026 after a row was
+# committed with the register invalid: the validator printed the error, a tailed read of
+# its output missed it, and nothing local refused the commit. CI runs on push, which is
+# too late to keep a bad row out of the history.
+if ! python3 scripts/validate_register.py . >/tmp/register-validate.$$ 2>&1; then
+    cat /tmp/register-validate.$$
+    rm -f /tmp/register-validate.$$
+    echo "pre-commit: the register is not valid, so nothing was committed."
+    exit 1
+fi
+rm -f /tmp/register-validate.$$
+
 today_iso=$(date +%Y-%m-%d)
 today_human=$(date "+%-d %B %Y")
 current=$(sed -n 's/^UPDATED = "\(.*\)"$/\1/p' app.py)

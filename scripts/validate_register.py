@@ -143,7 +143,11 @@ AFTERMATH_STATES = {"Documented", "Partial", "Undocumented"}
 # person approval gate that was implemented, wired in, and not operating. "Operating" is
 # in the vocabulary only so the validator can reject it, because a control that was
 # operating is not a missing control.
-CONTROL_MATURITY = {"Absent", "Designed", "Implemented", "Operating", "Unknown"}
+CONTROL_MATURITY = {"Absent", "Designed", "Implemented", "Bypassable", "Unknown"}
+# "Operating" is deliberately absent: a control that was operating is not a missing
+# control. "Bypassable" was added on 11 October 2026 for AIR-015, where the gate was
+# built and wired in and the caller could switch it off with a documented flag. That
+# is a different failure from a gate that engaged and did not hold.
 HARM_CONTROL_STATES = {"Yes", "No", "Partly"}
 
 # Whether accountability was locatable when the agent went live. These ask whether the
@@ -309,13 +313,26 @@ def check_evidence(report, where, row):
 
     if grade == "A":
         if len(sources) < 2:
-            report.error(f"{where}.evidence_grade", "grade A needs a primary record and a second source")
+            report.error(
+                f"{where}.evidence_grade",
+                "grade A needs a primary record and an independent second source",
+            )
         label = sources[0][0].lower() if sources else ""
         if not any(marker in label for marker in PRIMARY_MARKERS):
             report.error(
                 f"{where}.source_1_label",
                 "grade A needs source 1 to name a primary record, such as a ruling, a "
                 "regulator notice, a vendor advisory or a threat intelligence report",
+            )
+        # Added 11 October 2026. Grade A used to ask only for "a second source", which a
+        # vendor blog restating the primary record satisfies while corroborating nothing.
+        # Independence itself cannot be checked by code, so this enforces the part that
+        # can be (a different host) and the Method page carries the part that cannot.
+        if len(hosts) < len(sources):
+            report.error(
+                f"{where}.sources",
+                "grade A needs its second source on a different host from the primary "
+                "record. A restatement on the same site corroborates nothing",
             )
     elif grade == "B":
         if len(sources) < 2:
@@ -455,13 +472,6 @@ def validate_rows(report, rows, today):
             report.error(f"{where}.eu_basis", "has no basis")
         if row["control_maturity"] not in CONTROL_MATURITY:
             report.error(f"{where}.control_maturity", f"must be one of {sorted(CONTROL_MATURITY)}")
-        elif row["control_maturity"] == "Operating":
-            report.error(
-                where,
-                "control_maturity is Operating, which contradicts the row existing. A "
-                "control that was operating is not a missing control. Use Implemented "
-                "where it was wired in and did not hold",
-            )
         if row["harm_bearer_had_control"] not in HARM_CONTROL_STATES:
             report.error(f"{where}.harm_bearer_had_control", f"must be one of {sorted(HARM_CONTROL_STATES)}")
         # The split owner has to be a real split. Two names for one role is a field
@@ -878,7 +888,21 @@ def main(argv):
         spread = {}
         for case, level in mit.items():
             spread[names[level]] = spread.get(names[level], 0) + 1
-        print("MIT severity: " + ", ".join(f"{v} {k}" for k, v in sorted(spread.items())))
+        counted_ids = {row["id"] for row in counted}
+        spread_counted = {}
+        for case, level in mit.items():
+            if case in counted_ids:
+                spread_counted[names[level]] = spread_counted.get(names[level], 0) + 1
+        # Both bases, each labelled. An unlabelled severity spread printed next to a
+        # counted-rows total is how a descriptive figure gets quoted as an analytical one.
+        print(
+            f"MIT severity, all {len(rows)} rows (descriptive): "
+            + ", ".join(f"{v} {k}" for k, v in sorted(spread.items()))
+        )
+        print(
+            f"MIT severity, {len(counted)} counted rows (analytical): "
+            + ", ".join(f"{v} {k}" for k, v in sorted(spread_counted.items()))
+        )
 
     for line in report.warnings:
         print(f"WARNING {line}")

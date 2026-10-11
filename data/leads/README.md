@@ -36,3 +36,32 @@ findings count. They are coded after a case is in.
 Six of the original twelve have event dates before the window. They stay, and their
 cards and the Method page say **"Included before the inclusion rule"**, because a rule
 written after the fact cannot be claimed to have governed them.
+
+## Amendment, 11 October 2026: where leads come from
+
+The inclusion rule was committed on 11 October 2026 before any case was added under it.
+This amendment changes the **lead sources**, not the six tests, and is logged here and in
+the change log because the rule was already published.
+
+**Dropped: the MIT AI Incident Tracker.** Its incident data sits behind an embedded
+Airtable application rather than in the page, so it cannot be read or checked without
+clicking through, and the tracker is built from AI Incident Database reports in any case.
+Going to the database directly removes a step without losing a lead.
+
+**Added: the AI Incident Database weekly Excel export.**
+
+| | |
+| --- | --- |
+| File | `AIID_Excel_Export-20261005.xlsx` |
+| Listed on | https://incidentdatabase.ai/research/snapshots/ |
+| Downloaded from | https://pub-72b2b2fc36ec423189843747af98f80e.r2.dev/AIID_Excel_Export-20261005.xlsx |
+| Downloaded | 11 October 2026 |
+| Size | 2,527,372 bytes |
+| SHA-256 | `95c71e26ef379432a9a87934d26854c1a68998ef158a3fc4b247d96afb20c749` |
+
+The checksum is recorded so that a later screen can be shown to have run against this
+exact file. The large `.tar.bz2` backups on the same page were not used.
+
+**It stays a lead list.** The database host is on the validator's aggregator denylist and
+that does not change. An entry in this file points at reporting; the reporting points at a
+primary record; the primary record is what a case is admitted on. An entry is never cited.
