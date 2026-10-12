@@ -20,6 +20,7 @@ dependency to pin. It needs the app's own requirements installed, which is why i
 here rather than in tests/, where everything is standard library on purpose.
 """
 
+import csv
 import sys
 from pathlib import Path
 
@@ -75,12 +76,57 @@ def main(argv):
             if rows == 0:
                 print("          FAIL the case table rendered no rows")
                 clean = False
-            if not at.selectbox:
-                print("          FAIL no case selector rendered")
+            # No case opens by default any more, so Home has to invite the click and
+            # open nothing until there is one.
+            if "Click a case ID to read its full record." not in rendered:
+                print("          FAIL Home does not invite the reader to open a case")
                 clean = False
-            elif "What happened" not in "\n".join(t.label for t in at.tabs):
-                print("          FAIL the open case rendered no tabs")
+            if "Full record:" in rendered:
+                print("          FAIL a case is open on Home with none requested")
                 clean = False
+
+    # Opening a case is now a link, not a selectbox. Check that asking for one by
+    # query parameter renders its record with the heading and the tabs.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["case"] = "AIR-013"
+    at.run()
+    opened = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+    clean = report("Home, one case opened by link", at) and clean
+    if "Full record: AIR-013" not in opened:
+        print("  FAIL  the requested case did not open", file=sys.stderr)
+        clean = False
+    elif "What happened" not in "\n".join(t.label for t in at.tabs):
+        print("  FAIL  the open case rendered no tabs", file=sys.stderr)
+        clean = False
+
+    # Each card says "N of 20" and its button has to land on exactly N rows. This was
+    # wrong until 13 October 2026: the cards counted grade A and B rows while the
+    # filtered table also showed grade C ones, so a card saying 17 opened a table of
+    # 18. The counted-rows figure comes from the data, not from the page.
+    with open(project_dir / "data" / "incidents.csv", newline="", encoding="utf-8") as fh:
+        rows_data = list(csv.DictReader(fh))
+    counted_rows = [r for r in rows_data if r["evidence_grade"] in ("A", "B")]
+    card_tests = {
+        "not-accuracy": lambda r: r["control_class"] != "Accuracy",
+        "record-silent-on-stop": lambda r: r["deploy_stop_authority"] == "Not disclosed",
+        "not-attacker": lambda r: r["directed_by"] != "Attacker",
+    }
+    for key, predicate in card_tests.items():
+        want = sum(1 for r in counted_rows if predicate(r))
+        at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+        at.query_params["view"] = key
+        at.run()
+        shown = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        got = shown.count('<td class="id">')
+        clean = report(f"Home filtered by {key}", at) and clean
+        if got != want:
+            print(
+                f"  FAIL  card {key} counts {want} but its filter shows {got} rows",
+                file=sys.stderr,
+            )
+            clean = False
+        else:
+            print(f"          card {key}: {want} counted, {got} rows shown")
 
     # The watch list only produces rules once questions are answered, so answer them.
     at = AppTest.from_file(str(app), default_timeout=TIMEOUT)

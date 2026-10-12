@@ -166,7 +166,7 @@ table.cases tr.notcounted td { color: var(--muted); }
 .dots i.on { background:#2a78d6; }
 @media (prefers-color-scheme: dark) { .dots i { background:#3a3a37; } .dots i.on { background:#3987e5; } }
 .fcard .say { font-size:16px; font-weight:600; margin:0 0 6px; line-height:1.35; }
-.fcard .more { color:var(--ink-2); font-size:14px; margin:0; }
+.fcard .more { color:#52514e; font-size:14px; margin:0; }
 
 .seg { display:flex; gap:2px; height:28px; margin:10px 0 8px; }
 .seg div:first-child { border-radius:6px 0 0 6px; }
@@ -349,7 +349,22 @@ def grade_badge(grade):
     return badge
 
 
-def case_table(view):
+def _home_link(chosen, show_uncounted=False, case=None):
+    """A Home URL that keeps the filter the reader is already in.
+
+    Every link on Home has to carry the current view forward, or clicking a case ID
+    silently drops the filter and the table stops matching the heading above it.
+    """
+    parts = [f"view={key}" for key in chosen]
+    if show_uncounted:
+        parts.append("c=1")
+    if case:
+        parts.append(f"case={case}")
+    query = "?" + "&".join(parts) if parts else "?"
+    return query + ("#full-record" if case else "")
+
+
+def case_table(view, case_href=None):
     """The case index as HTML.
 
     An HTML table rather than st.table or st.dataframe, because a severity meter cannot
@@ -365,7 +380,7 @@ def case_table(view):
         klass = ' class="notcounted"' if not row["counted"] else ""
         body.append(
             f"<tr{klass}>"
-            f'<td class="id"><a href="#{row["id"].lower()}">{esc(row["id"])}</a></td>'
+            f'<td class="id"><a href="{esc(case_href(row["id"])) if case_href else "#" + row["id"].lower()}" target="_self">{esc(row["id"])}</a></td>'
             f"<td>{esc(row['title'])}</td>"
             f"<td>{esc(row['control_class'])}</td>"
             f"<td>{severity_pill(row['mit_level'], row['mit_floored'])}</td>"
@@ -535,6 +550,7 @@ def tab_what_was_missing(frame):
         f'<tr><td><b>Total</b></td><td></td><td style="text-align:right"><b>'
         f"{facts['total']}</b></td><td></td></tr>"
     )
+    st.markdown(f"**The missing safeguard in all {facts['total']} counted cases**")
     st.markdown(
         '<div class="case-table-wrap"><table class="cases"><thead><tr>'
         "<th>Missing control</th><th>What it means</th><th>Counted cases</th>"
@@ -564,6 +580,7 @@ def tab_what_was_missing(frame):
             f'<td style="text-align:right">{len(subset)}</td>'
             f"<td>{esc(', '.join(sorted(subset['id'])))}</td></tr>"
         )
+    st.markdown(f"**What state that safeguard was in, across {facts['total']} counted cases**")
     st.markdown(
         '<div class="case-table-wrap"><table class="cases"><thead><tr>'
         "<th>State of the control</th><th>Cases</th><th>Case IDs</th></tr></thead>"
@@ -636,6 +653,7 @@ def tab_how_severe(frame):
             f'<td style="font-size:13px">({esc(row.eu_closest_limb)}) '
             f"{esc(limbs[row.eu_closest_limb])}</td></tr>"
         )
+    st.markdown(f"**Harm severity and the closest EU limb, case by case, all {len(frame)} cases**")
     st.markdown(
         '<div class="case-table-wrap"><table class="cases"><thead><tr><th>Case</th>'
         "<th>What happened</th><th>Highest MIT level</th><th>Harm types affected</th>"
@@ -690,6 +708,7 @@ def tab_how_severe(frame):
             grid.append(
                 f'<tr><td style="white-space:nowrap">{severity_pill(level)}</td>{cells}</tr>'
             )
+        st.markdown("**MIT's severity bands, and how many cases sit in each**")
         st.markdown(
             '<div class="case-table-wrap"><table class="cases">'
             f"<thead><tr><th>Level</th>{header}</tr></thead>"
@@ -741,6 +760,7 @@ def tab_what_the_record_shows(frame):
         ("A regulator's settlement terms, with no mention of the company's response",
          "The company denied wrongdoing"),
     ]
+    st.markdown("**Three corrections an earlier version of this register needed**")
     st.markdown(
         '<div class="case-table-wrap"><table class="cases"><thead><tr>'
         "<th>What an earlier version of this register said</th>"
@@ -778,6 +798,7 @@ def tab_what_the_record_shows(frame):
         ("any role could halt or roll back the deployment", facts["no_stop_authority_recorded"]),
         ("any date was set to re-examine it", facts["no_review_recorded"]),
     ]
+    st.markdown(f"**What the record is silent about, across {facts['total']} counted cases**")
     st.markdown(
         '<div class="case-table-wrap"><table class="cases"><thead><tr>'
         "<th>Does the public record say whether...</th><th>Silent</th></tr></thead><tbody>"
@@ -807,6 +828,7 @@ def tab_what_the_record_shows(frame):
         ("Our reading", facts["basis_reading"],
          "Neither. This is judgement, and it is labelled as such on the card."),
     ]
+    st.markdown("**Where the register's own judgement enters, and where it does not**")
     st.markdown(
         '<div class="case-table-wrap"><table class="cases"><thead><tr>'
         "<th>How the register knows</th><th>Cases</th><th>What it means</th>"
@@ -1010,32 +1032,39 @@ def incident_card(row):
 # it changed nothing on the page.
 FINDINGS = {
     "no-false-statement": {
+        "heading": "{n} cases where the agent said nothing untrue",
         "chip": "Said nothing untrue",
         "test": lambda r: r["said_something_untrue"] == "No",
     },
     "record-silent-on-stop": {
+        "heading": "{n} cases where the record doesn't say who could have halted the deployment",
         "chip": "Record silent on who could stop it",
         "test": lambda r: r["deploy_stop_authority"] == "Not disclosed",
     },
     "control-never-built": {
+        "heading": "{n} cases where the safeguard was never built",
         "chip": "Control never built",
         "test": lambda r: r["control_maturity"] == "Absent",
     },
     "control-did-not-hold": {
+        "heading": "{n} cases where the safeguard existed and did not hold",
         "chip": "Control existed, did not hold",
         "test": lambda r: r["control_maturity"] == "Implemented",
     },
     # Added 12 October 2026 when the register reached 20 counted cases and the three
     # cards were re-picked on what the data now supports.
     "not-accuracy": {
+        "heading": "{n} cases where the missing safeguard was not accuracy",
         "chip": "Missing control was not accuracy",
         "test": lambda r: r["control_class"] != "Accuracy",
     },
     "no-review-date": {
+        "heading": "{n} cases with no date set to look at the agent again",
         "chip": "No date set to look again",
         "test": lambda r: r["deploy_review_date"] == "Not disclosed",
     },
     "not-attacker": {
+        "heading": "{n} cases with no attacker involved",
         "chip": "Not attacker misuse",
         "test": lambda r: r["directed_by"] != "Attacker",
     },
@@ -1061,12 +1090,14 @@ def screen_home(frame, rules):
 
     st.markdown(
         '<div class="hero-band">'
-        f'<p class="kicker">Version {VERSION} · {UPDATED}</p>'
-        "<h1>None of these failures was only the AI being wrong.</h1>"
-        '<p class="claim2">Every one needed the AI to be allowed to act.</p>'
-        f'<p class="lede">{facts["all_rows"]} documented AI agent failures. Each one is '
-        "traced to the control that was missing, the test that would have caught it "
-        "before launch, and the signal that would have shown it after.</p></div>",
+        '<p class="kicker">AI Agent Incident Register</p>'
+        f'<h1>{facts["all_rows"]} times an AI agent caused harm, and the safeguard that '
+        "should have stopped it</h1>"
+        '<p class="claim2">None of these failures was only the AI being wrong. Every one '
+        "needed the agent to be allowed to act.</p>"
+        '<p class="lede">Each case is traced to the control that was missing, the test '
+        "that would have caught it before launch, and the signal that would have shown it "
+        "after.</p></div>",
         unsafe_allow_html=True,
     )
 
@@ -1120,7 +1151,7 @@ def screen_home(frame, rules):
         )
         grades = st.multiselect("Evidence grade", sorted(frame["evidence_grade"].unique()))
         directed = st.multiselect(
-            "Who pointed it at this",
+            "Who directed the agent",
             [v for v in ("Deployer", "Attacker", "No one") if v in set(frame["directed_by"])],
         )
         query = st.text_input("Search", placeholder="Case, deployer, pattern")
@@ -1130,9 +1161,16 @@ def screen_home(frame, rules):
     # the chips that used to set them are gone.
     chosen = [k for k in st.query_params.get_all("view") if k in FINDINGS]
 
+    show_uncounted = st.query_params.get("c") == "1"
+
     view = frame
     for key in chosen:
         view = view[view.apply(FINDINGS[key]["test"], axis=1)]
+    # A card says "17 of 20", and 20 is the counted rows. Its button therefore has to
+    # land on 17 rows, not on 18 with a grade C row quietly making up the difference.
+    uncounted_matches = int((~view["counted"]).sum()) if chosen else 0
+    if chosen and not show_uncounted:
+        view = view[view["counted"]]
     if classes:
         view = view[view["control_class"].isin(classes)]
     if severities:
@@ -1154,13 +1192,32 @@ def screen_home(frame, rules):
     view = view.sort_values("id")
 
     st.markdown("---")
+    if chosen:
+        heading = " and ".join(
+            FINDINGS[k]["heading"].format(n=len(view)) for k in chosen
+        )
+        denominator = f"{facts['total']} counted cases"
+    else:
+        heading = f"All {len(view)} cases"
+        denominator = f"{len(frame)} cases"
+    st.markdown(f"#### {esc(heading)}")
+
     left, right = st.columns([3, 1])
-    left.markdown(f"**Showing {len(view)} of {len(frame)} cases**")
+    left.markdown(f"**Showing {len(view)} of {denominator}**")
     right.download_button(
         "Download the data", data=DATA_FILE.read_bytes(),
         file_name="ai_agent_incident_register.csv", mime="text/csv",
         on_click="ignore", width="stretch",
     )
+    if chosen and uncounted_matches and not show_uncounted:
+        plural = "case matches" if uncounted_matches == 1 else "cases match"
+        st.caption(
+            f"{uncounted_matches} more {plural} but "
+            + ("is" if uncounted_matches == 1 else "are")
+            + " grade C and not counted. ["
+            + ("Show it" if uncounted_matches == 1 else "Show them")
+            + f"]({_home_link(chosen, show_uncounted=True)})"
+        )
     if chosen:
         st.caption(
             "Filtered by: " + ", ".join(FINDINGS[k]["chip"] for k in chosen)
@@ -1171,23 +1228,36 @@ def screen_home(frame, rules):
         st.info("No cases match these filters. [Clear them](?) and try again.", icon="🔍")
         return
 
-    st.markdown(case_table(view), unsafe_allow_html=True)
+    st.markdown(
+        case_table(
+            view,
+            case_href=lambda case_id: _home_link(
+                chosen, show_uncounted=show_uncounted, case=case_id
+            ),
+        ),
+        unsafe_allow_html=True,
+    )
     st.caption(
         "Colour means one thing here: how severe the harm was, on MIT's scale. Every pill "
         "carries the word and a bar meter too. Grade A is filled, B outlined, C dashed."
     )
 
-    st.markdown("---")
-    ids = list(view["id"])
+    # No case opens by default. A record the reader did not ask for pushes the table off
+    # the screen and makes one arbitrary case look like the featured one.
+    st.markdown('<div id="full-record"></div>', unsafe_allow_html=True)
     wanted = st.query_params.get("case")
-    default = ids.index(wanted) if wanted in ids else (ids.index("AIR-004") if "AIR-004" in ids else 0)
-    chosen_case = st.selectbox(
-        "Open a case", ids, index=default,
-        format_func=lambda i: f"{i} · {frame.loc[frame['id'] == i, 'title'].iloc[0]}",
-    )
-    if st.query_params.get("case") != chosen_case:
-        st.query_params["case"] = chosen_case
-    incident_card(frame[frame["id"] == chosen_case].iloc[0])
+    ids = list(view["id"])
+    if wanted not in ids:
+        st.markdown("---")
+        st.markdown("Click a case ID to read its full record.")
+    else:
+        row = frame[frame["id"] == wanted].iloc[0]
+        st.markdown("---")
+        st.markdown(
+            f"#### Full record: {esc(row['id'])} · {esc(row['title'])}  "
+            f"[Close]({_home_link(chosen, show_uncounted=show_uncounted)})"
+        )
+        incident_card(row)
 
     st.markdown("---")
     foot = st.columns(3)
