@@ -114,6 +114,32 @@ def main(argv):
         print("  FAIL  the narrowest case message did not render", file=sys.stderr)
         clean = False
 
+    # v1.0 reached the live site as a KeyError because st.cache_data keys on the
+    # function, not on the files it opens, so a new column in the case data left the
+    # key unchanged and new code ran against an old table. Nothing here would have
+    # caught it: every local run starts with an empty cache. This asserts the stamp
+    # the loaders are keyed on actually moves when the data moves.
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("register_app", app)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    before = module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+    original = module.DATA_FILE.read_bytes()
+    try:
+        module.DATA_FILE.write_bytes(original + b"\n")
+        after = module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+    finally:
+        module.DATA_FILE.write_bytes(original)
+    if before == after:
+        print(
+            "  FAIL  the cache stamp does not change when the case data changes",
+            file=sys.stderr,
+        )
+        clean = False
+    else:
+        print("  ok    cache stamp moves when the case data moves")
+
     print("\nAll screens rendered." if clean else "\nAt least one screen raised.", file=sys.stderr if not clean else sys.stdout)
     return 0 if clean else 1
 
