@@ -94,6 +94,26 @@ def main(argv):
     at.run()
     clean = report(f"Build your watch list, {answered} questions answered as yes", at) and clean
 
+    # The narrowest case: no risky authority, but a person approves. This branch was
+    # unsatisfiable until 12 October 2026, because a yes on Q6 was counted as a risk
+    # answer, so the message never rendered while every screen still passed. Rendering
+    # is not enough on its own, so this asserts the message is actually there.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.run()
+    at.radio[0].set_value("Build your watch list").run()
+    for index in range(5):
+        at.radio[index].set_value("No")
+    at.radio[5].set_value("Yes")
+    at.run()
+    boxes = " ".join(str(box.value) for box in at.success)
+    narrow_ok = "cases still apply to it" in boxes
+    clean = report("Build your watch list, the narrowest case", at) and clean
+    if narrow_ok:
+        print("          the narrowest case message rendered")
+    else:
+        print("  FAIL  the narrowest case message did not render", file=sys.stderr)
+        clean = False
+
     print("\nAll screens rendered." if clean else "\nAt least one screen raised.", file=sys.stderr if not clean else sys.stdout)
     return 0 if clean else 1
 

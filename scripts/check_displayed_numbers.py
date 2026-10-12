@@ -34,6 +34,13 @@ def main(argv):
         "control never built": sum(1 for r in counted if r["control_maturity"] == "Absent"),
         "control did not hold": sum(1 for r in counted if r["control_maturity"] == "Implemented"),
         "missing control not accuracy": sum(1 for r in counted if r["control_class"] != "Accuracy"),
+        "no review date": sum(1 for r in counted if r["deploy_review_date"] == "Not disclosed"),
+        "not attacker misuse": sum(1 for r in counted if r["directed_by"] != "Attacker"),
+        # The sensitivity printed on the first Home card. Accuracy is tested last in the
+        # rubric, so the card has to carry what the count becomes if it is tested first.
+        "accuracy first": len(counted) - sum(
+            1 for r in counted if r["said_something_untrue"] == "Yes"
+        ),
         "stated": sum(1 for r in counted if r["missing_control_basis"].startswith("Stated")),
         "entailed": sum(1 for r in counted if r["missing_control_basis"].startswith("Entailed")),
         "reading": sum(1 for r in counted if r["missing_control_basis"].startswith("Reading")),
@@ -62,11 +69,15 @@ def main(argv):
     problems = []
     home_markdown = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
 
-    for key, label in (
-        ("no false statement", "said nothing untrue"),
+    # The three Home cards were re-picked on 12 October 2026 and will be again. This list
+    # has to match what the page renders, and the dot checksum below depends on it, so a
+    # re-pick that forgets this file fails here rather than going quiet.
+    home_cards = (
+        ("missing control not accuracy", "missing control not accuracy"),
         ("record silent on stop", "record silent on who could stop it"),
-        ("control never built", "control never built"),
-    ):
+        ("not attacker misuse", "not attacker misuse"),
+    )
+    for key, label in home_cards:
         want = expected[key]
         if f'aria-label="{want} of {expected["counted"]}"' not in home_markdown:
             problems.append(
@@ -76,14 +87,29 @@ def main(argv):
             print(f"  ok   home card '{label}' = {want} of {expected['counted']}")
 
     dots_on = home_markdown.count('<i class="on">')
-    want_dots = (
-        expected["no false statement"] + expected["record silent on stop"]
-        + expected["control never built"]
-    )
+    want_dots = sum(expected[key] for key, _ in home_cards)
     if dots_on != want_dots:
         problems.append(f"{dots_on} filled dots on Home, data says {want_dots}")
     else:
         print(f"  ok   filled dots across the three cards = {dots_on}")
+
+    sensitivity = re.search(
+        r"Test it first instead and it is still (\d+) of (\d+)", home_markdown
+    )
+    if not sensitivity:
+        problems.append("the first card carries no accuracy-first sensitivity line")
+    elif (int(sensitivity.group(1)), int(sensitivity.group(2))) != (
+        expected["accuracy first"], expected["counted"]
+    ):
+        problems.append(
+            f"card sensitivity says {sensitivity.group(1)} of {sensitivity.group(2)}, "
+            f"data says {expected['accuracy first']} of {expected['counted']}"
+        )
+    else:
+        print(
+            f"  ok   card sensitivity, accuracy first = "
+            f"{expected['accuracy first']} of {expected['counted']}"
+        )
 
     counter = re.search(r"Showing (\d+) of (\d+) cases", home_markdown)
     if not counter:

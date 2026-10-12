@@ -39,14 +39,16 @@ FIELDS = [
     "eu_closest_limb", "eu_basis", "eu_basis_type", "authority", "human_approval",
     "deploy_evidence_seen", "deploy_evidence_source", "deploy_stop_authority",
     "deploy_stop_authority_source", "deploy_review_date", "deploy_review_date_source",
+    "directed_by", "directed_by_basis",
     "failure_pattern", "owasp_code", "owasp_code_basis", "said_something_untrue",
     "control_class", "secondary_class", "control_maturity", "missing_control",
     "missing_control_basis", "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "control_owner_role",
     "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act", "what_changed_after",
-    "disputed", "aftermath_status", "aftermath_source_url", "evidence_grade",
-    "source_1_label", "source_1_url", "source_2_label", "source_2_url", "date_checked",
-    "facts_changed_at", "derived_rechecked_at", "archive_urls",
+    "disputed", "aftermath_status", "aftermath_source_url", "inclusion",
+    "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
+    "source_2_url", "date_checked", "facts_changed_at", "derived_rechecked_at",
+    "archive_urls",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -75,6 +77,10 @@ KINDS = {"Incident", "Hazard"}
 # Severity lives in data/case_harm_ratings.csv on MIT's framework. The register's own
 # four-level scale was retired in the same change, not converted.
 EU_SERIOUS = {"Meets", "Does not meet", "Not determinable from the record"}
+
+# Whether a case was admitted under the dated inclusion rule or predates it. A rule
+# written after the fact cannot be claimed to have governed the cases that came first.
+INCLUSION_STATES = {"Passed the inclusion rule", "Included before the inclusion rule"}
 EU_LIMBS = {"a", "b", "c", "d"}
 
 # What the missing control governed. This is the field the headline finding counts, so
@@ -138,7 +144,17 @@ AFTERMATH_STATES = {"Documented", "Partial", "Undocumented"}
 # person approval gate that was implemented, wired in, and not operating. "Operating" is
 # in the vocabulary only so the validator can reject it, because a control that was
 # operating is not a missing control.
-CONTROL_MATURITY = {"Absent", "Designed", "Implemented", "Operating", "Unknown"}
+CONTROL_MATURITY = {"Absent", "Designed", "Implemented", "Bypassable", "Unknown"}
+
+# Who pointed the agent at the thing that caused harm. Added 12 October 2026, because a
+# register that mixes attacker misuse with a deployment's own behaviour cannot say which
+# of the two its findings are about. "No one" is the common case and is not a shrug: it
+# means the agent did it in ordinary use, with nobody steering it.
+DIRECTED_BY = {"Deployer", "Attacker", "No one"}
+# "Operating" is deliberately absent: a control that was operating is not a missing
+# control. "Bypassable" was added on 11 October 2026 for AIR-015, where the gate was
+# built and wired in and the caller could switch it off with a documented flag. That
+# is a different failure from a gate that engaged and did not hold.
 HARM_CONTROL_STATES = {"Yes", "No", "Partly"}
 
 # Whether accountability was locatable when the agent went live. These ask whether the
@@ -304,13 +320,26 @@ def check_evidence(report, where, row):
 
     if grade == "A":
         if len(sources) < 2:
-            report.error(f"{where}.evidence_grade", "grade A needs a primary record and a second source")
+            report.error(
+                f"{where}.evidence_grade",
+                "grade A needs a primary record and an independent second source",
+            )
         label = sources[0][0].lower() if sources else ""
         if not any(marker in label for marker in PRIMARY_MARKERS):
             report.error(
                 f"{where}.source_1_label",
                 "grade A needs source 1 to name a primary record, such as a ruling, a "
                 "regulator notice, a vendor advisory or a threat intelligence report",
+            )
+        # Added 11 October 2026. Grade A used to ask only for "a second source", which a
+        # vendor blog restating the primary record satisfies while corroborating nothing.
+        # Independence itself cannot be checked by code, so this enforces the part that
+        # can be (a different host) and the Method page carries the part that cannot.
+        if len(hosts) < len(sources):
+            report.error(
+                f"{where}.sources",
+                "grade A needs its second source on a different host from the primary "
+                "record. A restatement on the same site corroborates nothing",
             )
     elif grade == "B":
         if len(sources) < 2:
@@ -427,6 +456,19 @@ def validate_rows(report, rows, today):
                 "a label, not a basis",
             )
 
+        if row["inclusion"] not in INCLUSION_STATES:
+            report.error(f"{where}.inclusion", f"must be one of {sorted(INCLUSION_STATES)}")
+        # The window is part of the rule, so a row claiming to have passed it is checked
+        # against it rather than trusted.
+        elif row["inclusion"] == "Passed the inclusion rule" and not (
+            "2025-01-01" <= row["event_date"] <= "2026-09-30"
+        ):
+            report.error(
+                where,
+                f"claims to have passed the inclusion rule but its event date "
+                f"{row['event_date']} is outside the window of 1 January 2025 to "
+                "30 September 2026",
+            )
         if row["eu_serious_incident"] not in EU_SERIOUS:
             report.error(f"{where}.eu_serious_incident", f"must be one of {sorted(EU_SERIOUS)}")
         if row["eu_closest_limb"] not in EU_LIMBS:
@@ -435,15 +477,12 @@ def validate_rows(report, rows, today):
             report.error(f"{where}.eu_basis_type", f"must be one of {sorted(FRAMEWORK_BASIS)}")
         if not row["eu_basis"].strip():
             report.error(f"{where}.eu_basis", "has no basis")
+        if row["directed_by"] not in DIRECTED_BY:
+            report.error(f"{where}.directed_by", f"must be one of {sorted(DIRECTED_BY)}")
+        if not row["directed_by_basis"].strip():
+            report.error(f"{where}.directed_by_basis", "has no basis")
         if row["control_maturity"] not in CONTROL_MATURITY:
             report.error(f"{where}.control_maturity", f"must be one of {sorted(CONTROL_MATURITY)}")
-        elif row["control_maturity"] == "Operating":
-            report.error(
-                where,
-                "control_maturity is Operating, which contradicts the row existing. A "
-                "control that was operating is not a missing control. Use Implemented "
-                "where it was wired in and did not hold",
-            )
         if row["harm_bearer_had_control"] not in HARM_CONTROL_STATES:
             report.error(f"{where}.harm_bearer_had_control", f"must be one of {sorted(HARM_CONTROL_STATES)}")
         # The split owner has to be a real split. Two names for one role is a field
@@ -860,7 +899,21 @@ def main(argv):
         spread = {}
         for case, level in mit.items():
             spread[names[level]] = spread.get(names[level], 0) + 1
-        print("MIT severity: " + ", ".join(f"{v} {k}" for k, v in sorted(spread.items())))
+        counted_ids = {row["id"] for row in counted}
+        spread_counted = {}
+        for case, level in mit.items():
+            if case in counted_ids:
+                spread_counted[names[level]] = spread_counted.get(names[level], 0) + 1
+        # Both bases, each labelled. An unlabelled severity spread printed next to a
+        # counted-rows total is how a descriptive figure gets quoted as an analytical one.
+        print(
+            f"MIT severity, all {len(rows)} rows (descriptive): "
+            + ", ".join(f"{v} {k}" for k, v in sorted(spread.items()))
+        )
+        print(
+            f"MIT severity, {len(counted)} counted rows (analytical): "
+            + ", ".join(f"{v} {k}" for k, v in sorted(spread_counted.items()))
+        )
 
     for line in report.warnings:
         print(f"WARNING {line}")
