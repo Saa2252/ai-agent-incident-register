@@ -153,6 +153,7 @@ table.cases tr.notcounted td { color: var(--muted); }
 }
 .hero-band h1 { font-size:32px; line-height:1.15; margin:0 0 8px; font-weight:700; }
 .hero-band .claim2 { font-size:20px; line-height:1.3; margin:0 0 14px; font-weight:500; }
+.hero-band p.fact { color:#e6eefb; margin:0 0 10px; font-size:15px; font-weight:600; }
 .hero-band p.lede { color:#c9d8ec; margin:0; font-size:16px; max-width:720px; }
 
 .fcard {
@@ -513,27 +514,60 @@ def tab_what_was_missing(frame):
 
     by_class = Counter(counted["control_class"])
     attacker = int((counted["directed_by"] == "Attacker").sum())
+    # The cases where the operator got in by claiming the work was authorised. Derived
+    # from the rows rather than listed by hand, so a fourth case joins the sentence on its
+    # own. Each of these three carries the claim in its own account or its basis, and for
+    # the extortion campaign it is in the provider's full threat intelligence report.
+    claim = "authorised security test|authorised penetration test|authorised security tester"
+    bypass = sorted(
+        counted[
+            counted["what_happened"].str.contains(claim, case=False, regex=True)
+            | counted["missing_control_basis"].str.contains(claim, case=False, regex=True)
+        ]["id"]
+    )
+    uncounted = sorted(frame[~frame["counted"]]["id"])
+
+    st.caption(
+        "Every figure on this page is calculated from the register's data, never typed "
+        "in by hand."
+    )
     st.markdown("#### What was missing?")
     st.markdown(
-        f"**Authority in {by_class['Authority']} cases and boundary in "
-        f"{by_class['Boundary']}, against accuracy in {by_class['Accuracy']}.** This "
-        "register is mostly about what agents were allowed to do, and what they accepted "
-        f"as an instruction. In {facts['not_accuracy']} of {facts['total']} counted cases "
-        "the missing control was not accuracy at all."
+        "**In most of these cases, the AI didn't fail by getting facts wrong. It failed "
+        "because it was allowed to do too much, or because it obeyed instructions it "
+        "should have ignored.**"
     )
     st.markdown(
-        f"**Who pointed the agent at it.** {facts['total'] - attacker} of {facts['total']} "
-        f"counted cases were not attacker misuse: {attacker} were, and the rest happened "
-        "in ordinary use or because the agent was doing what the people running it had "
-        "configured it to do. An agent register is not a security register, and the split "
-        "is the evidence for that rather than an assertion of it."
+        f"Of the {facts['total']} cases with strong enough evidence to count, only "
+        f"{by_class['Accuracy']} come down to the agent saying something untrue. In "
+        f"{by_class['Authority']}, the agent had more power than its task needed: it "
+        "could delete, send or change things with no check (Authority). In "
+        f"{by_class['Boundary']}, it treated text it was reading, such as an email, web "
+        "page or document, as an instruction to follow (Boundary). The table below "
+        "defines all five types. This split depends partly on the order the types are "
+        f"checked in. If accuracy is checked first, {facts['accuracy_first']} of "
+        f"{facts['total']} still involve no false statement at all."
+    )
+    st.markdown("##### Who set the agent in motion?")
+    st.markdown(
+        f"In {attacker} of the {facts['total']} cases, an attacker was directing the "
+        f"agent. In the other {facts['total'] - attacker}, no attacker was involved. The "
+        "harm came from ordinary use, or from the agent doing what the organisation "
+        "running it had set it up to do. Most failures in this register were not attacks. "
+        "They came from how the agent was deployed."
+    )
+    st.markdown(f"##### One trick worked {len(bypass)} times")
+    st.markdown(
+        f"In {', '.join(bypass[:-1])} and {bypass[-1]}, attackers got past the model's "
+        "safeguards simply by telling it the work was authorised security testing. This "
+        "worked on two different AI providers. Nothing in the public record shows either "
+        "provider has since changed how its models handle that claim. If your agent can "
+        "take security-sensitive actions, test whether this claim gets it past your own "
+        "safeguards."
     )
     st.markdown(
-        "**The same bypass, three times, across two vendors.** In AIR-013, AIR-020 and "
-        "AIR-022 the operators got past the model's guardrails by telling it the work was "
-        "authorised security testing. Nothing on the record says either vendor has changed "
-        "how that claim is treated, so the test for it is written against a control that "
-        "is still open."
+        f"**The five types of missing safeguard, across the {facts['total']} counted "
+        "cases**"
     )
     rows = []
     for name in sorted(frame["control_class"].unique()):
@@ -550,7 +584,6 @@ def tab_what_was_missing(frame):
         f'<tr><td><b>Total</b></td><td></td><td style="text-align:right"><b>'
         f"{facts['total']}</b></td><td></td></tr>"
     )
-    st.markdown(f"**The missing safeguard in all {facts['total']} counted cases**")
     st.markdown(
         '<div class="case-table-wrap"><table class="cases"><thead><tr>'
         "<th>Missing control</th><th>What it means</th><th>Counted cases</th>"
@@ -558,9 +591,13 @@ def tab_what_was_missing(frame):
         unsafe_allow_html=True,
     )
     how_to_read(
-        "Each case has one missing control, assigned by a fixed rubric that tests "
-        f"accuracy last. Tested first, {facts['said_nothing_untrue']} of {facts['total']} "
-        "still land elsewhere."
+        f"One more case, {uncounted[0] if uncounted else 'none'}, is shown in the register "
+        "but not counted, because it rests on a single source. Each case is given one "
+        "missing safeguard, chosen by a fixed order of checks that tests accuracy last."
+        if len(uncounted) == 1 else
+        f"{len(uncounted)} cases are shown in the register but not counted, because they "
+        "rest on a single source. Each case is given one missing safeguard, chosen by a "
+        "fixed order of checks that tests accuracy last."
     )
 
     st.markdown("")
@@ -595,11 +632,16 @@ def tab_what_was_missing(frame):
     st.markdown("")
     st.markdown("#### Two counts that change where you look")
     st.markdown(
-        f"- In **{facts['no_approval']} of {facts['total']}** cases the record shows no "
-        "approval step before the action took effect, or shows a gate that did not hold.\n"
-        f"- **{facts['read_only']} of the {facts['total']}** agents could only read. That "
-        "did not keep them out of this register: an agent that only reads can still "
-        "speak, and what it says binds the organisation."
+        f"In {facts['no_approval']} of the {facts['total']} counted cases, the record "
+        "shows no person approving the action before it took effect. In some of those, a "
+        "check existed and did not hold."
+    )
+    st.markdown(
+        f"In {facts['read_only']} of the {facts['total']}, the agent could only read. It "
+        "could not delete, send, buy or change anything. That did not keep those cases "
+        "out of this register. An agent that only reads can still speak, and what it says "
+        "can bind the organisation running it. Check what your own agent can say, not "
+        "only what it can do."
     )
     how_to_read(
         "The approval field carries no source of its own, unlike the stop-authority "
@@ -629,11 +671,24 @@ def tab_how_severe(frame):
         )
     }
 
+    counted_here = frame[frame["counted"]]
+    worst = Counter(counted_here["mit_level"].map(MIT_LEVELS))
     st.markdown("#### How severe was the harm?")
     st.markdown(
-        "**On a scale built for all AI harm, up to the global level, these cases are "
-        "small.** The register's argument rests on how the harm happened, not how large "
-        "it was."
+        "**Measured against all the harm AI could do, the cases in this register are "
+        "small.** That is not a reassurance. It is a reason to read them for the shape of "
+        "the failure rather than the size of it."
+    )
+    st.markdown(
+        f"Severity here uses MIT's five-level scale, from 1 Negligible to 5 Catastrophic, "
+        "which was built to rank every kind of AI harm up to the global level. On that "
+        f"scale the worst case in this register reaches level 3, Substantial. Of the "
+        f"{len(counted_here)} counted cases, {worst.get('Substantial', 0)} are "
+        f"Substantial, {worst.get('Minor', 0)} are Minor and "
+        f"{worst.get('Negligible', 0)} are Negligible. A counted case is one with a "
+        "primary record plus an independent report. When you read the table, look at how "
+        "each harm happened, then ask whether your own agent could reach further than "
+        "these did."
     )
 
     body = []
@@ -732,24 +787,32 @@ def tab_what_the_record_shows(frame):
         "the news. Recoveries rarely do."
     )
     st.markdown(
-        f"**Almost nothing was set up to notice.** In {facts['no_stop_authority_recorded']} "
-        f"of {facts['total']} counted cases the record does not say which role could have "
-        f"halted the deployment, and in {facts['no_review_recorded']} of {facts['total']} "
-        "there is no date to look at the agent again. The second of those is every counted "
-        "case in the register, which is the most complete absence in it. Neither number "
-        "says nobody could have stopped it or that nobody ever looked. They say the record "
-        "does not carry the answer, and a control nobody can point to is one a reader "
-        "cannot check."
+        "**In this register, almost nothing was set up to notice the failure.**"
     )
     st.markdown(
-        "**Where the newest cases came from is itself a finding.** "
-        f"{len(own_report)} of the cases added in this release ({', '.join(own_report)}) "
-        "rest on a primary record published by an AI company or an AI evaluation body about "
-        "its own product or its own testing. That is the register's second finding working "
-        "on the register: the organisations with the best instrumentation produce the "
-        "documents, so they are the failures that exist on paper. Agent failures inside "
-        "ordinary companies, with no threat intelligence team and no blog, are almost "
-        "certainly more common and are not here."
+        f"In {facts['no_stop_authority_recorded']} of the {facts['total']} counted cases, "
+        "the public record does not name a role that could have halted the deployment. In "
+        f"{facts['no_review_recorded']} of {facts['total']}, there is no date set to look "
+        "at the agent again. That second figure is every counted case here."
+    )
+    st.markdown(
+        "Neither number says nobody could have stopped it, and neither says nobody ever "
+        "looked. They say the published account does not answer the question. A safeguard "
+        "nobody can name is one a reader cannot check. For your own agent, write down who "
+        "can switch it off and the date you will next review it."
+    )
+    st.markdown("**Where the newest cases came from is itself a finding.**")
+    st.markdown(
+        f"{len(own_report)} of the cases added in this release rest on a report published "
+        "by an AI company or an AI evaluation body about its own product or its own "
+        f"testing. They are {', '.join(own_report)}. Those organisations run threat "
+        "intelligence teams and publish what they find. Most companies do neither."
+    )
+    st.markdown(
+        "So the failures that exist on paper are the ones the best instrumented "
+        "organisations chose to write up. Agent failures inside ordinary companies are "
+        "almost certainly more common, and none of them are here. Read every count in "
+        "this register as a count of what was documented, not of what happened."
     )
     corrections = [
         ("A database and its backups were destroyed, newest copy three months old",
@@ -1088,17 +1151,23 @@ def screen_home(frame, rules):
     counts = finding_counts(frame)
     total = facts["total"]
 
+    years = sorted(frame["event_date"].str.slice(0, 4))
     st.markdown(
         '<div class="hero-band">'
-        '<p class="kicker">AI Agent Incident Register</p>'
-        f'<h1>{facts["all_rows"]} times an AI agent caused harm, and the safeguard that '
-        "should have stopped it</h1>"
-        '<p class="claim2">None of these failures was only the AI being wrong. Every one '
-        "needed the agent to be allowed to act.</p>"
-        '<p class="lede">Each case is traced to the control that was missing, the test '
-        "that would have caught it before launch, and the signal that would have shown it "
-        "after.</p></div>",
+        "<h1>AI Agent Incident Register</h1>"
+        '<p class="claim2">What goes wrong when AI agents are allowed to act, and which '
+        "safeguard was missing.</p>"
+        f'<p class="fact">{facts["all_rows"]} documented incidents, {years[0]}&ndash;'
+        f"{years[-1]} · each sourced, graded and traced to a missing safeguard</p>"
+        '<p class="lede">An AI agent here means a system that takes actions (runs code, '
+        "changes data, sends, buys, posts), not one that only answers.</p></div>",
         unsafe_allow_html=True,
+    )
+
+    st.markdown("## What the cases show")
+    st.markdown(
+        "None of these failures was only the AI being wrong. Every one needed the agent "
+        "to be allowed to act."
     )
 
     # Re-picked on 12 October 2026, at 20 counted cases. The two cards that went were
@@ -1110,19 +1179,22 @@ def screen_home(frame, rules):
     cards = [
         ("not-accuracy",
          "What was missing was not accuracy.",
-         f"Authority in {by_class['Authority']} cases and boundary in {by_class['Boundary']}, "
-         f"against accuracy in {by_class['Accuracy']}. What the agent was allowed to do, and "
-         "what it accepted as an instruction. This count depends on accuracy being tested "
-         f"last in the rubric. Test it first instead and it is still "
-         f"{facts['accuracy_first']} of {total}.", None),
+         f"The agent was allowed to do too much in {by_class['Authority']} cases, and "
+         f"obeyed text it was only meant to read in {by_class['Boundary']}. Only "
+         f"{by_class['Accuracy']} come down to it saying something untrue. A counted case "
+         "is one with a primary record plus an independent report. Check the order of "
+         f"checks: test accuracy first instead and it is still {facts['accuracy_first']} "
+         f"of {total}.", None),
         ("record-silent-on-stop",
          "The record does not say who could have halted the deployment.",
-         f"Not that nobody could. The record does not say. In {counts['no-review-date']} of "
-         f"{total} there is also no date set to look at the agent again.", None),
+         "That is not the same as nobody being able to. The published account does not "
+         f"name the role. In {counts['no-review-date']} of {total} there is also no date "
+         "set to look at the agent again. Write both down for your own agent.", None),
         ("not-attacker",
          "No attacker involved.",
-         "The harm came from how the agent was deployed. It did this in ordinary use, or "
-         "doing what the people running it had configured it to do.", None),
+         "The harm came from how the agent was deployed. It acted in ordinary use, or "
+         "did what the organisation running it had set it up to do. Most failures in this "
+         "register were not attacks.", None),
     ]
     columns = st.columns(3)
     for column, (key, say, more, extra) in zip(columns, cards):

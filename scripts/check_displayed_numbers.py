@@ -94,7 +94,9 @@ def main(argv):
         print(f"  ok   filled dots across the three cards = {dots_on}")
 
     sensitivity = re.search(
-        r"Test it first instead and it is still (\d+) of (\d+)", home_markdown
+        r"test accuracy first instead and it is still (\d+) of (\d+)",
+        home_markdown,
+        re.IGNORECASE,
     )
     if not sensitivity:
         problems.append("the first card carries no accuracy-first sensitivity line")
@@ -141,19 +143,20 @@ def main(argv):
     else:
         text = "\n".join(str(getattr(e, "value", "")) for e in findings.markdown)
         claim = re.search(
-            r"In (\d+) of (\d+) counted cases the missing control was not accuracy", text
+            r"If accuracy is checked first, (\d+) of (\d+) still involve no false statement",
+            text,
         )
         if not claim:
-            problems.append("could not find the not-accuracy claim on Findings")
+            problems.append("could not find the accuracy-first claim on Findings")
         else:
             got, of = (int(g) for g in claim.groups())
-            if (got, of) != (expected["missing control not accuracy"], expected["counted"]):
+            if (got, of) != (expected["accuracy first"], expected["counted"]):
                 problems.append(
-                    f"findings claim says {got} of {of}, data says "
-                    f"{expected['missing control not accuracy']} of {expected['counted']}"
+                    f"findings accuracy-first claim says {got} of {of}, data says "
+                    f"{expected['accuracy first']} of {expected['counted']}"
                 )
             else:
-                print(f"  ok   findings claim = {got} of {of}")
+                print(f"  ok   findings accuracy-first claim = {got} of {of}")
 
     for line in problems:
         print(f"ERROR {line}", file=sys.stderr)
