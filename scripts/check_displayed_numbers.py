@@ -36,6 +36,11 @@ def main(argv):
         "missing control not accuracy": sum(1 for r in counted if r["control_class"] != "Accuracy"),
         "no review date": sum(1 for r in counted if r["deploy_review_date"] == "Not disclosed"),
         "not attacker misuse": sum(1 for r in counted if r["directed_by"] != "Attacker"),
+        # The sensitivity printed on the first Home card. Accuracy is tested last in the
+        # rubric, so the card has to carry what the count becomes if it is tested first.
+        "accuracy first": len(counted) - sum(
+            1 for r in counted if r["said_something_untrue"] == "Yes"
+        ),
         "stated": sum(1 for r in counted if r["missing_control_basis"].startswith("Stated")),
         "entailed": sum(1 for r in counted if r["missing_control_basis"].startswith("Entailed")),
         "reading": sum(1 for r in counted if r["missing_control_basis"].startswith("Reading")),
@@ -87,6 +92,24 @@ def main(argv):
         problems.append(f"{dots_on} filled dots on Home, data says {want_dots}")
     else:
         print(f"  ok   filled dots across the three cards = {dots_on}")
+
+    sensitivity = re.search(
+        r"Test it first instead and it is still (\d+) of (\d+)", home_markdown
+    )
+    if not sensitivity:
+        problems.append("the first card carries no accuracy-first sensitivity line")
+    elif (int(sensitivity.group(1)), int(sensitivity.group(2))) != (
+        expected["accuracy first"], expected["counted"]
+    ):
+        problems.append(
+            f"card sensitivity says {sensitivity.group(1)} of {sensitivity.group(2)}, "
+            f"data says {expected['accuracy first']} of {expected['counted']}"
+        )
+    else:
+        print(
+            f"  ok   card sensitivity, accuracy first = "
+            f"{expected['accuracy first']} of {expected['counted']}"
+        )
 
     counter = re.search(r"Showing (\d+) of (\d+) cases", home_markdown)
     if not counter:

@@ -1,17 +1,21 @@
 # AI Agent Incident Register
 
-Twelve real AI agent failures, each traced to the control that was missing, the test
-that would have caught it before launch, and the signal that would have shown it after.
+Twenty one real AI agent failures, each traced to the control that was missing, the
+test that would have caught it before launch, and the signal that would have shown it
+after. Version 1.0, released 13 October 2026.
 
 Live app: https://ai-agent-incident-register.streamlit.app
 
-**In 5 of the 11 counted cases the agent said nothing untrue, and harm happened anyway.**
-A more accurate model would have changed nothing. What was missing governed what the
-agent was allowed to **do**, what it was allowed to treat as an **instruction**, or who
-was positioned to **stop** it.
+**None of these failures was only the AI being wrong. Every one needed the AI to be
+allowed to act.**
 
-And in the other 6, saying something untrue was never sufficient on its own. Every one
-of the 11 also required authority the agent should not have held, reach it should not
+In 17 of the 20 counted cases the missing control was not accuracy: authority in 7 and
+boundary in 6, against accuracy in 3. The register is mostly about what agents were
+allowed to **do** and what they accepted as an **instruction**. That count depends on
+accuracy being tested last in the rubric, so test it first instead and it is still 10 of
+20. The structural claim does not depend on the ordering at all: in no counted case was
+an untrue statement sufficient on its own. Every one also required authority the agent
+should not have held, reach it should not
 have had, or a path nobody was monitoring. That is the finding that does not move when
 you rearrange the counting: a control on what an agent may **do** catches both groups,
 and a control on what it **says** catches one. The validator fails the build if a row is
@@ -34,7 +38,7 @@ already gone wrong. This is a small, checkable contribution to the second proble
 
 ## What is in it
 
-**The register.** Twelve cases with a named deployer, the authority the agent actually
+**The register.** Twenty one cases with a named deployer, the authority the agent actually
 held, whether a person approved anything, the missing control, a test with a pass mark,
 a monitoring signal tagged to a NIST AI 800-4 category, the closest NIST AI RMF, ISO/IEC
 42001 and EU AI Act clauses, the deployer's own response, and an evidence grade with
@@ -167,8 +171,10 @@ test that still passes when the thing it tests is deleted is decoration. See
 ## Limits, stated up front
 
 One coder, so no second rater and no inter-rater reliability figure. A convenience
-sample of twelve, which is an illustration of a pattern and not evidence of its
-distribution. The clause references are the closest fit for a reader who needs a
+sample of twenty one, which is an illustration of a pattern and not evidence of its
+distribution. Every lead that was checked and not admitted is published in
+`data/leads/considered_not_included.csv` with the test it failed, 115 of them, so the
+shape of what the rules excluded can be read rather than guessed at. The clause references are the closest fit for a reader who needs a
 starting point, not a legal classification, and this is not legal advice. The NIST AI
 RMF and EU AI Act references were taken from the public texts. ISO/IEC 42001 is
 paywalled, so its Annex A numbers come from the standard's published structure rather

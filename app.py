@@ -187,7 +187,7 @@ APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
 VERSION = "1.0"
-UPDATED = "12 October 2026"
+UPDATED = "13 October 2026"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
 # restating them. A value the validator would reject cannot be displayed as valid here.
@@ -1060,15 +1060,17 @@ def screen_home(frame, rules):
          "What was missing was not accuracy.",
          f"Authority in {by_class['Authority']} cases and boundary in {by_class['Boundary']}, "
          f"against accuracy in {by_class['Accuracy']}. What the agent was allowed to do, and "
-         "what it accepted as an instruction.", None),
+         "what it accepted as an instruction. This count depends on accuracy being tested "
+         f"last in the rubric. Test it first instead and it is still "
+         f"{facts['accuracy_first']} of {total}.", None),
         ("record-silent-on-stop",
          "The record does not say who could have halted the deployment.",
          f"Not that nobody could. The record does not say. In {counts['no-review-date']} of "
          f"{total} there is also no date set to look at the agent again.", None),
         ("not-attacker",
-         "These were not attacker misuse.",
-         "The agent did this in ordinary use, or doing what the people running it had "
-         "configured it to do.", None),
+         "No attacker involved.",
+         "The harm came from how the agent was deployed. It did this in ordinary use, or "
+         "doing what the people running it had configured it to do.", None),
     ]
     columns = st.columns(3)
     for column, (key, say, more, extra) in zip(columns, cards):
