@@ -23,7 +23,10 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from urllib.parse import quote_plus
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="AI Agent Incident Register",
@@ -184,7 +187,74 @@ table.cases tr.notcounted td { color: var(--muted); }
   display:block; padding:9px 12px; border-radius:8px; font-size:14px; font-weight:600;
   border:1px solid var(--ring,rgba(11,11,11,.18)); color:inherit; text-decoration:none;
 }
-.fcard .cardbtn a:hover { background:var(--track,#e1e0d9); }
+.fcard .cardbtn a:hover { background:rgba(127,127,127,.12); }
+
+/* Two framework panels side by side, stacked on a phone. The tiles are links, so a
+   filtered view is shareable and clicking the live tile clears it. */
+.panels { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:8px 0 18px; }
+@media (max-width: 900px) { .panels { grid-template-columns:1fr; } }
+.panel {
+  border:1px solid var(--grid-line); border-radius:12px; padding:16px 18px;
+}
+.panel h4 { margin:0 0 12px; font-size:15px; font-weight:700; }
+.panel p { margin:10px 0 0; font-size:13px; color:var(--ink-2); line-height:1.5; }
+.panel a { color:inherit; }
+.tiles { display:flex; flex-direction:column; gap:6px; }
+.tile {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:7px 10px; border:1px solid var(--grid-line); border-radius:9px;
+  text-decoration:none; color:inherit; font-size:14px;
+}
+.tile, .panel a.tile, .tile:hover, .tile:visited { text-decoration:none !important; }
+.tile:hover { background:rgba(42,120,214,.07); }
+.tile.on { border-color:#2a78d6; background:rgba(42,120,214,.12); font-weight:600; }
+.tile .tcount { font-variant-numeric:tabular-nums; font-weight:700; }
+
+/* The case index. One <details> per case, summary laid out as a grid that lines up
+   with the header, so it reads as a table and still expands in place. */
+.ctbl { border:1px solid var(--grid-line); border-radius:12px; overflow:hidden; }
+.ctbl-head, .crow > summary {
+  display:grid; grid-template-columns:96px 1fr 150px 190px 110px; gap:12px;
+  align-items:center; padding:10px 14px;
+}
+.ctbl-head {
+  font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--ink-2); background:rgba(127,127,127,.14);
+}
+.crow { border-top:1px solid var(--grid-line); }
+.crow > summary { cursor:pointer; list-style:none; font-size:14px; }
+.crow > summary::-webkit-details-marker { display:none; }
+.crow > summary:hover { background:rgba(42,120,214,.06); }
+.crow[open] > summary { background:rgba(42,120,214,.08); }
+.crow.notcounted > summary { color:var(--muted); }
+.crow .cid { font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.crow .caret {
+  display:inline-block; width:0; height:0; margin-right:7px; vertical-align:middle;
+  border-left:6px solid currentColor; border-top:4px solid transparent;
+  border-bottom:4px solid transparent; transition:transform .12s;
+}
+.crow[open] .caret { transform:rotate(90deg); }
+.casebody {
+  padding:14px 18px 18px 46px; background:rgba(127,127,127,.09);
+  border-top:1px solid var(--grid-line); font-size:14px; line-height:1.55;
+}
+.casebody .sec { margin:0 0 14px; }
+.casebody .sec:last-child { margin-bottom:0; }
+.casebody h4 {
+  font-size:12px; text-transform:uppercase; letter-spacing:.05em; margin:0 0 6px;
+  color:var(--ink-2); font-weight:700;
+}
+.casebody p { margin:0 0 7px; }
+.casebody table.mini { border-collapse:collapse; margin:8px 0; width:100%; }
+.casebody table.mini td, .casebody table.mini th {
+  border:1px solid var(--grid-line); padding:5px 8px; text-align:left; font-size:13px;
+  vertical-align:top;
+}
+@media (max-width: 900px) {
+  .ctbl-head { display:none; }
+  .crow > summary { grid-template-columns:1fr; gap:4px; }
+  .casebody { padding:12px 14px; }
+}
 
 .seg { display:flex; gap:2px; height:28px; margin:10px 0 8px; }
 .seg div:first-child { border-radius:6px 0 0 6px; }
@@ -382,33 +452,116 @@ def _home_link(chosen, show_uncounted=False, case=None):
     return query + ("#full-record" if case else "")
 
 
-def case_table(view, case_href=None):
-    """The case index as HTML.
+def case_sections_html(row, ratings=None):
+    """One case's full record as plain HTML.
 
-    An HTML table rather than st.table or st.dataframe, because a severity meter cannot
-    be expressed in a dataframe cell and st.dataframe draws to a canvas its contents
-    never leave. This is a real table with real headers, so a screen reader reads it.
+    Rendered as markup rather than Streamlit widgets so it can sit inside a <details>
+    element in the table. Widgets cannot: each one is its own block outside the table,
+    and opening a row would rerun the script and lose the reader's place.
+    """
+    def block(title, body):
+        return f'<div class="sec"><h4>{esc(title)}</h4>{body}</div>'
+
+    def para(text):
+        return f"<p>{esc(text)}</p>" if text else ""
+
+    sources = (
+        f'<p><a href="{esc(row["source_1_url"])}" target="_blank" rel="noopener">'
+        f'1. {esc(row["source_1_label"])}</a></p>'
+    )
+    if row["source_2_url"]:
+        sources += (
+            f'<p><a href="{esc(row["source_2_url"])}" target="_blank" rel="noopener">'
+            f'2. {esc(row["source_2_label"])}</a></p>'
+        )
+
+    deployment = "".join(
+        f"<tr><td>{esc(label)}</td><td>{esc(row[field])}</td></tr>"
+        for label, field in (
+            ("Someone reviewed its behaviour first", "deploy_evidence_seen"),
+            ("A role could halt or roll it back", "deploy_stop_authority"),
+            ("A date was set to look at it again", "deploy_review_date"),
+        )
+    )
+
+    harm_rows = ""
+    if ratings is not None:
+        mine = ratings[ratings["case_id"] == row["id"]].sort_values("level", ascending=False)
+        harm_rows = "".join(
+            f"<tr><td>{esc(r.harm_type)}</td>"
+            f"<td>{r.level} {MIT_LEVELS[r.level]}"
+            f"{' (at least)' if r.at_least == 'Yes' else ''}</td>"
+            f"<td>{esc(r.basis)}</td></tr>"
+            for r in mine.itertuples()
+        )
+        if harm_rows:
+            harm_rows = (
+                '<table class="mini"><thead><tr><th>Harm type</th><th>Level</th>'
+                f"<th>Why</th></tr></thead><tbody>{harm_rows}</tbody></table>"
+            )
+
+    parts = [
+        block("What happened", para(row["what_happened"]) + para(row["why_in_register"])),
+        block(
+            "What was missing",
+            f"<p><b>{esc(row['control_class'])}.</b> "
+            f"{esc(CONTROL_CLASSES[row['control_class']])}</p>"
+            f"<p><b>State it was in: {esc(row['control_maturity'])}.</b> "
+            f"{esc(MATURITY_MEANING[row['control_maturity']])}</p>"
+            f"<p><b>Who pointed it at this: {esc(row['directed_by'])}.</b> "
+            f"{esc(DIRECTED_MEANING[row['directed_by']])}</p>"
+            + para(row["missing_control"]) + para(row["missing_control_basis"]),
+        ),
+        block(
+            "Test before launch",
+            para(row["test_before_launch"])
+            + f"<p><b>Pass mark.</b> {esc(row['test_pass_mark'])}</p>"
+            + f"<p><b>Signal after launch.</b> {esc(row['signal_after_launch'])}</p>",
+        ),
+        block(
+            "Evidence",
+            f"<p><b>Grade {esc(row['evidence_grade'])}.</b> "
+            f"{esc(GRADE_MEANING[row['evidence_grade']])}</p>"
+            + sources
+            + f'<table class="mini"><tbody>{deployment}</tbody></table>'
+            + harm_rows
+            + f"<p><b>EU Article 3(49), closest limb ({esc(row['eu_closest_limb'])}).</b> "
+            f"{esc(row['eu_basis'])}</p>",
+        ),
+        block("Aftermath", para(row["what_changed_after"])),
+    ]
+    return '<div class="casebody">' + "".join(parts) + "</div>"
+
+
+def case_table(view, ratings=None, open_id=None):
+    """The case index, with each row expanding in place.
+
+    A <details> element per case rather than a <table>, because a real table cannot hold
+    an expanding panel between two rows without colspan tricks that fall apart on a
+    phone. The summary is a grid lined up with the header, so it still reads as a table.
+
+    No Streamlit widget is involved, so opening a row is a browser toggle rather than a
+    rerun, and the reader keeps their place, their filters and their scroll position.
     """
     head = (
-        "<thead><tr><th>ID</th><th>What happened</th><th>Missing control</th>"
-        "<th>Severity</th><th>Evidence</th></tr></thead>"
+        '<div class="ctbl-head"><span>ID</span><span>What happened</span>'
+        "<span>Missing control</span><span>Severity</span><span>Evidence</span></div>"
     )
-    body = []
+    rows = []
     for _, row in view.iterrows():
-        klass = ' class="notcounted"' if not row["counted"] else ""
-        body.append(
-            f"<tr{klass}>"
-            f'<td class="id"><a href="{esc(case_href(row["id"])) if case_href else "#" + row["id"].lower()}" target="_self">{esc(row["id"])}</a></td>'
-            f"<td>{esc(row['title'])}</td>"
-            f"<td>{esc(row['control_class'])}</td>"
-            f"<td>{severity_pill(row['mit_level'], row['mit_floored'])}</td>"
-            f"<td>{grade_badge(row['evidence_grade'])}</td>"
-            "</tr>"
+        klass = " notcounted" if not row["counted"] else ""
+        is_open = " open" if open_id and row["id"] == open_id else ""
+        rows.append(
+            f'<details class="crow{klass}" id="{esc(row["id"])}"{is_open}>'
+            '<summary><span class="cid"><i class="caret"></i>'
+            f'{esc(row["id"])}</span><span>{esc(row["title"])}</span>'
+            f'<span>{esc(row["control_class"])}</span>'
+            f'<span>{severity_pill(row["mit_level"], row["mit_floored"])}</span>'
+            f'<span>{grade_badge(row["evidence_grade"])}</span></summary>'
+            + case_sections_html(row, ratings)
+            + "</details>"
         )
-    return (
-        f'<div class="case-table-wrap"><table class="cases">{head}'
-        f"<tbody>{''.join(body)}</tbody></table></div>"
-    )
+    return f'<div class="ctbl">{head}{"".join(rows)}</div>'
 
 
 def describe_count(total, counted):
@@ -544,10 +697,6 @@ def tab_what_was_missing(frame):
     )
     uncounted = sorted(frame[~frame["counted"]]["id"])
 
-    st.caption(
-        "Every figure on this page is calculated from the register's data, never typed "
-        "in by hand."
-    )
     st.markdown("#### What was missing?")
     st.markdown(
         "**In most of these cases, the AI didn't fail by getting facts wrong. It failed "
@@ -689,24 +838,117 @@ def tab_how_severe(frame):
     }
 
     counted_here = frame[frame["counted"]]
-    worst = Counter(counted_here["mit_level"].map(MIT_LEVELS))
+    level_counts = Counter(counted_here["mit_level"])
+    eu_counts = Counter(counted_here["eu_serious_incident"])
+
     st.markdown("#### How severe was the harm?")
     st.markdown(
-        "**Measured against all the harm AI could do, the cases in this register are "
-        "small.** That is not a reassurance. It is a reason to read them for the shape of "
-        "the failure rather than the size of it."
+        "**Measured against the full range of harm AI can cause, these cases are small. "
+        "Read them for how the harm happened, not how large it was.**"
     )
+
+    # The two frameworks the severity columns rest on, each one a filter. Links are
+    # plain query parameters so a filtered view stays shareable, and clicking the tile
+    # that is already on clears it.
+    active_level = st.query_params.get("level")
+    active_eu = st.query_params.get("eu")
+
+    def tile_link(param, value, current):
+        keep = [] if current == value else [f"{param}={quote_plus(value)}"]
+        other = "eu" if param == "level" else "level"
+        held = active_eu if param == "level" else active_level
+        if held:
+            keep.append(f"{other}={quote_plus(held)}")
+        keep.append("screen=Findings")
+        return "?" + "&".join(keep)
+
+    tiles = []
+    for level in MIT_ORDER:
+        name = MIT_LEVELS[level]
+        on = " on" if active_level == name else ""
+        tiles.append(
+            f'<a class="tile{on}" target="_self" '
+            f'href="{esc(tile_link("level", name, active_level))}">'
+            f'<span class="tlabel">{severity_pill(level)}</span>'
+            f'<span class="tcount">{level_counts.get(level, 0)}</span></a>'
+        )
+    eu_tiles = []
+    for value in ("Meets", "Does not meet", "Not determinable from the record"):
+        on = " on" if active_eu == value else ""
+        eu_tiles.append(
+            f'<a class="tile{on}" target="_self" '
+            f'href="{esc(tile_link("eu", value, active_eu))}">'
+            f'<span class="tlabel">{esc(value)}</span>'
+            f'<span class="tcount">{eu_counts.get(value, 0)}</span></a>'
+        )
+
     st.markdown(
-        f"Severity here uses MIT's five-level scale, from 1 Negligible to 5 Catastrophic, "
-        "which was built to rank every kind of AI harm up to the global level. On that "
-        f"scale the worst case in this register reaches level 3, Substantial. Of the "
-        f"{len(counted_here)} counted cases, {worst.get('Substantial', 0)} are "
-        f"Substantial, {worst.get('Minor', 0)} are Minor and "
-        f"{worst.get('Negligible', 0)} are Negligible. A counted case is one with a "
-        "primary record plus an independent report. When you read the table, look at how "
-        "each harm happened, then ask whether your own agent could reach further than "
-        "these did."
+        '<div class="panels">'
+        '<section class="panel"><h4>MIT harm severity scale</h4>'
+        f'<div class="tiles">{"".join(tiles)}</div>'
+        "<p>Built by the MIT AI Risk Initiative on CSET's taxonomy of AI harm. Five "
+        "levels, up to global-scale harm.</p>"
+        '<p><a href="https://airisk.mit.edu/ai-incident-tracker/harm-severity" '
+        'target="_blank" rel="noopener">About this scale &#8599;</a></p></section>'
+        '<section class="panel"><h4>EU AI Act: serious-incident test</h4>'
+        f'<div class="tiles">{"".join(eu_tiles)}</div>'
+        "<p>Article 3(49) of the EU AI Act defines a serious incident. This is the "
+        "register's reading of the closest part of that definition, not a legal "
+        "classification.</p>"
+        '<p><a href="https://artificialintelligenceact.eu/article/3/" target="_blank" '
+        'rel="noopener">Read Article 3(49) &#8599;</a></p></section></div>',
+        unsafe_allow_html=True,
     )
+
+    chosen_harms = st.pills(
+        "Filter by harm type",
+        harms,
+        selection_mode="multi",
+        default=[],
+    )
+
+    view = frame
+    if active_level:
+        view = view[view["mit_level"].map(MIT_LEVELS) == active_level]
+    if active_eu:
+        view = view[view["eu_serious_incident"] == active_eu]
+    if chosen_harms:
+        matching = set(ratings[ratings["harm_type"].isin(chosen_harms)]["case_id"])
+        view = view[view["id"].isin(matching)]
+
+    bits = []
+    if active_level:
+        bits.append(f"rated {active_level}")
+    if active_eu:
+        bits.append(f"where the EU test is {active_eu[0].lower() + active_eu[1:]}")
+    if chosen_harms:
+        bits.append("affecting " + " and ".join(chosen_harms))
+    heading = f"{len(view)} cases " + ", ".join(bits) if bits else f"All {len(view)} cases"
+    st.markdown(f"##### {esc(heading)}")
+    st.markdown(f"**Showing {len(view)} of {len(frame)}**")
+    not_counted = sorted(view[~view["counted"]]["id"])
+    if not_counted:
+        st.caption(
+            f"{', '.join(not_counted)} is shown here but not counted in any figure, "
+            "because it rests on a single source."
+            if len(not_counted) == 1 else
+            f"{', '.join(not_counted)} are shown here but not counted in any figure, "
+            "because they rest on a single source."
+        )
+
+    if view.empty:
+        st.info("No cases match these filters. [Clear them](?) and try again.", icon="🔍")
+        return
+
+    st.markdown(
+        case_table(view, ratings=ratings, open_id=st.query_params.get("case")),
+        unsafe_allow_html=True,
+    )
+    how_to_read(
+        "'At least' means the record doesn't establish the full size of the harm, so the "
+        "rating is the lowest level the record supports."
+    )
+    return
 
     body = []
     for row in frame.sort_values("id").itertuples():
@@ -942,16 +1184,16 @@ def tab_what_the_record_shows(frame):
 def screen_findings(frame, rules):
     st.title("Findings")
     st.markdown(
-        f"Every number here is computed from the {len(frame)} rows in "
-        "data/incidents.csv and data/case_harm_ratings.csv."
+        "Every figure on this page is calculated from the register's data, never typed "
+        "in by hand."
     )
-    missing, severe, record = st.tabs(
-        ["What was missing", "How severe", "What the record shows"]
+    severe, missing, record = st.tabs(
+        ["How severe", "What was missing", "What the record shows"]
     )
-    with missing:
-        tab_what_was_missing(frame)
     with severe:
         tab_how_severe(frame)
+    with missing:
+        tab_what_was_missing(frame)
     with record:
         tab_what_the_record_shows(frame)
 
@@ -1312,36 +1554,34 @@ def screen_home(frame, rules):
         st.info("No cases match these filters. [Clear them](?) and try again.", icon="🔍")
         return
 
+    ratings_for_cards, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     st.markdown(
-        case_table(
-            view,
-            case_href=lambda case_id: _home_link(
-                chosen, show_uncounted=show_uncounted, case=case_id
-            ),
-        ),
+        case_table(view, ratings=ratings_for_cards, open_id=st.query_params.get("case")),
         unsafe_allow_html=True,
     )
-    st.caption(
-        "Colour means one thing here: how severe the harm was, on MIT's scale. Every pill "
-        "carries the word and a bar meter too. Grade A is filled, B outlined, C dashed."
-    )
-
-    # No case opens by default. A record the reader did not ask for pushes the table off
-    # the screen and makes one arbitrary case look like the featured one.
-    st.markdown('<div id="full-record"></div>', unsafe_allow_html=True)
-    wanted = st.query_params.get("case")
-    ids = list(view["id"])
-    if wanted not in ids:
-        st.markdown("---")
-        st.markdown("Click a case ID to read its full record.")
-    else:
-        row = frame[frame["id"] == wanted].iloc[0]
-        st.markdown("---")
-        st.markdown(
-            f"#### Full record: {esc(row['id'])} · {esc(row['title'])}  "
-            f"[Close]({_home_link(chosen, show_uncounted=show_uncounted)})"
+    # A query parameter does not make the browser scroll anywhere, so a deep link needs
+    # a nudge. Rendered through a component because Streamlit strips <script> from
+    # markdown, and kept to a zero-height frame so it costs no layout.
+    wanted_case = st.query_params.get("case")
+    if wanted_case and wanted_case in set(view["id"]):
+        components.html(
+            "<script>"
+            "const go = () => {"
+            f"  const el = window.parent.document.getElementById({wanted_case!r});"
+            "  if (el) { el.scrollIntoView({block: 'center'}); return true; }"
+            "  return false;"
+            "};"
+            "if (!go()) { let n = 0; const t = setInterval(() => "
+            "{ if (go() || ++n > 20) clearInterval(t); }, 150); }"
+            "</script>",
+            height=0,
         )
-        incident_card(row)
+
+    st.caption(
+        "Click any row to open its full record in place. Colour means one thing here: how "
+        "severe the harm was, on MIT's scale. Every pill carries the word and a bar meter "
+        "too. Grade A is filled, B outlined, C dashed."
+    )
 
     st.markdown("---")
     foot = st.columns(3)
@@ -2236,11 +2476,23 @@ def main():
 
     with st.sidebar:
         st.markdown("## AI Agent Incident Register")
+        # The screen lives in the URL as well as in session state, because the filter
+        # tiles on Findings are links. Without this, following one would land the reader
+        # back on Home with their filter applied to a page they were not looking at.
+        screens = ["Home", "Findings", "Build your watch list", "Method"]
+        asked = st.query_params.get("screen")
         screen = st.radio(
             "Screen",
-            ["Home", "Findings", "Build your watch list", "Method"],
+            screens,
+            index=screens.index(asked) if asked in screens else 0,
             label_visibility="collapsed",
         )
+    if screen == "Home":
+        if "screen" in st.query_params:
+            del st.query_params["screen"]
+    elif st.query_params.get("screen") != screen:
+        st.query_params["screen"] = screen
+    with st.sidebar:
         st.markdown("---")
 
     if screen == "Home":

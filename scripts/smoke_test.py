@@ -71,18 +71,17 @@ def main(argv):
         # accordion of twelve expanders.
         if screen == "Home":
             rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
-            rows = rendered.count('<td class="id">')
+            rows = rendered.count('<details class="crow')
             print(f"          {rows} rows in the case table")
             if rows == 0:
                 print("          FAIL the case table rendered no rows")
                 clean = False
-            # No case opens by default any more, so Home has to invite the click and
-            # open nothing until there is one.
-            if "Click a case ID to read its full record." not in rendered:
-                print("          FAIL Home does not invite the reader to open a case")
+            # Rows expand in place, so nothing should be open until one is asked for.
+            if "<details" not in rendered:
+                print("          FAIL the case rows are not expandable")
                 clean = False
-            if "Full record:" in rendered:
-                print("          FAIL a case is open on Home with none requested")
+            if 'class="crow" id="AIR-001" open' in rendered or " open>" in rendered:
+                print("          FAIL a row is open on Home with none requested")
                 clean = False
 
     # Opening a case is now a link, not a selectbox. Check that asking for one by
@@ -92,11 +91,11 @@ def main(argv):
     at.run()
     opened = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
     clean = report("Home, one case opened by link", at) and clean
-    if "Full record: AIR-013" not in opened:
-        print("  FAIL  the requested case did not open", file=sys.stderr)
+    if 'id="AIR-013" open>' not in opened:
+        print("  FAIL  the requested row did not open in place", file=sys.stderr)
         clean = False
-    elif "What happened" not in "\n".join(t.label for t in at.tabs):
-        print("  FAIL  the open case rendered no tabs", file=sys.stderr)
+    elif "Test before launch" not in opened:
+        print("  FAIL  the open row carries no record sections", file=sys.stderr)
         clean = False
 
     # Each card says "N of 20" and its button has to land on exactly N rows. This was
@@ -117,7 +116,7 @@ def main(argv):
         at.query_params["view"] = key
         at.run()
         shown = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
-        got = shown.count('<td class="id">')
+        got = shown.count('<details class="crow')
         clean = report(f"Home filtered by {key}", at) and clean
         if got != want:
             print(
