@@ -19,7 +19,7 @@ Three conventions apply to every field.
 | `title` | Free text, one line | What happened, in plain words. Not the deployer's name. |
 | `event_date` | ISO date | The date of the event, or the date the failure became public where the event ran over a period. |
 | `deployer` | Free text | Who ran the agent. Where the deployer and the tool maker differ, both are named. |
-| `sector` | Free text | Kept loose on purpose. Twelve rows is too few for a controlled sector list to mean anything. |
+| `sector` | Free text | Kept loose on purpose. The register is too small for a controlled sector list to mean anything. |
 | `agent_type` | Free text | What kind of agent it was, in the words a reader would use. |
 | `what_happened` | 2 to 5 sentences | Facts only, no interpretation. The validator counts the sentences. |
 
@@ -28,7 +28,9 @@ Three conventions apply to every field.
 | Field | Allowed values | Notes |
 | --- | --- | --- |
 | `incident_or_hazard` | `Incident`, `Hazard` | OECD definitions. An incident means harm occurred. A hazard is a near miss. |
-| `harm_type` | Free text | What kind of harm, in plain words. Not a code, because twelve rows cannot support one. |
+| `directed_by` | `Deployer`, `Attacker`, `No one` | Who pointed the agent at the thing that caused harm. `Deployer` means it was doing what the people running it had configured or told it to do. `Attacker` means an outside party steered it, by stealing access, hiding instructions in content it read, or simply asking. `No one` means it did this in ordinary use with nobody steering it, which is the most common value and is not a shrug. Added 12 October 2026, because a register that mixes attacker misuse with a deployment's own behaviour cannot say which of the two its findings are about. |
+| `directed_by_basis` | Free text | Why that value. Required, and the validator rejects a blank. |
+| `harm_type` | Free text | What kind of harm, in plain words. Not a code, because the register is too small to support one. |
 | `eu_serious_incident` | `Meets`, `Does not meet`, `Not determinable from the record` | Whether the case crosses the EU AI Act's serious-incident threshold in Article 3(49). Not determinable is the honest answer where the record cannot settle it, the same rule as the deployment questions. |
 | `eu_closest_limb` | `a`, `b`, `c`, `d` | The limb of Article 3(49) nearest to this case, from `frameworks/eu_ai_act_serious_incident.csv`. **Closest limb, never a legal classification**, and several deployers here are outside the Act's scope entirely. |
 | `eu_basis`, `eu_basis_type` | Free text, `Stated` or `Our reading` | The working behind the value. |
@@ -41,8 +43,8 @@ measurement.
 
 The register's own four-level scale, Negligible / Moderate / Serious / Severe, was
 **retired** in version 0.9 rather than converted. It had no external source and it ranked
-these twelve cases against each other, so its middle sat wherever these cases happened to
-sit. Severe does not mean on MIT's scale what it meant on that one.
+the twelve cases the register then held against each other, so its middle sat wherever
+those cases happened to sit. Severe does not mean on MIT's scale what it meant on that one.
 | `aftermath_status` | `Documented`, `Partial`, `Undocumented` | How completely the ending is on the record. A `Partial` or `Undocumented` row **must** say so in `what_changed_after`, and the validator rejects it otherwise. Stopping at the failure overstates the harm. |
 | `aftermath_source_url` | `https://` URL | Which source carries the `what_changed_after` claim. The deployer's response is a **separate claim** from the incident, so it gets a named citation rather than an assumption that the incident sources happen to cover it. Usually this is `source_1_url` or `source_2_url`, named explicitly. Where neither covers it, it is a third link. Required on every row. |
 | `evidence_grade` | `A`, `B`, `C` | See below. Only A and B feed a number anywhere on the site. Grade A needs its second source on a different host from the primary record, and that source has to corroborate rather than restate it. Tightened on 11 October 2026, when AIR-013 was moved to B because its only second source was a summary of the primary record. The host part is enforced by the validator. Whether a source corroborates is a human reading. |
