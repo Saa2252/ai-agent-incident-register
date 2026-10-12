@@ -17,6 +17,7 @@ Three rules run through this file.
 
 import csv
 import html
+from collections import Counter
 import importlib.util
 import sys
 from pathlib import Path
@@ -56,6 +57,13 @@ MATURITY_MEANING = {
     "Implemented": "It was built and wired in, and it did not stop the thing it was there to stop.",
     "Bypassable": "It was built and wired in, and whatever it was there to stop could switch it off.",
     "Unknown": "The public record does not say what state it was in.",
+}
+
+DIRECTED_MEANING = {
+    "Deployer": "It was doing what the people running it had configured or told it to do.",
+    "Attacker": "An outside party pointed it at this, whether by stealing access, hiding "
+                "instructions in content it read, or simply asking.",
+    "No one": "Nobody steered it. It did this in ordinary use.",
 }
 
 MIT_LEVELS = {
@@ -467,10 +475,29 @@ def tab_what_was_missing(frame):
     facts = headline(frame)
     counted = frame[frame["counted"]]
 
+    by_class = Counter(counted["control_class"])
+    attacker = int((counted["directed_by"] == "Attacker").sum())
     st.markdown("#### What was missing?")
     st.markdown(
-        f"**In {facts['not_accuracy']} of {facts['total']} counted cases the missing "
-        "control was not accuracy.**"
+        f"**Authority in {by_class['Authority']} cases and boundary in "
+        f"{by_class['Boundary']}, against accuracy in {by_class['Accuracy']}.** This "
+        "register is mostly about what agents were allowed to do, and what they accepted "
+        f"as an instruction. In {facts['not_accuracy']} of {facts['total']} counted cases "
+        "the missing control was not accuracy at all."
+    )
+    st.markdown(
+        f"**Who pointed the agent at it.** {facts['total'] - attacker} of {facts['total']} "
+        f"counted cases were not attacker misuse: {attacker} were, and the rest happened "
+        "in ordinary use or because the agent was doing what the people running it had "
+        "configured it to do. An agent register is not a security register, and the split "
+        "is the evidence for that rather than an assertion of it."
+    )
+    st.markdown(
+        "**The same bypass, three times, across two vendors.** In AIR-013, AIR-020 and "
+        "AIR-022 the operators got past the model's guardrails by telling it the work was "
+        "authorised security testing. Nothing on the record says either vendor has changed "
+        "how that claim is treated, so the test for it is written against a control that "
+        "is still open."
     )
     rows = []
     for name in sorted(frame["control_class"].unique()):
@@ -654,10 +681,35 @@ def tab_how_severe(frame):
 def tab_what_the_record_shows(frame):
     facts = headline(frame)
 
+    counted = frame[frame["counted"]]
+    own_report = sorted(counted[counted["id"].isin(
+        ["AIR-013", "AIR-015", "AIR-020", "AIR-021"]
+    )]["id"])
+
     st.markdown("#### What does the record actually show?")
     st.markdown(
         "**Who documents a failure decides which failures exist on paper.** Failures make "
         "the news. Recoveries rarely do."
+    )
+    st.markdown(
+        f"**Almost nothing was set up to notice.** In {facts['no_stop_authority_recorded']} "
+        f"of {facts['total']} counted cases the record does not say which role could have "
+        f"halted the deployment, and in {facts['no_review_recorded']} of {facts['total']} "
+        "there is no date to look at the agent again. The second of those is every counted "
+        "case in the register, which is the most complete absence in it. Neither number "
+        "says nobody could have stopped it or that nobody ever looked. They say the record "
+        "does not carry the answer, and a control nobody can point to is one a reader "
+        "cannot check."
+    )
+    st.markdown(
+        "**Where the newest cases came from is itself a finding.** "
+        f"{len(own_report)} of the cases added in this release ({', '.join(own_report)}) "
+        "rest on a primary record published by an AI company or an AI evaluation body about "
+        "its own product or its own testing. That is the register's second finding working "
+        "on the register: the organisations with the best instrumentation produce the "
+        "documents, so they are the failures that exist on paper. Agent failures inside "
+        "ordinary companies, with no threat intelligence team and no blog, are almost "
+        "certainly more common and are not here."
     )
     corrections = [
         ("A database and its backups were destroyed, newest copy three months old",
@@ -844,6 +896,13 @@ def incident_card(row):
             st.caption(f"[The source for this]({row['aftermath_source_url']}).")
 
     with missing:
+        directed_tier = row["directed_by_basis"].split(".")[0].strip()
+        st.markdown(
+            f"**Who pointed it at this: {row['directed_by']}.** "
+            f"{DIRECTED_MEANING[row['directed_by']]}\n\n"
+            f"{esc(row['directed_by_basis'])}"
+        )
+        st.markdown("")
         tier = row["missing_control_basis"].split(".")[0].strip()
         st.markdown(
             f"**State it was in: {row['control_maturity']}.** "
@@ -918,42 +977,16 @@ def incident_card(row):
 
 
 # Every finding is a filter, and every filter is a link that can be posted on its own.
-# The predicates are the single source for the tile numbers, the chip counts and the
-# filtering, so a chip saying 10 and a table showing 9 is not a state this can reach.
-#
-# "Record silent" is the wording throughout, never "nobody could". The field says the
-# public record does not say. Turning that into a claim about the deployer is the same
-# error as coding a sourceless No.
-FINDINGS = {
-    "no-false-statement": {
-        "chip": "Said nothing untrue",
-        "tile": "The agent said nothing untrue, and harm happened anyway.",
-        "test": lambda r: r["said_something_untrue"] == "No",
-    },
-    "record-silent-on-stop": {
-        "chip": "Record silent on who could stop it",
-        "tile": "The public record does not say who could have stopped the deployment.",
-        "test": lambda r: r["deploy_stop_authority"] == "Not disclosed",
-    },
-    "control-never-built": {
-        "chip": "Control never built",
-        "tile": "The control that would have prevented it was never built.",
-        "test": lambda r: r["control_maturity"] == "Absent",
-    },
-    "control-did-not-hold": {
-        "chip": "Control existed, did not hold",
-        "tile": "A control was built and wired in, and it did not stop the thing.",
-        "test": lambda r: r["control_maturity"] == "Implemented",
-    },
-}
-
-
-# Every finding is a filter, and every filter is a link that can be posted on its own.
 # The predicates are the single source for the card numbers and the filtering, so a card
 # saying 10 and a table showing 9 is not a state this can reach.
 #
 # "Record silent" is the wording throughout, never "nobody could". The field says the
-# public record does not say.
+# public record does not say. Turning that into a claim about the deployer is the same
+# error as coding a sourceless No.
+#
+# There were two FINDINGS dicts here until 12 October 2026. The first carried the tile
+# text from before the layout pass and was silently overwritten by this one, so editing
+# it changed nothing on the page.
 FINDINGS = {
     "no-false-statement": {
         "chip": "Said nothing untrue",
@@ -970,6 +1003,20 @@ FINDINGS = {
     "control-did-not-hold": {
         "chip": "Control existed, did not hold",
         "test": lambda r: r["control_maturity"] == "Implemented",
+    },
+    # Added 12 October 2026 when the register reached 20 counted cases and the three
+    # cards were re-picked on what the data now supports.
+    "not-accuracy": {
+        "chip": "Missing control was not accuracy",
+        "test": lambda r: r["control_class"] != "Accuracy",
+    },
+    "no-review-date": {
+        "chip": "No date set to look again",
+        "test": lambda r: r["deploy_review_date"] == "Not disclosed",
+    },
+    "not-attacker": {
+        "chip": "Not attacker misuse",
+        "test": lambda r: r["directed_by"] != "Attacker",
     },
 }
 
@@ -1002,15 +1049,26 @@ def screen_home(frame, rules):
         unsafe_allow_html=True,
     )
 
+    # Re-picked on 12 October 2026, at 20 counted cases. The two cards that went were
+    # "said nothing untrue", which is now exactly half and so carries no headline, and
+    # "control never built", which is under half. What replaced them is what the data now
+    # supports: the classes the register actually fills, the most complete absence in it,
+    # and the answer to the assumption that agent incidents are mostly hacking.
+    by_class = Counter(frame[frame["counted"]]["control_class"])
     cards = [
-        ("no-false-statement", "The agent said nothing untrue, and harm happened anyway.",
-         "What was missing was a limit on what the agent was allowed to do, not on what "
-         "it said.", None),
+        ("not-accuracy",
+         "What was missing was not accuracy.",
+         f"Authority in {by_class['Authority']} cases and boundary in {by_class['Boundary']}, "
+         f"against accuracy in {by_class['Accuracy']}. What the agent was allowed to do, and "
+         "what it accepted as an instruction.", None),
         ("record-silent-on-stop",
-         "The public record does not say who could have stopped the deployment.",
-         "Not that nobody could. The record does not say.", None),
-        ("control-never-built", "The control that would have prevented it was never built.",
-         "", "control-did-not-hold"),
+         "The record does not say who could have halted the deployment.",
+         f"Not that nobody could. The record does not say. In {counts['no-review-date']} of "
+         f"{total} there is also no date set to look at the agent again.", None),
+        ("not-attacker",
+         "These were not attacker misuse.",
+         "The agent did this in ordinary use, or doing what the people running it had "
+         "configured it to do.", None),
     ]
     columns = st.columns(3)
     for column, (key, say, more, extra) in zip(columns, cards):
@@ -1038,6 +1096,10 @@ def screen_home(frame, rules):
             [MIT_LEVELS[l] for l in MIT_ORDER if l in set(frame["mit_level"])],
         )
         grades = st.multiselect("Evidence grade", sorted(frame["evidence_grade"].unique()))
+        directed = st.multiselect(
+            "Who pointed it at this",
+            [v for v in ("Deployer", "Attacker", "No one") if v in set(frame["directed_by"])],
+        )
         query = st.text_input("Search", placeholder="Case, deployer, pattern")
         counted_only = st.checkbox("Only rows that feed the numbers", value=False)
 
@@ -1054,11 +1116,15 @@ def screen_home(frame, rules):
         view = view[view["mit_level"].map(MIT_LEVELS).isin(severities)]
     if grades:
         view = view[view["evidence_grade"].isin(grades)]
+    if directed:
+        view = view[view["directed_by"].isin(directed)]
     if counted_only:
         view = view[view["counted"]]
     if query:
         needle = query.lower()
-        columns_to_search = ["id", "title", "deployer", "failure_pattern", "control_class"]
+        columns_to_search = [
+            "id", "title", "deployer", "failure_pattern", "control_class", "directed_by",
+        ]
         view = view[view[columns_to_search].apply(
             lambda r: needle in " ".join(r).lower(), axis=1
         )]
@@ -1674,6 +1740,26 @@ def screen_method(frame, rules):
         "listed in data/leads/considered_not_included.csv, and the largest group by far is "
         "cases where an AI system produced text and a person read it, which this register "
         "excludes by design and which is where most public reporting of AI harm sits.\n"
+        "- **The clearest case this rule excludes.** In February 2026 a coding agent ran "
+        "terraform destroy against the production infrastructure of a course platform, "
+        "taking the database, the environment and every automated backup with it, and about "
+        "two and a half years of student submissions. The founder published a detailed "
+        "first-hand postmortem naming the stale state file, the auto-approve, the row count "
+        "and the recovery, and it even records that the agent advised against the approach "
+        "and a person approved anyway. It is not in this register. No reputable independent "
+        "outlet covered it, so a single source makes it grade C, and the inclusion rule "
+        "admits only A and B. That is the rule excluding a case documented better than "
+        "several that are in, and the trade is deliberate: the bar is set on what a reader "
+        "can check from two directions, not on how good the one account is. It is listed in "
+        "the considered and not included table with that reasoning.\n"
+        "- **Three rows rest on one party's account.** AIR-013, AIR-020 and AIR-021 are "
+        "graded B with a reputable outlet as the second source, and in each case that outlet "
+        "is reporting the primary account rather than verifying it. No indicators of "
+        "compromise, no victim statement and no third-party investigation exist for any of "
+        "them. They clear grade B, which asks for two independent reputable reports, and "
+        "they would not clear grade A, which asks the second source to corroborate rather "
+        "than restate. Read them as the organisation's own account, carefully written and "
+        "unverified.\n"
         "- **A convenience sample, not a population.** These cases are the ones with "
         "a usable public record. Agent failures that were handled quietly are the majority "
         "and none of them are here, which also biases the counts toward the visible and "

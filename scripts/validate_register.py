@@ -39,6 +39,7 @@ FIELDS = [
     "eu_closest_limb", "eu_basis", "eu_basis_type", "authority", "human_approval",
     "deploy_evidence_seen", "deploy_evidence_source", "deploy_stop_authority",
     "deploy_stop_authority_source", "deploy_review_date", "deploy_review_date_source",
+    "directed_by", "directed_by_basis",
     "failure_pattern", "owasp_code", "owasp_code_basis", "said_something_untrue",
     "control_class", "secondary_class", "control_maturity", "missing_control",
     "missing_control_basis", "test_before_launch", "test_pass_mark",
@@ -144,6 +145,12 @@ AFTERMATH_STATES = {"Documented", "Partial", "Undocumented"}
 # in the vocabulary only so the validator can reject it, because a control that was
 # operating is not a missing control.
 CONTROL_MATURITY = {"Absent", "Designed", "Implemented", "Bypassable", "Unknown"}
+
+# Who pointed the agent at the thing that caused harm. Added 12 October 2026, because a
+# register that mixes attacker misuse with a deployment's own behaviour cannot say which
+# of the two its findings are about. "No one" is the common case and is not a shrug: it
+# means the agent did it in ordinary use, with nobody steering it.
+DIRECTED_BY = {"Deployer", "Attacker", "No one"}
 # "Operating" is deliberately absent: a control that was operating is not a missing
 # control. "Bypassable" was added on 11 October 2026 for AIR-015, where the gate was
 # built and wired in and the caller could switch it off with a documented flag. That
@@ -470,6 +477,10 @@ def validate_rows(report, rows, today):
             report.error(f"{where}.eu_basis_type", f"must be one of {sorted(FRAMEWORK_BASIS)}")
         if not row["eu_basis"].strip():
             report.error(f"{where}.eu_basis", "has no basis")
+        if row["directed_by"] not in DIRECTED_BY:
+            report.error(f"{where}.directed_by", f"must be one of {sorted(DIRECTED_BY)}")
+        if not row["directed_by_basis"].strip():
+            report.error(f"{where}.directed_by_basis", "has no basis")
         if row["control_maturity"] not in CONTROL_MATURITY:
             report.error(f"{where}.control_maturity", f"must be one of {sorted(CONTROL_MATURITY)}")
         if row["harm_bearer_had_control"] not in HARM_CONTROL_STATES:
