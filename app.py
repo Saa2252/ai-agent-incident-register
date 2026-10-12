@@ -1566,13 +1566,27 @@ def screen_home(frame, rules):
     if wanted_case and wanted_case in set(view["id"]):
         components.html(
             "<script>"
-            "const go = () => {"
-            f"  const el = window.parent.document.getElementById({wanted_case!r});"
-            "  if (el) { el.scrollIntoView({block: 'center'}); return true; }"
-            "  return false;"
+            "const doc = window.parent.document;"
+            "const scrollerOf = (el) => {"
+            "  let n = el.parentElement;"
+            "  while (n) {"
+            "    const o = window.parent.getComputedStyle(n).overflowY;"
+            "    if (/auto|scroll/.test(o) && n.scrollHeight > n.clientHeight) return n;"
+            "    n = n.parentElement;"
+            "  }"
+            "  return doc.scrollingElement || doc.documentElement;"
             "};"
-            "if (!go()) { let n = 0; const t = setInterval(() => "
-            "{ if (go() || ++n > 20) clearInterval(t); }, 150); }"
+            "const go = () => {"
+            f"  const el = doc.getElementById({wanted_case!r});"
+            "  if (!el) return false;"
+            "  const s = scrollerOf(el);"
+            "  const base = s === (doc.scrollingElement || doc.documentElement)"
+            "    ? 0 : s.getBoundingClientRect().top;"
+            "  s.scrollTop += el.getBoundingClientRect().top - base - 20;"
+            "  return true;"
+            "};"
+            "let n = 0;"
+            "const t = setInterval(() => { if (go() || ++n > 60) clearInterval(t); }, 150);"
             "</script>",
             height=0,
         )
