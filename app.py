@@ -239,12 +239,33 @@ NIST_GAP_QUOTE = (
 # --------------------------------------------------------------------------- loading
 
 
+def data_stamp(*paths):
+    """A cache key that changes when the data changes.
+
+    st.cache_data keys on the function's code and arguments, never on the files the
+    function happens to open. Adding a column to incidents.csv therefore left the key
+    identical, and a hot reload on the hosted app ran new code against a DataFrame
+    cached before the column existed, which is how v1.0 reached the live site as a
+    KeyError while every local check passed. Local runs never caught it because each
+    one starts with a cold cache.
+    """
+    return tuple(
+        (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else (0, 0)
+        for path in paths
+    )
+
+
+RATINGS_FILE = APP_DIR / "data" / "case_harm_ratings.csv"
+MIT_FRAMEWORK_FILE = APP_DIR / "frameworks" / "mit_severity_framework.csv"
+RULES_FILE = APP_DIR / "rules" / "watchlist_rules.json"
+
+
 @st.cache_data
-def load_register():
+def load_register(_stamp):
     frame = pd.read_csv(DATA_FILE, dtype=str).fillna("")
     frame["counted"] = frame["evidence_grade"].isin(COUNTED_GRADES)
     frame["year"] = frame["event_date"].str.slice(0, 4)
-    ratings = pd.read_csv(APP_DIR / "data" / "case_harm_ratings.csv", dtype=str).fillna("")
+    ratings = pd.read_csv(RATINGS_FILE, dtype=str).fillna("")
     ratings["level"] = ratings["level"].astype(int)
     frame["mit_level"] = frame["id"].map(ratings.groupby("case_id")["level"].max())
     frame["mit_floored"] = frame["id"].map(
@@ -257,9 +278,9 @@ def load_register():
 
 
 @st.cache_data
-def load_harm_ratings():
+def load_harm_ratings(_stamp):
     """Per-case harm ratings on MIT's framework, and the headline level per case."""
-    ratings = pd.read_csv(APP_DIR / "data" / "case_harm_ratings.csv", dtype=str).fillna("")
+    ratings = pd.read_csv(RATINGS_FILE, dtype=str).fillna("")
     ratings["level"] = ratings["level"].astype(int)
     headline = ratings.groupby("case_id")["level"].max().to_dict()
     floored = (
@@ -269,14 +290,14 @@ def load_harm_ratings():
 
 
 @st.cache_data
-def load_mit_framework():
-    frame = pd.read_csv(APP_DIR / "frameworks" / "mit_severity_framework.csv", dtype=str)
+def load_mit_framework(_stamp):
+    frame = pd.read_csv(MIT_FRAMEWORK_FILE, dtype=str)
     frame["level"] = frame["level"].astype(int)
     return frame
 
 
 @st.cache_data
-def load_rules():
+def load_rules(_stamp):
     return engine.load_rules()
 
 
@@ -581,8 +602,8 @@ def tab_what_was_missing(frame):
 
 
 def tab_how_severe(frame):
-    ratings, headline_levels, _ = load_harm_ratings()
-    definitions = load_mit_framework()
+    ratings, headline_levels, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
+    definitions = load_mit_framework(data_stamp(MIT_FRAMEWORK_FILE))
     harms = list(definitions["harm_type"].drop_duplicates())
     limbs = {
         r["limb"]: r["text"]
@@ -1843,6 +1864,16 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 1.0 | 2026-10-13 | **The release broke the live site, and the cause is this "
+        "register's own subject.** v1.0 reached the hosted app as a KeyError on the home "
+        "screen. The data loaders were cached, and the cache keys on the function's code "
+        "and arguments rather than on the files it opens. Adding a column to the case data "
+        "left that key identical, so new code ran against a table cached before the column "
+        "existed. Every local check passed because each run starts with an empty cache, "
+        "which is the difference between a control that is implemented and one that is "
+        "operating. The loaders now take a stamp built from the data files, so the cache "
+        "falls when the data changes. The site was broken for the time between the push "
+        "and this fix. |\n"
         "| 1.0 | 2026-10-12 | **Pre-merge review.** AIR-021 moved from grade A to B: its "
         "only readable independent coverage is substantially a summary of the institute's "
         "own report, and grade A asks the second source to corroborate rather than restate. "
@@ -2046,8 +2077,8 @@ def screen_method(frame, rules):
 
 def main():
     st.markdown(PAGE_CSS, unsafe_allow_html=True)
-    frame = load_register()
-    rules = load_rules()
+    frame = load_register(data_stamp(DATA_FILE, RATINGS_FILE))
+    rules = load_rules(data_stamp(RULES_FILE))
 
     with st.sidebar:
         st.markdown("## AI Agent Incident Register")
