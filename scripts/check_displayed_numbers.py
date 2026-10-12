@@ -93,10 +93,11 @@ def main(argv):
     else:
         print(f"  ok   filled dots across the three cards = {dots_on}")
 
+    # This check has had to chase the card's wording three times. It now anchors on the
+    # one fragment that has survived every rewrite, so a reworded card does not silently
+    # stop being checked.
     sensitivity = re.search(
-        r"test accuracy first instead and it is still (\d+) of (\d+)",
-        home_markdown,
-        re.IGNORECASE,
+        r"it is still (\d+) of (\d+)", home_markdown, re.IGNORECASE
     )
     if not sensitivity:
         problems.append("the first card carries no accuracy-first sensitivity line")

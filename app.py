@@ -145,29 +145,46 @@ table.cases tr.notcounted td { color: var(--muted); }
 .g-c { border: 1.5px dashed var(--muted); color: var(--muted); }
 
 .hero-band {
-  background:#0d2440; color:#fff; border-radius:14px; padding:30px 28px; margin:4px 0 8px;
+  background:#0d2440; color:#fff; border-radius:14px; padding:44px 48px; margin:4px 0 48px;
 }
 @media (prefers-color-scheme: dark) { .hero-band { background:#13263d; } }
-.hero-band .kicker {
-  font-size:12px; letter-spacing:.07em; text-transform:uppercase; color:#c9d8ec; margin:0 0 12px;
+@media (max-width: 640px) { .hero-band { padding:28px 20px; } }
+.hero-band h1 { font-size:40px; line-height:1.1; margin:0 0 12px; font-weight:700; color:#fff; }
+.hero-band p.tagline {
+  font-size:22px; line-height:1.35; margin:0 0 28px; font-weight:500; color:#fff;
+  background:none;
 }
-.hero-band h1 { font-size:32px; line-height:1.15; margin:0 0 8px; font-weight:700; }
-.hero-band .claim2 { font-size:20px; line-height:1.3; margin:0 0 14px; font-weight:500; }
-.hero-band p.fact { color:#e6eefb; margin:0 0 10px; font-size:15px; font-weight:600; }
-.hero-band p.lede { color:#c9d8ec; margin:0; font-size:16px; max-width:720px; }
+.hero-band p.fact { color:#c9d8ec; margin:0 0 10px; font-size:15px; font-weight:600; }
+.hero-band p.fact .sep { display:inline-block; padding:0 16px; }
+.hero-band p.def {
+  color:#c9d8ec; margin:0; font-size:14px; font-weight:400; max-width:720px; line-height:1.5;
+}
 
+/* One grid rather than three Streamlit columns, so the cards are the same height and
+   each button sits inside its own card at the bottom with the three lined up. */
+.cards { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin:24px 0 8px; }
+@media (max-width: 900px) { .cards { grid-template-columns:1fr; } }
 .fcard {
   background:var(--surface,#fcfcfb); border:1px solid var(--ring,rgba(11,11,11,.10));
-  border-radius:14px; padding:18px; height:100%;
+  border-radius:14px; padding:18px; display:flex; flex-direction:column; height:100%;
 }
-.fcard .big { font-size:38px; font-weight:700; line-height:1; }
+.fcard .big { font-size:38px; font-weight:700; line-height:1; margin:0 0 12px; }
 .fcard .big small { font-size:16px; color:var(--muted); font-weight:500; margin-left:4px; }
-.dots { display:flex; gap:5px; margin:12px 0; flex-wrap:wrap; }
+.dots { display:flex; gap:5px; margin:0 0 16px; flex-wrap:wrap; }
 .dots i { width:14px; height:14px; border-radius:50%; background:#d6d4cc; display:block; }
 .dots i.on { background:#2a78d6; }
 @media (prefers-color-scheme: dark) { .dots i { background:#3a3a37; } .dots i.on { background:#3987e5; } }
-.fcard .say { font-size:16px; font-weight:600; margin:0 0 6px; line-height:1.35; }
-.fcard .more { color:#52514e; font-size:14px; margin:0; }
+.fcard .say { font-size:16px; font-weight:600; margin:0 0 8px; line-height:1.35; }
+.fcard .more { color:#52514e; font-size:14px; margin:0; line-height:1.5; }
+.fcard .note { color:var(--muted); font-size:13px; margin:10px 0 0; line-height:1.45; }
+.fcard .cardbtn {
+  margin-top:auto; padding-top:16px; display:block; text-align:center;
+}
+.fcard .cardbtn a {
+  display:block; padding:9px 12px; border-radius:8px; font-size:14px; font-weight:600;
+  border:1px solid var(--ring,rgba(11,11,11,.18)); color:inherit; text-decoration:none;
+}
+.fcard .cardbtn a:hover { background:var(--track,#e1e0d9); }
 
 .seg { display:flex; gap:2px; height:28px; margin:10px 0 8px; }
 .seg div:first-child { border-radius:6px 0 0 6px; }
@@ -1155,11 +1172,12 @@ def screen_home(frame, rules):
     st.markdown(
         '<div class="hero-band">'
         "<h1>AI Agent Incident Register</h1>"
-        '<p class="claim2">What goes wrong when AI agents are allowed to act, and which '
-        "safeguard was missing.</p>"
+        '<p class="tagline">A public record of AI agents that caused harm, and the '
+        "safeguard that was missing in each case.</p>"
         f'<p class="fact">{facts["all_rows"]} documented incidents, {years[0]}&ndash;'
-        f"{years[-1]} · each sourced, graded and traced to a missing safeguard</p>"
-        '<p class="lede">An AI agent here means a system that takes actions (runs code, '
+        f'{years[-1]}<span class="sep">·</span>{facts["total"]} with strong enough '
+        "evidence to count</p>"
+        '<p class="def">An AI agent here means a system that takes actions (runs code, '
         "changes data, sends, buys, posts), not one that only answers.</p></div>",
         unsafe_allow_html=True,
     )
@@ -1170,49 +1188,43 @@ def screen_home(frame, rules):
         "to be allowed to act."
     )
 
-    # Re-picked on 12 October 2026, at 20 counted cases. The two cards that went were
-    # "said nothing untrue", which is now exactly half and so carries no headline, and
-    # "control never built", which is under half. What replaced them is what the data now
-    # supports: the classes the register actually fills, the most complete absence in it,
-    # and the answer to the assumption that agent incidents are mostly hacking.
+    # Re-picked on 12 October 2026, at 20 counted cases, and rewritten on 13 October so
+    # each card states the finding before the number. The whole row is one grid so the
+    # three cards match in height and their buttons line up.
     by_class = Counter(frame[frame["counted"]]["control_class"])
     cards = [
         ("not-accuracy",
-         "What was missing was not accuracy.",
-         f"The agent was allowed to do too much in {by_class['Authority']} cases, and "
-         f"obeyed text it was only meant to read in {by_class['Boundary']}. Only "
-         f"{by_class['Accuracy']} come down to it saying something untrue. A counted case "
-         "is one with a primary record plus an independent report. Check the order of "
-         f"checks: test accuracy first instead and it is still {facts['accuracy_first']} "
-         f"of {total}.", None),
+         "The missing safeguard wasn't about accuracy.",
+         f"In {by_class['Authority']} cases the agent could do more than its task needed. "
+         f"In {by_class['Boundary']} it obeyed instructions hidden in content it was "
+         f"reading. Only {by_class['Accuracy']} came down to a false statement.",
+         f"Even if every case with a false statement is counted as an accuracy failure, "
+         f"it is still {facts['accuracy_first']} of {total}."),
         ("record-silent-on-stop",
-         "The record does not say who could have halted the deployment.",
-         "That is not the same as nobody being able to. The published account does not "
-         f"name the role. In {counts['no-review-date']} of {total} there is also no date "
-         "set to look at the agent again. Write both down for your own agent.", None),
+         "The public record doesn't say who could have stopped it.",
+         "That doesn't mean no one could, only that no published account names them. None "
+         f"of the {total} records a date to review the agent again. Could you name both "
+         "for your own agent?",
+         None),
         ("not-attacker",
-         "No attacker involved.",
-         "The harm came from how the agent was deployed. It acted in ordinary use, or "
-         "did what the organisation running it had set it up to do. Most failures in this "
-         "register were not attacks.", None),
+         "No attacker was involved.",
+         "The harm came from normal use, or from the agent doing what its own organisation "
+         "set it up to do. Most failures here weren't attacks. They came from how the "
+         "agent was deployed.",
+         None),
     ]
-    columns = st.columns(3)
-    for column, (key, say, more, extra) in zip(columns, cards):
+    blocks = []
+    for key, say, more, note in cards:
         n = counts[key]
-        with column:
-            st.markdown(
-                f'<div class="fcard"><div class="big">{n}<small>of {total}</small></div>'
-                f'{dots(n, total)}<p class="say">{esc(say)}</p>'
-                + (f'<p class="more">{esc(more)}</p>' if more else "")
-                + "</div>",
-                unsafe_allow_html=True,
-            )
-            st.link_button(f"Show these {n}", f"?view={key}", width="stretch")
-            if extra:
-                st.link_button(
-                    f"{counts[extra]} was built and did not hold", f"?view={extra}",
-                    width="stretch",
-                )
+        blocks.append(
+            f'<div class="fcard"><div class="big">{n}<small>of {total}</small></div>'
+            f'{dots(n, total)}<p class="say">{esc(say)}</p>'
+            f'<p class="more">{esc(more)}</p>'
+            + (f'<p class="note">{esc(note)}</p>' if note else "")
+            + f'<div class="cardbtn"><a href="?view={key}" target="_self">'
+            f"Show these {n}</a></div></div>"
+        )
+    st.markdown(f'<div class="cards">{"".join(blocks)}</div>', unsafe_allow_html=True)
 
     with st.sidebar:
         st.markdown("### Filter the cases")
