@@ -50,6 +50,17 @@ st.set_page_config(
 # modified by MIT. Captured 10 October 2026 and transcribed into
 # frameworks/mit_severity_framework.csv. A case's headline level is the highest level it
 # reached on any harm type.
+# The words a reader sees for each control state. One map, used by the cards and by the
+# Findings table, because the two described the same state differently: a card showed the
+# raw value and the table said "Built but the attacker could switch it off".
+MATURITY_LABEL = {
+    "Absent": "Never built",
+    "Designed": "On paper only",
+    "Implemented": "Built but did not hold",
+    "Bypassable": "Built but could be switched off",
+    "Unknown": "Record does not say",
+}
+
 MATURITY_MEANING = {
     "Absent": "The control did not exist in any form.",
     "Designed": "It existed on paper, in a policy or an instruction, with nothing enforcing it.",
@@ -236,9 +247,10 @@ table.cases tr.notcounted td { color: var(--muted); }
    with the header, so it reads as a table and still expands in place. */
 .ctbl { border:1px solid var(--grid-line); border-radius:12px; overflow:hidden; }
 .ctbl-head, .crow > summary {
-  display:grid; grid-template-columns:96px 1fr 150px 190px 110px; gap:12px;
+  display:grid; grid-template-columns:92px 92px 160px 1fr 130px 180px 100px; gap:10px;
   align-items:center; padding:10px 14px;
 }
+.crow .cdate { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .ctbl-head {
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
   color:var(--ink-2); background:rgba(127,127,127,.14);
@@ -331,6 +343,12 @@ p.gmean { font-size:13px; color:#52514e; margin:0 0 10px; max-width:760px; line-
   padding:14px; font-size:14px; color:var(--muted); border-top:1px solid var(--grid-line);
 }
 
+.fwtable td.fwk { white-space:nowrap; font-weight:600; width:200px; }
+.fwbasis { font-size:12px; color:#52514e; margin-top:2px; }
+p.org { margin:0 0 9px; padding:8px 10px; background:rgba(127,127,127,.07);
+  border-radius:7px; }
+p.fwnote { font-size:12px; color:#52514e; margin:6px 0 0; line-height:1.5; }
+
 /* Tabs inside an open row. The active pane is a class rather than :checked, because
    React resets natively injected form controls and the radio trick died silently. */
 .ctabs .tabrow { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 12px; }
@@ -384,6 +402,9 @@ COUNTED_GRADES = rules_check.COUNTED_GRADES
 CONTROL_CLASSES = rules_check.CONTROL_CLASSES
 OWASP_CODES = rules_check.OWASP_CODES
 OWASP_STATUS = rules_check.OWASP_STATUS
+NIST_RMF_ROWS = rules_check.NIST_RMF_ROWS
+EU_ARTICLE_ROWS = rules_check.EU_ARTICLE_ROWS
+NIST_800_4_ROWS = rules_check.NIST_800_4_ROWS
 
 GRADE_MEANING = {
     "A": "A primary record, meaning a ruling, a regulator notice, a vendor security advisory or a threat intelligence report, plus a second source on another site that corroborates it rather than restating it.",
@@ -533,6 +554,51 @@ def _home_link(chosen, show_uncounted=False):
     return "?" + "&".join(parts) if parts else "?"
 
 
+def frameworks_html(row):
+    """Where this case sits in each published framework, with the official wording.
+
+    Every name and every clause text is read from the files in frameworks/, so a label
+    on a card is the framework owner's words and not a paraphrase typed here. ISO/IEC
+    42001 is deliberately absent: its numbers have never been read against the text.
+    """
+    def line(label, value, text, basis):
+        body = f"<b>{esc(value)}</b>"
+        if text:
+            body += f" &middot; {esc(text)}"
+        return (
+            f'<tr><td class="fwk">{esc(label)}</td><td>{body}'
+            f'<div class="fwbasis">{esc(basis)}</div></td></tr>'
+        )
+
+    rows = []
+    for ref in (r.strip() for r in row["nist_ai_rmf"].split(",") if r.strip()):
+        rows.append(line(
+            "NIST AI RMF 1.0", ref,
+            NIST_RMF_ROWS.get(ref, {}).get("text", ""), row["nist_ai_rmf_basis"],
+        ))
+    for ref in (r.strip() for r in row["eu_ai_act"].split(",") if r.strip()):
+        inner = ref
+        if ref.startswith("None (closest:"):
+            inner = "Article " + ref.split("Article ")[1].rstrip(")")
+        title = EU_ARTICLE_ROWS.get(inner, {}).get("title", "")
+        rows.append(line("EU AI Act", ref, title, row["eu_ai_act_basis"]))
+    rows.append(line(
+        "OWASP Agentic Top 10 2026", row["owasp_code"],
+        OWASP_CODES.get(row["owasp_code"], ""), row["owasp_code_basis"],
+    ))
+    rows.append(line(
+        "NIST AI 800-4 monitoring", row["nist_800_4_category"],
+        NIST_800_4_ROWS.get(row["nist_800_4_category"], {}).get("what_it_covers", ""),
+        "Register's summary, not NIST's wording",
+    ))
+    return (
+        '<table class="mini fwtable"><tbody>' + "".join(rows) + "</tbody></table>"
+        "<p class=\"fwnote\">Names and clause text come from the published lists in this "
+        "repository, each with its source and the date it was read. The mapping to this "
+        "case is the register's, not the framework owner's.</p>"
+    )
+
+
 def case_sections_html(row, ratings=None):
     """One case's full record as plain HTML.
 
@@ -579,14 +645,22 @@ def case_sections_html(row, ratings=None):
             )
 
     panes = [
-        ("What happened", para(row["what_happened"]) + para(row["why_in_register"])),
+        (
+            "What happened",
+            # Named here rather than worked into every title. Fourteen of the twenty one
+            # titles did not carry the organisation, and rewriting them to force it in
+            # would have risked the facts for the sake of a convention.
+            f'<p class="org"><b>Organisation.</b> {esc(row["deployer"])}'
+            f'<br><b>When.</b> {esc(row["event_date"])}</p>'
+            + para(row["what_happened"]) + para(row["why_in_register"]),
+        ),
         (
             "What was missing",
             f"<p><b>{esc(row['control_class'])}.</b> "
             f"{esc(CONTROL_CLASSES[row['control_class']])}</p>"
-            f"<p><b>State it was in: {esc(row['control_maturity'])}.</b> "
+            f"<p><b>State it was in: {esc(MATURITY_LABEL[row['control_maturity']])}.</b> "
             f"{esc(MATURITY_MEANING[row['control_maturity']])}</p>"
-            f"<p><b>Who pointed it at this: {esc(row['directed_by'])}.</b> "
+            f"<p><b>Who directed the agent: {esc(row['directed_by'])}.</b> "
             f"{esc(DIRECTED_MEANING[row['directed_by']])}</p>"
             + para(row["missing_control"]) + para(row["missing_control_basis"]),
         ),
@@ -607,6 +681,7 @@ def case_sections_html(row, ratings=None):
             f"{esc(row['eu_basis'])}</p>",
         ),
         ("Aftermath", para(row["what_changed_after"])),
+        ("Frameworks", frameworks_html(row)),
     ]
 
     # Tabs without a Streamlit widget. The first attempt used hidden radios and a CSS
@@ -708,17 +783,23 @@ def case_table(view, ratings=None, open_id=None):
     rerun, and the reader keeps their place, their filters and their scroll position.
     """
     head = (
-        '<div class="ctbl-head"><span>ID</span><span>What happened</span>'
+        '<div class="ctbl-head"><span>ID</span><span>Date</span>'
+        "<span>Organisation</span><span>What happened</span>"
         "<span>Missing control</span><span>Severity</span><span>Evidence</span></div>"
     )
     rows = []
     for _, row in view.iterrows():
         klass = " notcounted" if not row["counted"] else ""
         is_open = " open" if open_id and row["id"] == open_id else ""
+        # The deployer field names the organisation and sometimes the tool maker too.
+        # The column shows the organisation, and the card carries the full phrasing.
+        org = row["deployer"].split(",")[0].strip()
         rows.append(
             f'<details class="crow{klass}" id="{esc(row["id"])}"{is_open}>'
             '<summary><span class="cid"><i class="caret"></i>'
-            f'{esc(row["id"])}</span><span>{esc(row["title"])}</span>'
+            f'{esc(row["id"])}</span>'
+            f'<span class="cdate">{esc(row["event_date"])}</span>'
+            f'<span>{esc(org)}</span><span>{esc(row["title"])}</span>'
             f'<span>{esc(row["control_class"])}</span>'
             f'<span>{severity_pill(row["mit_level"], row["mit_floored"])}</span>'
             f'<span>{grade_badge(row["evidence_grade"])}</span></summary>'
@@ -945,10 +1026,7 @@ def tab_what_was_missing(frame):
     st.markdown(
         f"**{facts['control_absent']} of {facts['total']} had no such control in any form.**"
     )
-    labels = [("Absent", "Never built"), ("Designed", "On paper only"),
-              ("Implemented", "Built but did not hold"),
-              ("Bypassable", "Built but the attacker could switch it off"),
-              ("Unknown", "Record does not say")]
+    labels = list(MATURITY_LABEL.items())
     rows = []
     for key, label in labels:
         subset = counted[counted["control_maturity"] == key]
@@ -1109,7 +1187,7 @@ def tab_how_severe(frame):
         )
         st.markdown(table_controls(), unsafe_allow_html=True)
         st.markdown(
-            case_table(rows.sort_values("id"), ratings=ratings),
+            case_table(rows.sort_values("event_date", ascending=False), ratings=ratings),
             unsafe_allow_html=True,
         )
     else:
@@ -1140,7 +1218,7 @@ def tab_how_severe(frame):
                 st.markdown(empty_case_table(), unsafe_allow_html=True)
                 continue
             st.markdown(
-                case_table(rows.sort_values("id"), ratings=ratings),
+                case_table(rows.sort_values("event_date", ascending=False), ratings=ratings),
                 unsafe_allow_html=True,
             )
 
@@ -1384,14 +1462,14 @@ def incident_card(row):
     with missing:
         directed_tier = row["directed_by_basis"].split(".")[0].strip()
         st.markdown(
-            f"**Who pointed it at this: {row['directed_by']}.** "
+            f"**Who directed the agent: {row['directed_by']}.** "
             f"{DIRECTED_MEANING[row['directed_by']]}\n\n"
             f"{esc(row['directed_by_basis'])}"
         )
         st.markdown("")
         tier = row["missing_control_basis"].split(".")[0].strip()
         st.markdown(
-            f"**State it was in: {row['control_maturity']}.** "
+            f"**State it was in: {MATURITY_LABEL[row['control_maturity']]}.** "
             f"{MATURITY_MEANING[row['control_maturity']]}\n\n"
             f"**How the register knows: {tier}.** "
             f"{esc(row['missing_control_basis'].split('.', 1)[1].strip())}"
@@ -1636,7 +1714,9 @@ def screen_home(frame):
         view = view[view[columns_to_search].apply(
             lambda r: needle in " ".join(r).lower(), axis=1
         )]
-    view = view.sort_values("id")
+    # Newest first. A register reads as a timeline, and the most recent case is the
+    # one a reader is most likely to recognise.
+    view = view.sort_values("event_date", ascending=False)
 
     st.markdown("---")
     if chosen:

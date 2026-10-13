@@ -21,6 +21,7 @@ here rather than in tests/, where everything is standard library on purpose.
 """
 
 import csv
+import re
 import sys
 from pathlib import Path
 
@@ -95,12 +96,12 @@ def main(argv):
         print("  FAIL  the requested row did not open in place", file=sys.stderr)
         clean = False
     else:
-        # Five tabs and five panes per row, with exactly one pane open in each. The whole
+        # Six tabs and six panes per row, with exactly one pane open in each. The whole
         # table is one markdown string, so these are counted across every row.
         n_rows = opened.count('<details class="crow')
         checks = {
-            "tabs": (opened.count('class="tb'), n_rows * 5),
-            "panes": (opened.count('class="pane'), n_rows * 5),
+            "tabs": (opened.count('class="tb'), n_rows * 6),
+            "panes": (opened.count('class="pane'), n_rows * 6),
             "open panes": (opened.count('class="pane on"'), n_rows),
         }
         for name, (got, want) in checks.items():
@@ -111,7 +112,7 @@ def main(argv):
                 )
                 clean = False
         if all(got == want for got, want in checks.values()):
-            print(f"          five tabs per row, one pane open, across {n_rows} rows")
+            print(f"          six tabs per row, one pane open, across {n_rows} rows")
 
     # The row tabs and the open and close controls are wired by one delegated listener.
     # It lived inside the home screen for a while, which left both dead on Findings with
@@ -132,6 +133,37 @@ def main(argv):
             clean = False
         else:
             print(f"          {screen_name}: {rows} rows, controls present")
+
+    # Every control-state label a card shows has to be one the Findings table uses. The
+    # two drifted apart once already: cards printed the raw value while the table printed
+    # a sentence, so the same state read as two different things depending on the page.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.run()
+    home_html = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+    at2 = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at2.query_params["screen"] = "Findings"
+    at2.run()
+    findings_html = "\n".join(str(getattr(e, "value", "")) for e in at2.markdown)
+    labels = [
+        "Never built", "On paper only", "Built but did not hold",
+        "Built but could be switched off", "Record does not say",
+    ]
+    shown = re.findall(r"State it was in: ([^.<]+)\.", home_html)
+    stray = sorted({v for v in shown if v not in labels})
+    missing_from_findings = [v for v in set(shown) if v not in findings_html]
+    if stray:
+        print(f"  FAIL  cards show control states the list does not have: {stray}",
+              file=sys.stderr)
+        clean = False
+    elif missing_from_findings:
+        print(
+            f"  FAIL  cards show states the Findings table never uses: "
+            f"{sorted(missing_from_findings)}",
+            file=sys.stderr,
+        )
+        clean = False
+    else:
+        print(f"          control-state wording matches, {len(set(shown))} states in use")
 
     # A ?case= link opens that row, and must not leave the parameter behind to pin the
     # same row open on every later screen. Findings read the parameter too, so a stale
