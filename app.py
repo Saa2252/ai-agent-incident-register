@@ -1664,7 +1664,8 @@ def screen_watchlist(frame, rules):
     )
     st.info(
         "No model runs in this tool and nothing you answer is stored or sent anywhere. "
-        f"The rules are in rules/watchlist_rules.json, version {rules['version']}.",
+        f"The rules are a fixed list, version {rules['version']}, published in the "
+        "repository and explained on Method.",
         icon="🔒",
     )
 
@@ -1688,55 +1689,6 @@ def screen_watchlist(frame, rules):
 
     st.markdown("---")
 
-    st.markdown("---")
-    st.markdown("### Who holds these controls in your organisation?")
-    st.markdown(
-        "This register names organisations and never individuals, and that is the "
-        "stronger version rather than the cautious one. A name is unusable to you. A "
-        "**role** is a lookup into your own org chart. These are the roles that came up "
-        f"across all {headline(frame)['all_rows']} cases, and the useful exercise is to put a "
-        "name against each one for your own agent and see which lines you cannot fill."
-    )
-    role_rows = sorted(headline(frame)["roles"].items(), key=lambda item: (-item[1], item[0]))
-    template = pd.DataFrame(
-        [{"Role": name, "Cases": count, "Who is this in your organisation?": ""}
-         for name, count in role_rows]
-    )
-    # The return value, not session state. Session state holds a pending-edits object
-    # rather than the frame. on_click="ignore" keeps the download from re-running the
-    # script, which would otherwise throw away whatever the reader has typed.
-    edited = st.data_editor(
-        template,
-        key="roles_checklist",
-        num_rows="fixed",
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "Role": st.column_config.TextColumn("Role", width=300, disabled=True),
-            "Cases": st.column_config.NumberColumn(
-                "Cases", width=80, disabled=True,
-                help="Cases out of 11 where this role was the one that mattered.",
-            ),
-            "Who is this in your organisation?": st.column_config.TextColumn(
-                "Who is this in your organisation?", width="large", max_chars=120,
-            ),
-        },
-    )
-    st.download_button(
-        "Download your filled checklist",
-        data=edited.to_csv(index=False).encode("utf-8"),
-        file_name="roles-checklist.csv",
-        mime="text/csv",
-        on_click="ignore",
-        help="Type into the third column first. Your answers stay in your browser.",
-    )
-    st.caption(
-        "Type into the third column and download it. Each case names the role that runs "
-        "the control and the role that answers when it fails, which are rarely the same. "
-        "A row you cannot fill is the finding, and it is the row worth taking to whoever "
-        "owns the agent."
-    )
-
     if not answers:
         st.markdown("### Your list")
         st.info(
@@ -1750,8 +1702,8 @@ def screen_watchlist(frame, rules):
                 st.markdown(f"**{rule['id']}. {rule['title']}**")
                 st.caption(rule["test"])
         st.caption(
-            "This is a starting point built from 12 public cases, not an assessment of "
-            "your system."
+            f"This is a starting point built from {headline(frame)['total']} counted "
+            "cases, not an assessment of your system."
         )
         return
 
@@ -1791,8 +1743,28 @@ def screen_watchlist(frame, rules):
         )
 
     titles = dict(zip(frame["id"], frame["title"]))
-    for rule in selected:
-        with st.expander(f"{rule['id']} · {rule['title']}", expanded=False):
+    levels = dict(zip(frame["id"], frame["mit_level"]))
+
+    # A list of twenty one items is a backlog, not a watch list. The order is evidence
+    # rather than an invented priority: the worst harm among the cases behind a rule,
+    # then how many cases back it. Both are read from the register, so a rule rises
+    # because the record moved and not because somebody re-ranked it.
+    def weight(rule):
+        mine = [levels.get(i, 0) for i in rule["incident_ids"]]
+        return (max(mine) if mine else 0, len(mine))
+
+    selected = sorted(selected, key=weight, reverse=True)
+    head, tail = selected[:5], selected[5:]
+
+    def render(rule):
+        mine = [levels.get(i, 0) for i in rule["incident_ids"]]
+        worst = MIT_LEVELS[max(mine)] if mine else "not rated"
+        n = len(rule["incident_ids"])
+        with st.expander(
+            f"{rule['id']} · {rule['title']}  —  {n} case{'s' if n != 1 else ''}, "
+            f"worst {worst}",
+            expanded=False,
+        ):
             st.markdown(f"**Why this is on your list.** {esc(rule['triggered_by'])}")
             st.warning(
                 f"**Test before launch.** {esc(rule['test'])}\n\n"
@@ -1811,7 +1783,16 @@ def screen_watchlist(frame, rules):
                 st.markdown(f"- **{incident}** {esc(titles.get(incident, 'not found'))}")
             st.markdown(f"**What those cases show.** {esc(rule['why'])}")
 
-
+    st.markdown(
+        f"**Start with these {len(head)}.** They are the ones whose cases did the most "
+        "harm in this register, and where most cases back the rule."
+    )
+    for rule in head:
+        render(rule)
+    if tail:
+        with st.expander(f"The other {len(tail)} items on your list"):
+            for rule in tail:
+                render(rule)
 
     st.markdown("---")
     if selected:
@@ -1822,10 +1803,68 @@ def screen_watchlist(frame, rules):
             mime="text/markdown",
             type="primary",
         )
+    st.markdown("---")
+    st.markdown("### Who holds these controls in your organisation?")
+    st.markdown(
+        "This register names organisations and never individuals, and that is the "
+        "stronger version rather than the cautious one. A name is unusable to you. A "
+        "**role** is a lookup into your own org chart. These are the roles that came up "
+        f"across the {headline(frame)['total']} counted cases, and the useful exercise is "
+        "to put a name against each one for your own agent and see which lines you cannot "
+        "fill."
+    )
+    # Twenty seven rows is not an exercise, it is a wall. The roles that came up more
+    # than once are the ones worth a name, and the single-case tail sits behind a line
+    # rather than padding the table.
+    all_roles = sorted(headline(frame)["roles"].items(), key=lambda item: (-item[1], item[0]))
+    role_rows = [(name, count) for name, count in all_roles if count > 1]
+    tail = [name for name, count in all_roles if count == 1]
+    template = pd.DataFrame(
+        [{"Role": name, "Cases": count, "Who is this in your organisation?": ""}
+         for name, count in role_rows]
+    )
+    # The return value, not session state. Session state holds a pending-edits object
+    # rather than the frame. on_click="ignore" keeps the download from re-running the
+    # script, which would otherwise throw away whatever the reader has typed.
+    edited = st.data_editor(
+        template,
+        key="roles_checklist",
+        num_rows="fixed",
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Role": st.column_config.TextColumn("Role", width=300, disabled=True),
+            "Cases": st.column_config.NumberColumn(
+                "Cases", width=80, disabled=True,
+                help="Counted cases where this role was the one that mattered.",
+            ),
+            "Who is this in your organisation?": st.column_config.TextColumn(
+                "Who is this in your organisation?", width="large", max_chars=120,
+            ),
+        },
+    )
+    st.download_button(
+        "Download your filled checklist",
+        data=edited.to_csv(index=False).encode("utf-8"),
+        file_name="roles-checklist.csv",
+        mime="text/csv",
+        on_click="ignore",
+        help="Type into the third column first. Your answers stay in your browser.",
+    )
+    if tail:
+        with st.expander(f"The other {len(tail)} roles, each from a single case"):
+            st.markdown("\n".join(f"- {esc(name)}" for name in tail))
     st.caption(
-        "This is a starting point built from 12 public cases, not an assessment of your "
-        "system. It will miss risks specific to your setting, and passing every test here "
-        "does not make an agent safe."
+        "Type into the third column and download it. Each case names the role that runs "
+        "the control and the role that answers when it fails, which are rarely the same. "
+        "A row you cannot fill is the finding, and it is the row worth taking to whoever "
+        "owns the agent."
+    )
+
+    st.caption(
+        f"This is a starting point built from {headline(frame)['total']} counted cases, "
+        "not an assessment of your system. It will miss risks specific to your setting, "
+        "and passing every test here does not make an agent safe."
     )
 
 

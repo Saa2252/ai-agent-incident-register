@@ -192,6 +192,21 @@ def main(argv):
     at.run()
     clean = report(f"Build your watch list, {answered} questions answered as yes", at) and clean
 
+    # The watch list carried three typed counts that went stale as the register grew, and
+    # the roles table described itself with one total while being computed from another.
+    # Nothing on this screen should name a figure the data does not produce.
+    watch_md = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+    watch_md += "\n".join(str(getattr(e, "value", "")) for e in at.caption)
+    stale = [bad for bad in ("12 public cases", "out of 11", "11 cases") if bad in watch_md]
+    if stale:
+        print(f"  FAIL  the watch list names a stale figure: {stale}", file=sys.stderr)
+        clean = False
+    elif "**Start with these" not in watch_md:
+        print("  FAIL  the watch list is not ordered into a head and a tail", file=sys.stderr)
+        clean = False
+    else:
+        print("          no stale figures, and the list has a head and a tail")
+
     # The narrowest case: no risky authority, but a person approves. This branch was
     # unsatisfiable until 12 October 2026, because a yes on Q6 was counted as a risk
     # answer, so the message never rendered while every screen still passed. Rendering
