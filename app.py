@@ -846,17 +846,16 @@ def tab_what_was_missing(frame):
 
 
 def tab_how_severe(frame):
-    ratings, headline_levels, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
+    """Every case, grouped by whichever framework the reader picks.
+
+    This used to be two panels of tiles that each filtered the table to one level. A
+    reader with two tiles active saw a count of one under tiles reading seven and five,
+    and no way to see the whole picture at once. One toggle and a grouped list shows all
+    of it, and nothing has to be clicked to understand the shape.
+    """
+    ratings, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     definitions = load_mit_framework(data_stamp(MIT_FRAMEWORK_FILE))
     harms = list(definitions["harm_type"].drop_duplicates())
-    limbs = {
-        r["limb"]: r["text"]
-        for r in csv.DictReader(
-            open(APP_DIR / "frameworks" / "eu_ai_act_serious_incident.csv", encoding="utf-8")
-        )
-    }
-
-    counted_here = frame[frame["counted"]]
 
     st.markdown("#### How severe was the harm?")
     st.markdown(
@@ -864,231 +863,82 @@ def tab_how_severe(frame):
         "Read them for how the harm happened, not how large it was.**"
     )
 
-    active_level = st.query_params.get("level")
-    active_eu = st.query_params.get("eu")
-    chosen_harms = st.pills(
-        "Filter by harm type", harms, selection_mode="multi", default=[]
+    MIT_NAME = "MIT harm severity scale"
+    EU_NAME = "EU AI Act: serious-incident test"
+    which = st.radio(
+        "Group the cases by",
+        [MIT_NAME, EU_NAME],
+        horizontal=True,
+        label_visibility="collapsed",
     )
 
-    def apply_filters(rows, level=None, eu=None, harm_types=()):
-        """Every filter in one place, so the tile counts and the table cannot disagree."""
-        if level:
-            rows = rows[rows["mit_level"].map(MIT_LEVELS) == level]
-        if eu:
-            rows = rows[rows["eu_serious_incident"] == eu]
-        if harm_types:
-            ids = set(ratings[ratings["harm_type"].isin(harm_types)]["case_id"])
-            rows = rows[rows["id"].isin(ids)]
-        return rows
-
-    # A tile shows what clicking it would give you, taking the other filters into
-    # account. Showing each tile's total in isolation is what made a 7 and a 5 produce
-    # a 1 with nothing on the page explaining it.
-    def tile_count(level=None, eu=None):
-        return len(apply_filters(
-            counted_here,
-            level=level or active_level,
-            eu=eu or active_eu,
-            harm_types=chosen_harms,
-        ))
-
-    def tile_link(param, value, current):
-        keep = [] if current == value else [f"{param}={quote_plus(value)}"]
-        other, held = ("eu", active_eu) if param == "level" else ("level", active_level)
-        if held:
-            keep.append(f"{other}={quote_plus(held)}")
-        keep.append("screen=Findings")
-        return "?" + "&".join(keep)
-
-    tiles = []
-    for level in MIT_ORDER:
-        name = MIT_LEVELS[level]
-        on = " on" if active_level == name else ""
-        n = tile_count(level=name) if active_level != name else tile_count()
-        tiles.append(
-            f'<a class="tile{on}" target="_self" '
-            f'href="{esc(tile_link("level", name, active_level))}">'
-            f'<span class="tlabel">{severity_pill(level)}</span>'
-            f'<span class="tcount">{n}</span></a>'
+    if which == MIT_NAME:
+        st.markdown(
+            "Built by the MIT AI Risk Initiative on CSET's taxonomy of AI harm. Five "
+            "levels, up to global-scale harm. "
+            "[About this scale &#8599;](https://airisk.mit.edu/ai-incident-tracker/harm-severity)"
         )
-    eu_tiles = []
-    for value in ("Meets", "Does not meet", "Not determinable from the record"):
-        on = " on" if active_eu == value else ""
-        n = tile_count(eu=value) if active_eu != value else tile_count()
-        eu_tiles.append(
-            f'<a class="tile{on}" target="_self" '
-            f'href="{esc(tile_link("eu", value, active_eu))}">'
-            f'<span class="tlabel">{esc(value)}</span>'
-            f'<span class="tcount">{n}</span></a>'
-        )
-
-    st.markdown(
-        '<div class="panels">'
-        '<section class="panel"><h4>MIT harm severity scale</h4>'
-        f'<div class="tiles">{"".join(tiles)}</div>'
-        "<p>Built by the MIT AI Risk Initiative on CSET's taxonomy of AI harm. Five "
-        "levels, up to global-scale harm. Each number counts the cases you would see if "
-        "you clicked it, with any other filter still applied.</p>"
-        '<p><a href="https://airisk.mit.edu/ai-incident-tracker/harm-severity" '
-        'target="_blank" rel="noopener">About this scale &#8599;</a></p></section>'
-        '<section class="panel"><h4>EU AI Act: serious-incident test</h4>'
-        f'<div class="tiles">{"".join(eu_tiles)}</div>'
-        "<p>Article 3(49) of the EU AI Act defines a serious incident. This is the "
-        "register's reading of the closest part of that definition, not a legal "
-        "classification.</p>"
-        '<p><a href="https://artificialintelligenceact.eu/article/3/" target="_blank" '
-        'rel="noopener">Read Article 3(49) &#8599;</a></p></section></div>',
-        unsafe_allow_html=True,
-    )
-
-    # Counted rows only, so the table matches the tile that opened it. The grade C row
-    # is offered separately rather than quietly making the numbers disagree.
-    show_uncounted = st.query_params.get("c") == "1"
-    all_matching = apply_filters(
-        frame, level=active_level, eu=active_eu, harm_types=chosen_harms
-    )
-    view = all_matching if show_uncounted else all_matching[all_matching["counted"]]
-    uncounted_matches = sorted(all_matching[~all_matching["counted"]]["id"])
-
-    EU_PHRASE = {
-        "Meets": ("meets", "meet"),
-        "Does not meet": ("does not meet", "do not meet"),
-        "Not determinable from the record": (
-            "cannot be settled from the record", "cannot be settled from the record"
-        ),
-    }
-    n = len(view)
-    noun = "case" if n == 1 else "cases"
-    if not (active_level or active_eu or chosen_harms):
-        heading = f"All {n} counted {noun}"
     else:
-        parts = [f"{n} {noun}"]
-        if active_level:
-            parts.append(f"rated {active_level}")
-        if active_eu:
-            verb = EU_PHRASE[active_eu][0 if n == 1 else 1]
-            joiner = "that also" if active_level else "that"
-            if active_eu == "Not determinable from the record":
-                parts.append(f"{joiner} {verb} against the EU serious-incident test")
-            else:
-                parts.append(f"{joiner} {verb} the EU serious-incident test")
-        if chosen_harms:
-            parts.append("affecting " + " and ".join(chosen_harms))
-        heading = " ".join(parts)
-    st.markdown(f"##### {esc(heading)}")
+        st.markdown(
+            "Article 3(49) of the EU AI Act defines a serious incident. This is the "
+            "register's reading of the closest part of that definition, not a legal "
+            "classification. "
+            "[Read Article 3(49) &#8599;](https://artificialintelligenceact.eu/article/3/)"
+        )
 
-    bar = f"**Showing {n} of {len(counted_here)} counted cases**"
-    if active_level or active_eu or chosen_harms:
-        bar += "  ·  [Clear filters](?screen=Findings)"
+    chosen_harms = st.pills(
+        "Narrow to a harm type", harms, selection_mode="multi", default=[]
+    )
+    view = frame
+    if chosen_harms:
+        ids = set(ratings[ratings["harm_type"].isin(chosen_harms)]["case_id"])
+        view = view[view["id"].isin(ids)]
+
+    shown, counted_shown = len(view), int(view["counted"].sum())
+    scope = "All" if not chosen_harms else "The"
+    noun = "case" if shown == 1 else "cases"
+    lead = f"{scope} {shown} {noun}"
+    if chosen_harms:
+        lead += " affecting " + " and ".join(chosen_harms)
+    st.markdown(f"##### {esc(lead)}, grouped by {'severity' if which == MIT_NAME else 'the EU test'}")
+    bar = f"**{counted_shown} of these {shown} feed the figures elsewhere on this site.**"
+    if chosen_harms:
+        bar += "  ·  [Show every case](?screen=Findings)"
     st.markdown(bar)
-    if uncounted_matches and not show_uncounted:
-        joined = ", ".join(uncounted_matches)
-        more = "?" + "&".join(
-            [f"{k}={quote_plus(v)}" for k, v in (("level", active_level), ("eu", active_eu)) if v]
-            + ["c=1", "screen=Findings"]
-        )
-        st.caption(
-            f"{joined} also matches but is not counted, because it rests on a single "
-            f"source. [Show it anyway]({more})"
-            if len(uncounted_matches) == 1 else
-            f"{joined} also match but are not counted, because they rest on a single "
-            f"source. [Show them anyway]({more})"
-        )
 
     if view.empty:
-        st.info("No cases match these filters. [Clear them](?) and try again.", icon="🔍")
+        st.info("No cases affect that harm type. [Show every case](?screen=Findings)", icon="🔍")
         return
 
-    st.markdown(
-        case_table(view, ratings=ratings, open_id=st.query_params.get("case")),
-        unsafe_allow_html=True,
-    )
-    how_to_read(
-        "'At least' means the record doesn't establish the full size of the harm, so the "
-        "rating is the lowest level the record supports."
-    )
-    return
+    if which == MIT_NAME:
+        groups = [
+            (MIT_LEVELS[level], view[view["mit_level"] == level]) for level in MIT_ORDER
+        ]
+        empty_note = "No case in this register reaches this level."
+    else:
+        groups = [
+            (value, view[view["eu_serious_incident"] == value])
+            for value in ("Meets", "Does not meet", "Not determinable from the record")
+        ]
+        empty_note = "No case in this register falls here."
 
-    body = []
-    for row in frame.sort_values("id").itertuples():
-        mine = ratings[ratings["case_id"] == row.id].sort_values("level", ascending=False)
-        affected = "<br>".join(
-            f"{esc(r.harm_type)} "
-            f"<b>{r.level} {MIT_LEVELS[r.level]}</b>{' (at least)' if r.at_least == 'Yes' else ''}"
-            for r in mine.itertuples()
-        )
-        body.append(
-            f'<tr><td class="id"><a href="?case={row.id}">{esc(row.id)}</a></td>'
-            f"<td>{esc(row.title)}</td>"
-            f"<td>{severity_pill(row.mit_level, row.mit_floored)}</td>"
-            f'<td style="font-size:13px">{affected}</td>'
-            f"<td>{esc(row.eu_serious_incident)}</td>"
-            f'<td style="font-size:13px">({esc(row.eu_closest_limb)}) '
-            f"{esc(limbs[row.eu_closest_limb])}</td></tr>"
-        )
-    st.markdown(f"**Harm severity and the closest EU limb, case by case, all {len(frame)} cases**")
-    st.markdown(
-        '<div class="case-table-wrap"><table class="cases"><thead><tr><th>Case</th>'
-        "<th>What happened</th><th>Highest MIT level</th><th>Harm types affected</th>"
-        "<th>EU threshold</th><th>Closest limb</th></tr></thead>"
-        f"<tbody>{''.join(body)}</tbody></table></div>",
-        unsafe_allow_html=True,
-    )
-    how_to_read(
-        "One row per case. A case's headline level is the highest it reached on any harm "
-        "type. \"At least\" means the record does not establish the magnitude, so the "
-        "level is a floor rather than a measurement. Closest limb, not a legal "
-        "classification."
-    )
-
-    st.markdown("")
-    st.markdown("**Cases by headline severity**")
-    bars = []
-    for level in MIT_ORDER:
-        n = sum(1 for v in headline_levels.values() if v == level)
-        width = 100 * n / max(1, len(headline_levels))
-        bars.append(
-            '<div style="display:flex;align-items:center;gap:10px;margin:4px 0">'
-            f'<span style="width:160px;flex:none">{severity_pill(level)}</span>'
-            f'<span style="flex:1;background:var(--track);border-radius:4px">'
-            f'<span style="display:block;width:{width:.2f}%;height:16px;border-radius:4px;'
-            f'background:var(--sev-{MIT_SLUG[level]})"></span></span>'
-            f'<b style="width:28px;text-align:right">{n}</b></div>'
-        )
-    st.markdown("".join(bars), unsafe_allow_html=True)
-
-    eu_counts = frame["eu_serious_incident"].value_counts().to_dict()
-    st.caption(
-        "EU Article 3(49): "
-        + ", ".join(
-            f"{eu_counts.get(k, 0)} {k.lower()}"
-            for k in ["Meets", "Does not meet", "Not determinable from the record"]
-        )
-        + ". Several of these deployers are outside the Act's scope entirely."
-    )
-
-    with st.expander("MIT's full definitions"):
-        header = "".join(f"<th>{esc(h)}</th>" for h in harms)
-        grid = []
-        for level in MIT_ORDER:
-            cells = "".join(
-                "<td>"
-                + esc(definitions[(definitions["level"] == level)
-                                  & (definitions["harm_type"] == harm)]["descriptor"].iloc[0])
-                + "</td>"
-                for harm in harms
-            )
-            grid.append(
-                f'<tr><td style="white-space:nowrap">{severity_pill(level)}</td>{cells}</tr>'
-            )
-        st.markdown("**MIT's severity bands, and how many cases sit in each**")
+    open_id = st.query_params.get("case")
+    for name, rows in groups:
+        n = len(rows)
+        st.markdown(f"**{esc(name)} &middot; {n} {'case' if n == 1 else 'cases'}**")
+        if rows.empty:
+            st.caption(empty_note)
+            continue
         st.markdown(
-            '<div class="case-table-wrap"><table class="cases">'
-            f"<thead><tr><th>Level</th>{header}</tr></thead>"
-            f"<tbody>{''.join(grid)}</tbody></table></div>",
+            case_table(rows.sort_values("id"), ratings=ratings, open_id=open_id),
             unsafe_allow_html=True,
         )
-        st.caption(MIT_ATTRIBUTION)
+
+    how_to_read(
+        "'At least' means the record doesn't establish the full size of the harm, so the "
+        "rating is the lowest level the record supports. A greyed row rests on a single "
+        "source, so it is shown here and left out of every figure."
+    )
 
 
 def tab_what_the_record_shows(frame):
