@@ -113,6 +113,24 @@ def main(argv):
         if all(got == want for got, want in checks.values()):
             print(f"          five tabs per row, one pane open, across {n_rows} rows")
 
+    # A ?case= link opens that row, and must not leave the parameter behind to pin the
+    # same row open on every later screen. Findings read the parameter too, so a stale
+    # one opened a case there as well.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["case"] = "AIR-002"
+    at.query_params["screen"] = "Findings"
+    at.run()
+    findings_html = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+    clean = report("Findings with a stale case parameter", at) and clean
+    if 'id="AIR-002" open>' in findings_html:
+        print(
+            "  FAIL  a stale case parameter still opens a row on Findings",
+            file=sys.stderr,
+        )
+        clean = False
+    else:
+        print("          a stale case parameter does not pin a row open elsewhere")
+
     # Each card says "N of 20" and its button has to land on exactly N rows. This was
     # wrong until 13 October 2026: the cards counted grade A and B rows while the
     # filtered table also showed grade C ones, so a card saying 17 opened a table of

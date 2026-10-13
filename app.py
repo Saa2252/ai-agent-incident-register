@@ -501,7 +501,7 @@ def grade_badge(grade):
     return badge
 
 
-def _home_link(chosen, show_uncounted=False, case=None):
+def _home_link(chosen, show_uncounted=False):
     """A Home URL that keeps the filter the reader is already in.
 
     Every link on Home has to carry the current view forward, or clicking a case ID
@@ -510,10 +510,7 @@ def _home_link(chosen, show_uncounted=False, case=None):
     parts = [f"view={key}" for key in chosen]
     if show_uncounted:
         parts.append("c=1")
-    if case:
-        parts.append(f"case={case}")
-    query = "?" + "&".join(parts) if parts else "?"
-    return query + ("#full-record" if case else "")
+    return "?" + "&".join(parts) if parts else "?"
 
 
 def case_sections_html(row, ratings=None):
@@ -609,6 +606,51 @@ def case_sections_html(row, ratings=None):
         + "</div></div>"
     )
 
+
+
+def open_case_once(valid_ids):
+    """Honour a ?case= deep link once, then take it out of the URL.
+
+    Nothing in the app sets this parameter any more: rows open with a click on the row
+    itself, which never touches the address bar. It exists only so a posted link can open
+    a case. Left in place it pinned that row open on every later render, on Home and on
+    Findings both, because every render read it again. Stripping it with replaceState
+    rather than by rewriting st.query_params avoids a rerun, so the row the reader was
+    sent to stays open while the link stops following them around.
+    """
+    wanted = st.query_params.get("case")
+    if not wanted or wanted not in set(valid_ids):
+        return None
+    components.html(
+        "<script>"
+        "const doc = window.parent.document;"
+        "const scrollerOf = (el) => {"
+        "  let n = el.parentElement;"
+        "  while (n) {"
+        "    const o = window.parent.getComputedStyle(n).overflowY;"
+        "    if (/auto|scroll/.test(o) && n.scrollHeight > n.clientHeight) return n;"
+        "    n = n.parentElement;"
+        "  }"
+        "  return doc.scrollingElement || doc.documentElement;"
+        "};"
+        "const go = () => {"
+        f"  const el = doc.getElementById({wanted!r});"
+        "  if (!el) return false;"
+        "  const s = scrollerOf(el);"
+        "  const base = s === (doc.scrollingElement || doc.documentElement)"
+        "    ? 0 : s.getBoundingClientRect().top;"
+        "  s.scrollTop += el.getBoundingClientRect().top - base - 20;"
+        "  const u = new URL(window.parent.location);"
+        "  u.searchParams.delete('case');"
+        "  window.parent.history.replaceState({}, '', u);"
+        "  return true;"
+        "};"
+        "let n = 0;"
+        "const t = setInterval(() => { if (go() || ++n > 60) clearInterval(t); }, 150);"
+        "</script>",
+        height=0,
+    )
+    return wanted
 
 
 def empty_case_table():
@@ -1006,7 +1048,10 @@ def tab_how_severe(frame):
             for value in ("Meets", "Does not meet", "Not determinable from the record")
         ]
 
-    open_id = st.query_params.get("case")
+    # Findings never auto-opens a row. A ?case= link is a link into the case list on
+    # Home, and honouring it here as well is what made one case appear open on a page
+    # the reader had just navigated to.
+    open_id = None
     for name, meaning, rows in groups:
         n = len(rows)
         st.markdown(
@@ -1576,40 +1621,9 @@ def screen_home(frame, rules):
 
     ratings_for_cards, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     st.markdown(
-        case_table(view, ratings=ratings_for_cards, open_id=st.query_params.get("case")),
+        case_table(view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])),
         unsafe_allow_html=True,
     )
-    # A query parameter does not make the browser scroll anywhere, so a deep link needs
-    # a nudge. Rendered through a component because Streamlit strips <script> from
-    # markdown, and kept to a zero-height frame so it costs no layout.
-    wanted_case = st.query_params.get("case")
-    if wanted_case and wanted_case in set(view["id"]):
-        components.html(
-            "<script>"
-            "const doc = window.parent.document;"
-            "const scrollerOf = (el) => {"
-            "  let n = el.parentElement;"
-            "  while (n) {"
-            "    const o = window.parent.getComputedStyle(n).overflowY;"
-            "    if (/auto|scroll/.test(o) && n.scrollHeight > n.clientHeight) return n;"
-            "    n = n.parentElement;"
-            "  }"
-            "  return doc.scrollingElement || doc.documentElement;"
-            "};"
-            "const go = () => {"
-            f"  const el = doc.getElementById({wanted_case!r});"
-            "  if (!el) return false;"
-            "  const s = scrollerOf(el);"
-            "  const base = s === (doc.scrollingElement || doc.documentElement)"
-            "    ? 0 : s.getBoundingClientRect().top;"
-            "  s.scrollTop += el.getBoundingClientRect().top - base - 20;"
-            "  return true;"
-            "};"
-            "let n = 0;"
-            "const t = setInterval(() => { if (go() || ++n > 60) clearInterval(t); }, 150);"
-            "</script>",
-            height=0,
-        )
 
     st.caption(
         "Click any row to open its full record in place. Colour means one thing here: how "
