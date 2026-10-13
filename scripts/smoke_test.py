@@ -212,6 +212,68 @@ def main(argv):
         else:
             print(f"          card {key}: {want} counted, {got} rows shown")
 
+    # Seven lenses, two selectors, one URL parameter. The four framework views were
+    # added on 14 October 2026 and none of them is reachable from the default state of
+    # the page, so a view that raises or renders nothing would otherwise go unseen.
+    lenses = {
+        "mit": "MIT harm severity scale",
+        "eu": "EU AI Act serious-incident test",
+        "classes": "This register's missing-control classes",
+        "owasp": "OWASP Agentic Top 10",
+        "rmf": "NIST AI RMF",
+        "articles": "EU AI Act articles",
+        "monitoring": "NIST AI 800-4 monitoring",
+    }
+    for slug, label in lenses.items():
+        at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+        at.query_params["screen"] = "Findings"
+        at.query_params["lens"] = slug
+        at.run()
+        if not report(f"Findings through ?lens={slug}", at):
+            clean = False
+            continue
+        picked = [r.value for r in at.radio if r.label == "View the cases through"]
+        if label not in picked:
+            print(
+                f"          FAIL ?lens={slug} did not select {label!r}, selectors "
+                f"show {picked}",
+                file=sys.stderr,
+            )
+            clean = False
+            continue
+        rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        if slug in {"owasp", "rmf", "articles", "monitoring"}:
+            bars = rendered.count('<div class="srows lens">')
+            rows = len(re.findall(r'<div class="srow">', rendered))
+            if bars != 1 or rows == 0:
+                print(
+                    f"          FAIL ?lens={slug} drew {bars} bar charts and {rows} "
+                    "category rows",
+                    file=sys.stderr,
+                )
+                clean = False
+                continue
+            # Scoped to the chart, not to the page. The page's stylesheet carries
+            # the same hex for a hover state, so a search of the whole render would
+            # pass even with severity colours on the bars.
+            chart = re.search(
+                r'<div class="srows lens">.*?</div></div>', rendered, re.S
+            )
+            colours = set(re.findall(r"background:(#[0-9a-f]{6}|var\(--[a-z-]+\))",
+                                     chart.group(0) if chart else ""))
+            if colours != {"#2a78d6"}:
+                print(
+                    f"          FAIL ?lens={slug} bars are coloured {sorted(colours)}, "
+                    "and severity is the only data colour on this site",
+                    file=sys.stderr,
+                )
+                clean = False
+                continue
+            print(f"          {rows} category rows, one neutral bar chart")
+        if rendered.count('<details class="crow') == 0:
+            print(f"          FAIL ?lens={slug} rendered no cases", file=sys.stderr)
+            clean = False
+
     # v1.0 reached the live site as a KeyError because st.cache_data keys on the
     # function, not on the files it opens, so a new column in the case data left the
     # key unchanged and new code ran against an old table. Nothing here would have
@@ -222,21 +284,38 @@ def main(argv):
     spec = importlib.util.spec_from_file_location("register_app", app)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    before = module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+    #
+    # This asserted only that the stamp moved, and the stamp moving was never the
+    # question. st.cache_data leaves any argument whose name starts with an underscore
+    # out of its key, and the loaders took the stamp as "_stamp", so the stamp moved
+    # and the cache returned the old table anyway. The same KeyError came back on a dev
+    # server on 14 October 2026 with this check green. It now adds a column to the
+    # file and asserts the loader returns a table that has it.
+    stamp = module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+    before = module.load_register(stamp)
     original = module.DATA_FILE.read_bytes()
+    lines = original.decode("utf-8").splitlines()
+    lines[0] += ",cache_probe"
+    lines[1:] = [line + ",x" for line in lines[1:]]
     try:
-        module.DATA_FILE.write_bytes(original + b"\n")
-        after = module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+        module.DATA_FILE.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+        after = module.load_register(
+            module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+        )
     finally:
         module.DATA_FILE.write_bytes(original)
-    if before == after:
+    if "cache_probe" in before.columns:
+        print("  FAIL  the probe column was already there", file=sys.stderr)
+        clean = False
+    elif "cache_probe" not in after.columns:
         print(
-            "  FAIL  the cache stamp does not change when the case data changes",
+            "  FAIL  the loader served a cached table after the case data changed, so "
+            "a new column would reach the live site as a KeyError",
             file=sys.stderr,
         )
         clean = False
     else:
-        print("  ok    cache stamp moves when the case data moves")
+        print("  ok    the loader reloads when the case data changes")
 
     print("\nAll screens rendered." if clean else "\nAt least one screen raised.", file=sys.stderr if not clean else sys.stdout)
     return 0 if clean else 1

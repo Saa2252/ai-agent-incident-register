@@ -144,7 +144,12 @@ div[data-testid="stTable"] table {
 div[data-testid="stMarkdownContainer"] > table th,
 div[data-testid="stMarkdownContainer"] > table td,
 div[data-testid="stTable"] th, div[data-testid="stTable"] td {
-  white-space: normal; overflow-wrap: anywhere; vertical-align: top;
+  /* break-word, not anywhere. "anywhere" lets the browser count a break between
+     every pair of characters when it works out a column's minimum width, which
+     collapsed the change log's Version and Date columns to one character a line
+     once the table was made to fit. break-word still breaks a token that cannot
+     fit on a line of its own, which is all a long URL needs. */
+  white-space: normal; overflow-wrap: break-word; vertical-align: top;
 }
 div[data-testid="stMarkdownContainer"] > table th,
 div[data-testid="stTable"] th { color: #52514e; }
@@ -255,9 +260,13 @@ table.cases tr.notcounted td { color: var(--muted); }
 /* The case index. One <details> per case, summary laid out as a grid that lines up
    with the header, so it reads as a table and still expands in place. */
 .ctbl { border:1px solid var(--grid-line); border-radius:12px; overflow:hidden; }
+/* The fixed columns used to add up to 814px with the gaps, which left "What happened"
+   71px inside a tab panel and wrapped it one word to a line. The six labelled columns
+   are now sized to what they actually hold, so the column carrying the sentence is the
+   one that grows. */
 .ctbl-head, .crow > summary {
-  display:grid; grid-template-columns:92px 92px 160px 1fr 130px 180px 100px; gap:10px;
-  align-items:center; padding:10px 14px;
+  display:grid; grid-template-columns:76px 86px 140px minmax(0, 1fr) 104px 152px 66px;
+  gap:8px; align-items:center; padding:10px 14px;
 }
 .crow .cdate { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .ctbl-head {
@@ -284,11 +293,16 @@ table.cases tr.notcounted td { color: var(--muted); }
 /* The framework choice is the control this page turns on, so it reads as a choice
    rather than a stray pair of radio buttons. Scoped by container key, because the screen
    selector in the sidebar is the same widget and must not grow with it. */
-.st-key-fwpick {
+.st-key-lenspick-bad, .st-key-lenspick-kind {
   border:1px solid var(--grid-line); border-radius:12px; padding:14px 16px; margin:4px 0 10px;
 }
-.st-key-fwpick label p { font-size:17px !important; font-weight:700 !important; }
-.st-key-fwpick [role="radiogroup"] { gap:26px; }
+.st-key-lenspick-bad label p, .st-key-lenspick-kind label p {
+  font-size:17px !important; font-weight:700 !important;
+}
+.st-key-lenspick-bad [role="radiogroup"] { gap:26px; }
+/* Five options rather than two, so they wrap instead of running off the measure. */
+.st-key-lenspick-kind [role="radiogroup"] { gap:18px; flex-wrap:wrap; }
+.st-key-lenspick-kind [role="radiogroup"] > label { max-width:260px; }
 
 /* The harm filter is a secondary control, so it is one tinted button rather than ten
    chips across two rows. */
@@ -332,8 +346,15 @@ p.legend {
   display:flex; flex-direction:column; gap:2px; margin:8px 0 4px; font-size:12px;
 }
 p.legend span { color:#52514e; line-height:1.45; }
+/* The failure-type views. Longer labels than a severity pill, one neutral bar colour,
+   and no hover state, because these rows are not links. */
+.srows.lens .srow { grid-template-columns:270px 1fr 108px; cursor:default; }
+.srows.lens .slabel { font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+.srows.lens .srow:hover { background:transparent; }
 @media (max-width: 760px) {
   .srow { grid-template-columns:140px 1fr 90px; gap:8px; }
+  .srows.lens .srow { grid-template-columns:132px 1fr 76px; gap:8px; }
+  .srows.lens .slabel { font-size:12px; }
 }
 
 /* Group headings. A bare word was not carrying enough, so the band name is sized up and
@@ -411,6 +432,7 @@ COUNTED_GRADES = rules_check.COUNTED_GRADES
 CONTROL_CLASSES = rules_check.CONTROL_CLASSES
 OWASP_CODES = rules_check.OWASP_CODES
 OWASP_STATUS = rules_check.OWASP_STATUS
+OWASP_ROWS = rules_check.OWASP_ROWS
 NIST_RMF_ROWS = rules_check.NIST_RMF_ROWS
 EU_ARTICLE_ROWS = rules_check.EU_ARTICLE_ROWS
 NIST_800_4_ROWS = rules_check.NIST_800_4_ROWS
@@ -456,6 +478,14 @@ def data_stamp(*paths):
     cached before the column existed, which is how v1.0 reached the live site as a
     KeyError while every local check passed. Local runs never caught it because each
     one starts with a cold cache.
+
+    The loaders take this as "stamp" and not as "_stamp". st.cache_data deliberately
+    leaves any argument whose name starts with an underscore out of the key, so the
+    first version of this fix was inert: the stamp moved, the key did not, and the
+    same KeyError came back on 14 October 2026 on a dev server that had been up since
+    before the framework basis columns were added. The test below it now changes the
+    file and asserts the loader returns the change, rather than asserting the stamp
+    moved and assuming the rest.
     """
     return tuple(
         (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else (0, 0)
@@ -468,7 +498,7 @@ MIT_FRAMEWORK_FILE = APP_DIR / "frameworks" / "mit_severity_framework.csv"
 
 
 @st.cache_data
-def load_register(_stamp):
+def load_register(stamp):
     frame = pd.read_csv(DATA_FILE, dtype=str).fillna("")
     frame["counted"] = frame["evidence_grade"].isin(COUNTED_GRADES)
     frame["year"] = frame["event_date"].str.slice(0, 4)
@@ -485,7 +515,7 @@ def load_register(_stamp):
 
 
 @st.cache_data
-def load_harm_ratings(_stamp):
+def load_harm_ratings(stamp):
     """Per-case harm ratings on MIT's framework, and the headline level per case."""
     ratings = pd.read_csv(RATINGS_FILE, dtype=str).fillna("")
     ratings["level"] = ratings["level"].astype(int)
@@ -497,7 +527,7 @@ def load_harm_ratings(_stamp):
 
 
 @st.cache_data
-def load_mit_framework(_stamp):
+def load_mit_framework(stamp):
     frame = pd.read_csv(MIT_FRAMEWORK_FILE, dtype=str)
     frame["level"] = frame["level"].astype(int)
     return frame
@@ -763,12 +793,7 @@ def empty_case_table():
     Dropping the empty levels would quietly flatter the data: the point of using a scale
     that reaches further than this register does is that a reader can see how far.
     """
-    return (
-        '<div class="ctbl"><div class="ctbl-head"><span>ID</span>'
-        "<span>What happened</span><span>Missing control</span><span>Severity</span>"
-        '<span>Evidence</span></div>'
-        '<div class="crow-empty">No cases in this register</div></div>'
-    )
+    return '<div class="ctbl"><div class="crow-empty">No cases in this register</div></div>'
 
 
 def table_controls():
@@ -1130,33 +1155,363 @@ def tab_what_was_missing(frame):
         )
 
 
+# ------------------------------------------------------------- framework lenses
+
+# Severity is this site's only data colour, so the failure-type views use one neutral
+# blue for every bar and print the category name beside it rather than encoding it.
+LENS_BAR = "#2a78d6"
+
+LENS_LABEL = {
+    "mit": ("MIT harm severity scale", "How big was it, compared with all AI harm?"),
+    "eu": ("EU AI Act serious-incident test",
+           "Would it trigger mandatory reporting in the EU?"),
+    "classes": ("This register's missing-control classes",
+                "Which safeguard was missing?"),
+    "owasp": ("OWASP Agentic Top 10", "Which known attack pattern?"),
+    "rmf": ("NIST AI RMF", "Which governance function was missing?"),
+    "articles": ("EU AI Act articles",
+                 "Which provision addresses the missing safeguard?"),
+    "monitoring": ("NIST AI 800-4 monitoring", "What monitoring would have caught it?"),
+}
+LENS_BAD = ["mit", "eu"]
+LENS_KIND = ["classes", "owasp", "rmf", "articles", "monitoring"]
+HOW_BAD_TAB = "How bad"
+WHAT_KIND_TAB = "What kind of failure"
+LENS_TAB = dict(
+    [(s, HOW_BAD_TAB) for s in LENS_BAD] + [(s, WHAT_KIND_TAB) for s in LENS_KIND]
+)
+
+
+def _split(value):
+    """A comma separated field as a list. Two framework fields hold several values."""
+    return [v.strip() for v in str(value).split(",") if v.strip()]
+
+
+def _eu_article(value):
+    """The article a value points at. "None (closest: Article 15)" points at 15."""
+    if value.startswith("None (closest:"):
+        return "Article " + value.split("Article ")[1].rstrip(")")
+    return value
+
+
+def _eu_label(key):
+    title = EU_ARTICLE_ROWS.get(_eu_article(key), {}).get("title", "")
+    if key.startswith("None (closest:"):
+        return f"No provision applies, closest is {_eu_article(key)}"
+    return f"{key} {title}".strip()
+
+
+FRAMEWORK_LENSES = {
+    "owasp": {
+        "name": "OWASP Agentic Top 10 for Agentic Applications, 2026",
+        "unit": "pattern",
+        "plural": "patterns",
+        "multi": False,
+        "show_zeros": True,
+        "rows": lambda: OWASP_ROWS,
+        "basis_field": "owasp_code_basis",
+        "catalogue": lambda: list(OWASP_CODES),
+        "values": lambda row: _split(row["owasp_code"]),
+        "label": lambda key: f"{key} {OWASP_CODES.get(key, '')}".strip(),
+        "meaning": lambda key: "",
+        "sentence": (
+            "OWASP's list names the attack patterns that apply to an agent rather than "
+            "to a chatbot. Each case is given the one code that fits its failure best, "
+            "so the counts below add up to the number of cases."
+        ),
+    },
+    "rmf": {
+        "name": "NIST AI Risk Management Framework 1.0",
+        "unit": "subcategory",
+        "plural": "subcategories",
+        "multi": True,
+        "show_zeros": False,
+        "rows": lambda: NIST_RMF_ROWS,
+        "basis_field": "nist_ai_rmf_basis",
+        "catalogue": lambda: list(NIST_RMF_ROWS),
+        "values": lambda row: _split(row["nist_ai_rmf"]),
+        "label": lambda key: key,
+        "meaning": lambda key: NIST_RMF_ROWS.get(key, {}).get("text", ""),
+        "sentence": (
+            "The framework names the practices an organisation is meant to have in "
+            "place. A case is listed under the subcategory whose practice would have "
+            "had to be working for the failure not to happen."
+        ),
+    },
+    "articles": {
+        "name": "Regulation (EU) 2024/1689, the EU AI Act",
+        "unit": "article",
+        "plural": "articles",
+        "multi": True,
+        "show_zeros": False,
+        "rows": lambda: EU_ARTICLE_ROWS,
+        "basis_field": "eu_ai_act_basis",
+        "catalogue": lambda: list(EU_ARTICLE_ROWS),
+        "values": lambda row: _split(row["eu_ai_act"]),
+        "label": _eu_label,
+        "meaning": lambda key: "",
+        "sentence": (
+            "These are the provisions that come closest to the missing safeguard. "
+            "Whether an obligation applies depends on the role, the system and the "
+            "jurisdiction, so read an article here as a starting point and not as a "
+            "finding of law."
+        ),
+    },
+    "monitoring": {
+        "name": "NIST AI 800-4, Challenges to the Monitoring of Deployed AI Systems",
+        "unit": "category",
+        "plural": "categories",
+        "multi": False,
+        "show_zeros": True,
+        "rows": lambda: NIST_800_4_ROWS,
+        "basis_field": None,
+        "catalogue": lambda: list(NIST_800_4_ROWS),
+        "values": lambda row: _split(row["nist_800_4_category"]),
+        "label": lambda key: key,
+        "meaning": lambda key: NIST_800_4_ROWS.get(key, {}).get("what_it_covers", ""),
+        "sentence": (
+            "NIST groups what an organisation has to watch for once a system is live. A "
+            "case is listed under the kind of monitoring that would have surfaced it. "
+            "The category names are NIST's. The one-line descriptions are this "
+            "register's summary, not NIST's wording."
+        ),
+    },
+}
+
+
+def category_rows(pairs):
+    """One neutral bar per category, with the count printed and empty rows drawn.
+
+    The same shape as the severity rows, without the colour and without the link.
+    Nothing here is clickable, because nothing behind it filters, and a row that looks
+    like a link and does nothing is worse than a row that looks like a row.
+    """
+    widest = max([n for _, n, _ in pairs] + [1])
+    out = []
+    for label, n, extra in pairs:
+        bar = (
+            f'<span class="sbar" style="width:{100 * n / widest:.2f}%;'
+            f'background:{LENS_BAR}"></span>'
+        )
+        if extra:
+            bar += (
+                f'<span class="sbar extra" style="width:'
+                f'{100 * extra / widest:.2f}%;border-color:{LENS_BAR}"></span>'
+            )
+        out.append(
+            f'<div class="srow"><span class="slabel">{esc(label)}</span>'
+            f'<span class="strack">{bar}</span>'
+            f'<span class="scount">{n}'
+            + (f"<small> +{extra} not counted</small>" if extra else "")
+            + "</span></div>"
+        )
+    return f'<div class="srows lens">{"".join(out)}</div>'
+
+
+def framework_view(frame, slug):
+    """One published framework applied to every case, in the same shape for all four.
+
+    The finding as a computed heading, one sentence saying what the framework is, a
+    neutral bar for every category, the cases grouped under their category, and a
+    source line naming the file the labels were read from. Every label here is the
+    framework owner's wording, read from frameworks/, and every count is derived.
+    """
+    spec = FRAMEWORK_LENSES[slug]
+    ratings, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
+    counted = frame[frame["counted"]]
+    uncounted = frame[~frame["counted"]]
+    total = len(counted)
+
+    # A case with two values appears under both, which is why the chart heading says so
+    # for the two multi-valued fields.
+    hits = Counter()
+    extras = Counter()
+    for _, row in counted.iterrows():
+        hits.update(set(spec["values"](row)))
+    for _, row in uncounted.iterrows():
+        extras.update(set(spec["values"](row)))
+
+    catalogue = spec["catalogue"]()
+    seen = set(hits) | set(extras)
+    if spec["show_zeros"]:
+        order = catalogue + sorted(k for k in seen if k not in catalogue)
+    else:
+        order = sorted(seen, key=lambda k: (-hits[k], k))
+    if not order:
+        st.info("No case in this register carries a value from this framework.")
+        return
+
+    top = order[0]
+    for key in order:
+        if hits[key] > hits[top]:
+            top = key
+    n = hits[top]
+
+    if slug == "owasp":
+        st.markdown(
+            f"#### {n} of {total} cases fall under {esc(top)}: "
+            f"{esc(OWASP_CODES.get(top, ''))}."
+        )
+    elif slug == "rmf":
+        st.markdown(
+            f"#### {n} of {total} cases point to {esc(top)}: "
+            f"{esc(NIST_RMF_ROWS.get(top, {}).get('text', ''))}"
+        )
+    elif slug == "articles":
+        st.markdown(
+            f"#### {esc(_eu_article(top))} is the closest provision in {n} of {total} "
+            "cases. None of these systems is confirmed high-risk."
+        )
+    else:
+        st.markdown(
+            f"#### {n} of {total} would have been caught by {esc(top)} monitoring."
+        )
+    st.markdown(spec["sentence"])
+
+    chart_head = f"##### Where the {total} counted cases fall"
+    if spec["multi"]:
+        chart_head += ". Cases can appear under more than one category"
+    st.markdown(chart_head)
+    st.markdown(
+        category_rows([
+            (spec["label"](key), hits[key], extras[key]) for key in order
+        ]),
+        unsafe_allow_html=True,
+    )
+    used = [k for k in order if hits[k] or extras[k]]
+    if spec["show_zeros"]:
+        st.caption(
+            f"{len(used)} of the {len(catalogue)} {spec['plural']} in the published "
+            f"list have a case here. The other "
+            f"{count_word(len(catalogue) - len(used))} "
+            f"{'is' if len(catalogue) - len(used) == 1 else 'are'} drawn at zero, "
+            "because a category with no case is part of the shape."
+        )
+    else:
+        st.caption(
+            f"{len(used)} of the {len(catalogue)} {spec['plural']} this register "
+            "tracks appear here. The published list is too long to draw in full, so "
+            f"the {spec['plural']} with no case are left out rather than drawn at zero."
+        )
+
+    st.markdown(f"##### All {len(frame)} cases, grouped by {spec['unit']}")
+    st.markdown(table_controls(), unsafe_allow_html=True)
+    for key in order:
+        rows = frame[frame.apply(lambda r: key in spec["values"](r), axis=1)]
+        count = len(rows)
+        st.markdown(
+            f'<div class="ghead"><span class="gname">{esc(spec["label"](key))}</span>'
+            f'<span class="gcount">{count} {"case" if count == 1 else "cases"}</span>'
+            "</div>"
+            + (f'<p class="gmean">{esc(spec["meaning"](key))}</p>'
+               if spec["meaning"](key) else ""),
+            unsafe_allow_html=True,
+        )
+        if rows.empty:
+            st.markdown(empty_case_table(), unsafe_allow_html=True)
+            continue
+        st.markdown(
+            case_table(rows.sort_values("event_date", ascending=False), ratings=ratings),
+            unsafe_allow_html=True,
+        )
+
+    table = spec["rows"]()
+    src = (
+        table.get(_eu_article(top))
+        or table.get(top)
+        or next(iter(table.values()), {})
+    )
+    basis_field = spec["basis_field"]
+    if basis_field:
+        stated = int((counted[basis_field] == "Stated").sum())
+        basis = (
+            f"All {total} mappings are this register's reading, not the framework "
+            "owner's."
+            if stated == 0 else
+            f"{total - stated} of the {total} mappings are this register's reading. "
+            f"{stated} {'is' if stated == 1 else 'are'} applied to the case by the "
+            "publication itself."
+        )
+    else:
+        basis = (
+            f"All {total} mappings are this register's reading, not NIST's."
+        )
+    url = src.get("source_url", "")
+    host = url.split("/")[2] if "//" in url else url
+    # Two of the four files record an edition line that already names the framework,
+    # so printing both read as a stutter. The name is added only when it is missing.
+    edition = src.get("verified_against", "")
+    if not edition:
+        lead = spec["name"]
+    elif spec["name"].split(",")[0].lower() in edition.lower():
+        lead = edition
+    else:
+        lead = f"{spec['name']}, {edition}"
+    st.caption(
+        f"Source: {lead}, read from [{host}]({url}) on {src.get('retrieved', '')}. "
+        f"{basis}"
+    )
+    how_to_read(
+        "A greyed row rests on a single source, so it is shown in its group and left "
+        "out of every figure, including the dashed part of a bar."
+    )
+
+
+def lens_picker(group, key):
+    """The selector both Findings tabs carry, with the choice kept in the URL.
+
+    Written on change rather than on every run. Both tabs render on every run, so two
+    selectors writing the same parameter on every run would fight over it and the
+    reader would be moved back to whichever ran last.
+    """
+    slugs = LENS_BAD if group == "bad" else LENS_KIND
+    labels = [LENS_LABEL[s][0] for s in slugs]
+    asked = st.query_params.get("lens")
+
+    def remember():
+        st.query_params["lens"] = slugs[labels.index(st.session_state[key])]
+
+    with st.container(key=f"lenspick-{group}"):
+        chosen = st.radio(
+            "View the cases through",
+            labels,
+            captions=[LENS_LABEL[s][1] for s in slugs],
+            horizontal=True,
+            index=slugs.index(asked) if asked in slugs else 0,
+            key=key,
+            on_change=remember,
+        )
+    return slugs[labels.index(chosen)]
+
+
+def tab_what_kind(frame):
+    """What sort of failure it was, through the register's classes or four frameworks."""
+    lens = lens_picker("kind", "lens_kind")
+    if lens == "classes":
+        tab_what_was_missing(frame)
+    else:
+        framework_view(frame, lens)
+
+
 def tab_how_severe(frame):
-    """Every case, measured against whichever framework the reader picks."""
+    """Every case, measured against whichever of the two harm frameworks is picked."""
     ratings, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     definitions = load_mit_framework(data_stamp(MIT_FRAMEWORK_FILE))
     harms = list(definitions["harm_type"].drop_duplicates())
 
-    MIT_NAME = "MIT harm severity scale"
-    EU_NAME = "EU AI Act serious-incident test"
-    with st.container(key="fwpick"):
-        which = st.radio(
-            "Rate the harm on",
-            [MIT_NAME, EU_NAME],
-            captions=[
-                "How big was it, compared with all AI harm?",
-                "Would it trigger mandatory reporting in the EU?",
-            ],
-            horizontal=True,
-        )
+    mit = lens_picker("bad", "lens_bad") == "mit"
 
+    # The harm filter reads the MIT ratings file, so it belongs to the MIT view alone.
+    # On the EU view it filtered the cases by a dimension the EU test does not use.
     chosen_harms = []
-    with st.container(key="harmpick"), st.popover(
-        "Filter by type of harm", icon=":material/filter_list:", width="content"
-    ):
-        chosen_harms = st.pills(
-            "Harm types", harms, selection_mode="multi", default=[],
-            label_visibility="collapsed",
-        )
+    if mit:
+        with st.container(key="harmpick"), st.popover(
+            "Filter by type of harm", icon=":material/filter_list:", width="content"
+        ):
+            chosen_harms = st.pills(
+                "Harm types", harms, selection_mode="multi", default=[],
+                label_visibility="collapsed",
+            )
     view = frame
     if chosen_harms:
         ids = set(ratings[ratings["harm_type"].isin(chosen_harms)]["case_id"])
@@ -1166,7 +1521,7 @@ def tab_how_severe(frame):
     n = len(counted)
 
     # The heading is the finding, so it has to be built from the data every time.
-    if which == MIT_NAME:
+    if mit:
         middle = int((counted["mit_level"] == 3).sum())
         st.markdown(
             f"#### No case reached the top two levels of harm. {middle} reached the middle."
@@ -1193,7 +1548,7 @@ def tab_how_severe(frame):
             "says so rather than guessing."
         )
 
-    active_level = st.query_params.get("level") if which == MIT_NAME else None
+    active_level = st.query_params.get("level") if mit else None
 
     def level_link(name):
         parts = ["screen=Findings"]
@@ -1201,7 +1556,7 @@ def tab_how_severe(frame):
             parts.append(f"level={quote_plus(name)}")
         return "?" + "&".join(parts)
 
-    if which == MIT_NAME:
+    if mit:
         st.markdown(f"##### Where the {n} cases fall on MIT's scale")
         st.markdown(
             severity_rows(counted, uncounted, active_level, level_link),
@@ -1243,10 +1598,10 @@ def tab_how_severe(frame):
             unsafe_allow_html=True,
         )
     else:
-        label = "severity" if which == MIT_NAME else "the EU test"
+        label = "severity" if mit else "the EU test"
         st.markdown(f"##### All {len(view)} cases, grouped by {label}")
         st.markdown(table_controls(), unsafe_allow_html=True)
-        if which == MIT_NAME:
+        if mit:
             groups = [
                 (MIT_LEVELS[l], MIT_SEVERITY_MEANING[l],
                  view[view["mit_level"] == l], MIT_SLUG[l])
@@ -1450,13 +1805,11 @@ def screen_findings(frame):
         f"What {len(frame)} documented incidents show, measured against recognised "
         "frameworks."
     )
-    severe, missing, record = st.tabs(
-        ["Severity", "Missing safeguards", "Gaps in the record"]
-    )
+    severe, kind, record = st.tabs([HOW_BAD_TAB, WHAT_KIND_TAB, "Gaps in the record"])
     with severe:
         tab_how_severe(frame)
-    with missing:
-        tab_what_was_missing(frame)
+    with kind:
+        tab_what_kind(frame)
     with record:
         tab_what_the_record_shows(frame)
     st.markdown("")
@@ -2308,6 +2661,27 @@ def screen_method(frame):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 1.1 in progress | 2026-10-14 | The fix that was meant to stop a schema "
+        "change reaching the live site as a crash had never worked. Streamlit's data "
+        "cache leaves out any argument whose name begins with an underscore, and the "
+        "loaders took the file stamp as one, so the stamp moved on every data change "
+        "and the cache key did not. The crash came back on a long-running server "
+        "today, which is how it was found. The loaders no longer name it that way. The "
+        "check that was meant to catch this asserted that the stamp moved, which was "
+        "never the question, and now changes the data file and asserts the loader "
+        "returns the change. |\n"
+        "| 1.1 in progress | 2026-10-14 | Findings is reorganised around the question a "
+        "reader arrives with. Three tabs, How bad, What kind of failure and Gaps in the "
+        "record, with a selector on the first two reading View the cases through. The "
+        "same cases can now be read through seven lenses: MIT harm severity, the EU "
+        "serious-incident test, this register's own missing-control classes, the OWASP "
+        "Agentic Top 10, the NIST AI RMF, the EU AI Act articles and the NIST AI 800-4 "
+        "monitoring categories. Every category name and every clause text in the four "
+        "new views is read from the published lists in frameworks/, and the chosen lens "
+        "is carried in the URL so one view can be linked to. The bars in those four "
+        "views are a single neutral blue, because severity is this site's only data "
+        "colour. The harm-type filter reads the MIT ratings file, so it now appears on "
+        "the MIT view alone rather than on both. |\n"
         "| 1.1 in progress | 2026-10-14 | A sentence on Findings said four cases rest on "
         "a report published by an AI company, and named them by hand. One of the four "
         "was a build tool maintainer's security advisory, so the page called that "
@@ -2589,6 +2963,33 @@ def main():
         "</script>",
         height=0,
     )
+
+    # A ?lens= link names a selector that lives on one of the Findings tabs, and
+    # st.tabs cannot be opened from Python. The tab is clicked once, by its own label,
+    # so a shared link lands on the view it names rather than on the first tab.
+    wanted_tab = LENS_TAB.get(st.query_params.get("lens"))
+    if screen == "Findings" and wanted_tab and wanted_tab != HOW_BAD_TAB:
+        components.html(
+            "<script>"
+            "const doc = window.parent.document;"
+            "if (!doc.__lensTab) {"
+            "  doc.__lensTab = true;"
+            f"  const want = {wanted_tab!r};"
+            "  let n = 0;"
+            "  const id = setInterval(() => {"
+            "    const t = [...doc.querySelectorAll('button[role=\"tab\"]')]"
+            "      .find(b => b.innerText.trim() === want);"
+            "    if (t && t.getAttribute('aria-selected') === 'true') {"
+            "      clearInterval(id);"
+            "      return;"
+            "    }"
+            "    if (t) { t.click(); }"
+            "    if (++n > 20) { clearInterval(id); }"
+            "  }, 150);"
+            "}"
+            "</script>",
+            height=0,
+        )
 
     if screen == "Home":
         screen_home(frame)

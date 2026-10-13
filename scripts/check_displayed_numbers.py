@@ -250,6 +250,88 @@ def main(argv):
                 f"{got[1]}, agreeing with Findings"
             )
 
+    # The four framework views. Each heading names the category with the most cases and
+    # prints its count, and the bar chart prints a count per category. Both are
+    # recomputed from the case data and from the published lists in frameworks/, so a
+    # heading that stops matching its own chart fails here.
+    def catalogue(name, key):
+        path = project_dir / "frameworks" / name
+        with open(path, newline="", encoding="utf-8") as fh:
+            return [row[key] for row in csv.DictReader(fh)], list(csv.DictReader(
+                open(path, newline="", encoding="utf-8")
+            ))
+
+    owasp_order, owasp_rows = catalogue("owasp_agentic_2026.csv", "code")
+    owasp_names = {r["code"]: r["name"] for r in owasp_rows}
+    rmf_order, _ = catalogue("nist_ai_rmf_1.0.csv", "subcategory")
+    mon_order, _ = catalogue("nist_ai_800_4_categories.csv", "category")
+
+    def tally(field):
+        found = {}
+        for r in counted:
+            for value in (v.strip() for v in r[field].split(",") if v.strip()):
+                found[value] = found.get(value, 0) + 1
+        return found
+
+    def top_of(found, order):
+        """The app walks its row order and keeps the first strict maximum. Same here."""
+        keys = order if order else sorted(found, key=lambda k: (-found[k], k))
+        keys = [k for k in keys if k in found] or list(keys)
+        best = keys[0]
+        for key in keys:
+            if found.get(key, 0) > found.get(best, 0):
+                best = key
+        return best, found.get(best, 0)
+
+    owasp = tally("owasp_code")
+    rmf = tally("nist_ai_rmf")
+    articles = tally("eu_ai_act")
+    monitoring = tally("nist_800_4_category")
+    lens_checks = [
+        ("owasp", *top_of(owasp, owasp_order), owasp,
+         lambda top, n: rf"{n} of {len(counted)} cases fall under {top}: "
+                        rf"{re.escape(owasp_names[top])}\."),
+        ("rmf", *top_of(rmf, rmf_order), rmf,
+         lambda top, n: rf"{n} of {len(counted)} cases point to {re.escape(top)}:"),
+        ("articles", *top_of(articles, None), articles,
+         lambda top, n: rf"{re.escape(top)} is the closest provision in {n} of "
+                        rf"{len(counted)} cases\."),
+        ("monitoring", *top_of(monitoring, mon_order), monitoring,
+         lambda top, n: rf"{n} of {len(counted)} would have been caught by {top} "
+                        r"monitoring\."),
+    ]
+    for slug, top, n, found, pattern in lens_checks:
+        at_lens = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)
+        at_lens.query_params["screen"] = "Findings"
+        at_lens.query_params["lens"] = slug
+        at_lens.run()
+        if at_lens.exception:
+            problems.append(f"?lens={slug} raised: {at_lens.exception[0].value}")
+            continue
+        shown = "\n".join(str(getattr(e, "value", "")) for e in at_lens.markdown)
+        if not re.search(pattern(top, n), shown):
+            problems.append(
+                f"?lens={slug} heading does not state {top} in {n} of {len(counted)} "
+                "cases, which is what the data says"
+            )
+            continue
+        chart = re.search(r'<div class="srows lens">.*?</div></div>', shown, re.S)
+        printed = sum(
+            int(x) for x in re.findall(
+                r'<span class="scount">(\d+)', chart.group(0) if chart else ""
+            )
+        )
+        if printed != sum(found.values()):
+            problems.append(
+                f"?lens={slug} bars print {printed} cases in total, data says "
+                f"{sum(found.values())}"
+            )
+            continue
+        print(
+            f"  ok   ?lens={slug} heading = {top} in {n} of {len(counted)}, bars total "
+            f"{printed}"
+        )
+
     for line in problems:
         print(f"ERROR {line}", file=sys.stderr)
     if problems:
