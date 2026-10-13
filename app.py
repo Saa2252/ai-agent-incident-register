@@ -238,12 +238,17 @@ table.cases tr.notcounted td { color: var(--muted); }
   padding:14px 18px 18px 46px; background:rgba(127,127,127,.09);
   border-top:1px solid var(--grid-line); font-size:14px; line-height:1.55;
 }
-.casebody .sec { margin:0 0 14px; }
-.casebody .sec:last-child { margin-bottom:0; }
-.casebody h4 {
-  font-size:12px; text-transform:uppercase; letter-spacing:.05em; margin:0 0 6px;
-  color:var(--ink-2); font-weight:700;
+/* Tabs inside an open row. The active pane is a class rather than :checked, because
+   React resets natively injected form controls and the radio trick died silently. */
+.ctabs .tabrow { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 12px; }
+.ctabs .tb {
+  padding:6px 12px; cursor:pointer; font:inherit; font-size:13px; font-weight:600;
+  color:var(--ink-2); background:none; border:1px solid transparent; border-radius:8px;
 }
+.ctabs .tb:hover { background:rgba(42,120,214,.10); }
+.ctabs .tb.on { background:rgba(42,120,214,.16); border-color:#2a78d6; color:inherit; }
+.ctabs .pane { display:none; }
+.ctabs .pane.on { display:block; }
 .casebody p { margin:0 0 7px; }
 .casebody table.mini { border-collapse:collapse; margin:8px 0; width:100%; }
 .casebody table.mini td, .casebody table.mini th {
@@ -459,9 +464,6 @@ def case_sections_html(row, ratings=None):
     element in the table. Widgets cannot: each one is its own block outside the table,
     and opening a row would rerun the script and lose the reader's place.
     """
-    def block(title, body):
-        return f'<div class="sec"><h4>{esc(title)}</h4>{body}</div>'
-
     def para(text):
         return f"<p>{esc(text)}</p>" if text else ""
 
@@ -500,9 +502,9 @@ def case_sections_html(row, ratings=None):
                 f"<th>Why</th></tr></thead><tbody>{harm_rows}</tbody></table>"
             )
 
-    parts = [
-        block("What happened", para(row["what_happened"]) + para(row["why_in_register"])),
-        block(
+    panes = [
+        ("What happened", para(row["what_happened"]) + para(row["why_in_register"])),
+        (
             "What was missing",
             f"<p><b>{esc(row['control_class'])}.</b> "
             f"{esc(CONTROL_CLASSES[row['control_class']])}</p>"
@@ -512,13 +514,13 @@ def case_sections_html(row, ratings=None):
             f"{esc(DIRECTED_MEANING[row['directed_by']])}</p>"
             + para(row["missing_control"]) + para(row["missing_control_basis"]),
         ),
-        block(
+        (
             "Test before launch",
             para(row["test_before_launch"])
             + f"<p><b>Pass mark.</b> {esc(row['test_pass_mark'])}</p>"
             + f"<p><b>Signal after launch.</b> {esc(row['signal_after_launch'])}</p>",
         ),
-        block(
+        (
             "Evidence",
             f"<p><b>Grade {esc(row['evidence_grade'])}.</b> "
             f"{esc(GRADE_MEANING[row['evidence_grade']])}</p>"
@@ -528,9 +530,26 @@ def case_sections_html(row, ratings=None):
             + f"<p><b>EU Article 3(49), closest limb ({esc(row['eu_closest_limb'])}).</b> "
             f"{esc(row['eu_basis'])}</p>",
         ),
-        block("Aftermath", para(row["what_changed_after"])),
+        ("Aftermath", para(row["what_changed_after"])),
     ]
-    return '<div class="casebody">' + "".join(parts) + "</div>"
+
+    # Tabs without a Streamlit widget. The first attempt used hidden radios and a CSS
+    # sibling selector, which is the usual trick and does not survive here: React's event
+    # system resets the state of form controls injected as raw HTML, so clicking a tab
+    # left the radio unchecked and the pane never changed. Buttons plus a class, toggled
+    # by one delegated listener for the whole page, sidesteps that entirely.
+    buttons, bodies = [], []
+    for i, (label, body) in enumerate(panes):
+        on = " on" if i == 0 else ""
+        buttons.append(f'<button type="button" class="tb{on}">{esc(label)}</button>')
+        bodies.append(f'<div class="pane{on}">{body}</div>')
+    return (
+        '<div class="casebody"><div class="ctabs">'
+        f'<div class="tabrow">{"".join(buttons)}</div>'
+        + "".join(bodies)
+        + "</div></div>"
+    )
+
 
 
 def case_table(view, ratings=None, open_id=None):
@@ -1553,6 +1572,28 @@ def screen_home(frame, rules):
     if view.empty:
         st.info("No cases match these filters. [Clear them](?) and try again.", icon="🔍")
         return
+
+    # One delegated listener for every case's tabs, rather than a handler per row.
+    # Registered once and guarded, because Streamlit reruns re-execute this block.
+    components.html(
+        "<script>"
+        "const doc = window.parent.document;"
+        "if (!doc.__caseTabs) {"
+        "  doc.__caseTabs = true;"
+        "  doc.addEventListener('click', (e) => {"
+        "    const b = e.target.closest && e.target.closest('.ctabs .tb');"
+        "    if (!b) return;"
+        "    const box = b.closest('.ctabs');"
+        "    const tabs = [...box.querySelectorAll(':scope > .tabrow > .tb')];"
+        "    const panes = [...box.querySelectorAll(':scope > .pane')];"
+        "    const i = tabs.indexOf(b);"
+        "    tabs.forEach((t, n) => t.classList.toggle('on', n === i));"
+        "    panes.forEach((p, n) => p.classList.toggle('on', n === i));"
+        "  });"
+        "}"
+        "</script>",
+        height=0,
+    )
 
     ratings_for_cards, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     st.markdown(

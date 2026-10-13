@@ -94,9 +94,24 @@ def main(argv):
     if 'id="AIR-013" open>' not in opened:
         print("  FAIL  the requested row did not open in place", file=sys.stderr)
         clean = False
-    elif "Test before launch" not in opened:
-        print("  FAIL  the open row carries no record sections", file=sys.stderr)
-        clean = False
+    else:
+        # Five tabs and five panes per row, with exactly one pane open in each. The whole
+        # table is one markdown string, so these are counted across every row.
+        n_rows = opened.count('<details class="crow')
+        checks = {
+            "tabs": (opened.count('class="tb'), n_rows * 5),
+            "panes": (opened.count('class="pane'), n_rows * 5),
+            "open panes": (opened.count('class="pane on"'), n_rows),
+        }
+        for name, (got, want) in checks.items():
+            if got != want:
+                print(
+                    f"  FAIL  {name}: {got} across {n_rows} rows, expected {want}",
+                    file=sys.stderr,
+                )
+                clean = False
+        if all(got == want for got, want in checks.values()):
+            print(f"          five tabs per row, one pane open, across {n_rows} rows")
 
     # Each card says "N of 20" and its button has to land on exactly N rows. This was
     # wrong until 13 October 2026: the cards counted grade A and B rows while the
