@@ -134,22 +134,31 @@ PAGE_CSS = """
 }
 
 /* Wide tables scroll in their own box rather than pushing the page sideways. */
-div[data-testid="stMarkdownContainer"]:has(> table) { overflow-x: auto; }
-div[data-testid="stMarkdownContainer"] > table { min-width: max-content; }
-div[data-testid="stTable"] { overflow-x: auto; }
-div[data-testid="stTable"] table { min-width: max-content; }
-div[data-testid="stTable"] th, div[data-testid="stTable"] td { white-space: nowrap; }
+/* Tables wrap rather than scroll. min-width: max-content with nowrap cells made every
+   long table as wide as its longest sentence: the change log ran 6,571px past the page
+   at 1280, and a reader had to scroll sideways through a paragraph to read it. */
+div[data-testid="stMarkdownContainer"] > table,
+div[data-testid="stTable"] table {
+  width: 100%; table-layout: auto; border-collapse: collapse;
+}
+div[data-testid="stMarkdownContainer"] > table th,
+div[data-testid="stMarkdownContainer"] > table td,
+div[data-testid="stTable"] th, div[data-testid="stTable"] td {
+  white-space: normal; overflow-wrap: anywhere; vertical-align: top;
+}
+div[data-testid="stMarkdownContainer"] > table th,
+div[data-testid="stTable"] th { color: #52514e; }
 
 /* The case table. A real table with real headers, built as HTML because a severity
    meter cannot be expressed in a dataframe cell. */
 .case-table-wrap { overflow-x: auto; border: 1px solid var(--grid-line); border-radius: 12px; }
-table.cases { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+table.cases { border-collapse: collapse; width: 100%; font-size: 14px; }
 table.cases th, table.cases td {
   text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--grid-line);
   vertical-align: middle;
 }
 table.cases th {
-  font-size: 12px; color: var(--muted); font-weight: 600;
+  font-size: 12px; color: #52514e; font-weight: 600;
   text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
 }
 table.cases tr:last-child td { border-bottom: 0; }
@@ -253,7 +262,7 @@ table.cases tr.notcounted td { color: var(--muted); }
 .crow .cdate { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .ctbl-head {
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
-  color:var(--ink-2); background:rgba(127,127,127,.14);
+  color:#52514e; background:rgba(127,127,127,.14);
 }
 .crow { border-top:1px solid var(--grid-line); }
 .crow > summary { cursor:pointer; list-style:none; font-size:14px; }
@@ -849,6 +858,12 @@ def headline(frame):
         "by_class": by_class,
         "accuracy_first": int(len(counted) - said_untrue.sum()),
         "would_change_class": int(said_untrue.sum() - accuracy),
+        # The IDs as well as the count. Three were typed here and the list went stale
+        # the moment the register grew past twelve cases.
+        "change_class_ids": sorted(
+            counted[(counted["said_something_untrue"] == "Yes")
+                    & (counted["control_class"] != "Accuracy")]["id"]
+        ),
         "said_nothing_untrue": int((~said_untrue).sum()),
         "said_untrue": int(said_untrue.sum()),
         "aftermath_documented": int((counted["aftermath_status"] == "Documented").sum()),
@@ -977,14 +992,19 @@ def tab_what_was_missing(frame):
         "running it had set it up to do. Most failures in this register were not attacks. "
         "They came from how the agent was deployed."
     )
-    st.markdown(f"##### One trick worked {len(bypass)} times")
+    words = {1: "once", 2: "twice", 3: "three times", 4: "four times", 5: "five times"}
+    how_often = words.get(len(bypass), f"{len(bypass)} times")
+    st.markdown(f"##### One trick worked {how_often}")
+    joined = (
+        bypass[0] if len(bypass) == 1
+        else " and ".join([", ".join(bypass[:-1]), bypass[-1]])
+    )
     st.markdown(
-        f"In {', '.join(bypass[:-1])} and {bypass[-1]}, attackers got past the model's "
-        "safeguards simply by telling it the work was authorised security testing. This "
-        "worked on two different AI providers. Nothing in the public record shows either "
-        "provider has since changed how its models handle that claim. If your agent can "
-        "take security-sensitive actions, test whether this claim gets it past your own "
-        "safeguards."
+        f"In {joined}, attackers got past the model's safeguards simply by telling it "
+        "the work was authorised security testing. Nothing in the public record shows "
+        "any of the providers has since changed how its models handle that claim. If "
+        "your agent can take security-sensitive actions, test whether this claim gets it "
+        "past your own safeguards."
     )
     st.markdown(
         f"**The five types of missing safeguard, across the {facts['total']} counted "
@@ -1050,9 +1070,10 @@ def tab_what_was_missing(frame):
     st.markdown("")
     st.markdown("#### Two counts that change where you look")
     st.markdown(
-        f"In {facts['no_approval']} of the {facts['total']} counted cases, the record "
-        "shows no person approving the action before it took effect. In some of those, a "
-        "check existed and did not hold."
+        f"In {facts['no_approval']} of {facts['total']}, the public account describes no "
+        "approval step before the action took effect. That field carries no source of "
+        "its own, unlike the stop-authority field, so read it as this register's reading "
+        "of each account rather than a sourced absence."
     )
     st.markdown(
         f"In {facts['read_only']} of the {facts['total']}, the agent could only read. It "
@@ -1233,9 +1254,13 @@ def tab_what_the_record_shows(frame):
     facts = headline(frame)
 
     counted = frame[frame["counted"]]
-    own_report = sorted(counted[counted["id"].isin(
-        ["AIR-013", "AIR-015", "AIR-020", "AIR-021"]
-    )]["id"])
+    # Derived from the source label, not listed by hand. The typed list said four and
+    # named AIR-015, whose primary record is a build tool maintainer's advisory, so the
+    # sentence also called Nx an AI company. The field supports a narrower and stronger
+    # claim: the primary record is the implicated organisation's own account.
+    own_report = sorted(
+        counted[counted["source_1_label"].str.contains("own account", case=False)]["id"]
+    )
 
     with_review = facts["total"] - facts["no_review_recorded"]
     review_clause = (
@@ -1256,10 +1281,11 @@ def tab_what_the_record_shows(frame):
     )
     st.markdown("**Where the newest cases came from is itself a finding.**")
     st.markdown(
-        f"{len(own_report)} of the cases added in this release rest on a report published "
-        "by an AI company or an AI evaluation body about its own product or its own "
-        f"testing. They are {', '.join(own_report)}. Those organisations run threat "
-        "intelligence teams and publish what they find. Most companies do neither."
+        f"In {len(own_report)} of the {facts['total']} counted cases the primary record "
+        "is the implicated organisation's own published account of what happened. They "
+        f"are {', '.join(own_report)}. Several are AI companies or an AI evaluation body, "
+        "which run threat intelligence teams and publish what they find. Most "
+        "organisations do neither."
     )
     st.markdown(
         "So the failures that exist on paper are the ones the best instrumented "
@@ -1771,7 +1797,9 @@ def screen_home(frame):
 
     st.markdown("---")
     foot = st.columns(3)
-    foot[0].caption(f"Version {VERSION} · {UPDATED} · Built by Sana Asif Ahmad")
+    foot[0].caption(
+        f"Version {VERSION} · Last reviewed: {UPDATED} · Built by Sana Asif Ahmad"
+    )
     foot[1].caption(
         "Every number is computed from data/incidents.csv and "
         "data/case_harm_ratings.csv, and uses grade A and B rows only."
@@ -1972,7 +2000,8 @@ def screen_method(frame):
     )
     st.markdown(
         f"**{facts['would_change_class']} rows change class** when accuracy is tested "
-        f"first (AIR-002, AIR-011, AIR-012), so the published ordering accounts for a real "
+        f"first ({', '.join(facts['change_class_ids'])}), so the published ordering "
+        "accounts for a real "
         f"part of the gap. {facts['accuracy_first']} of {facts['total']} is therefore the "
         "floor, and the home screen headline uses it rather than the larger number. Every "
         "row carries a `said_something_untrue` field recorded independently of its class. "
@@ -2433,36 +2462,6 @@ def screen_method(frame):
         "and added a headless render of every screen to CI. Archived every source after "
         "finding the archiver was reverting hand edits. |\n"
         "| 0.8 | 2026-10-03 | First build. 12 cases, 11 counted, 18 watch-list rules. |"
-    )
-    st.markdown(
-        "**No corrections from readers yet.** When one arrives it goes in the table above "
-        "with the date, what was wrong, and who sent it."
-    )
-
-    st.markdown("### If this stops being maintained")
-    st.markdown(
-        "A register that quietly goes stale is worse than one that never existed, because "
-        "a reader cannot tell the difference between current and abandoned. So: if "
-        "maintenance stops, this page will say so. The line below is the status, and it "
-        "is the first thing that changes if the project is parked."
-    )
-    st.success(
-        f"**Status: actively maintained.** Last reviewed {UPDATED}. If this line has not "
-        "moved in six months, treat the register as a static archive of what was true at "
-        "that date and check every source yourself before relying on it.",
-        icon="🟢",
-    )
-
-    st.markdown("### Reviewed by")
-    st.markdown(
-        ":orange[**Not yet reviewed.**] One practitioner read is planned, and the reviewer "
-        "will be credited here by name with the date."
-    )
-    st.markdown(
-        f"This is why the register is at version {VERSION} and not 1.0. A thing cannot be "
-        "both a finished release and a single-author draft, and of the two the draft is "
-        "the true one until somebody outside has read it cold. Version 1.0 is the cold "
-        "read landing, not a date."
     )
 
 
