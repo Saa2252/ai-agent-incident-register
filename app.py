@@ -286,6 +286,35 @@ table.cases tr.notcounted td { color: var(--muted); }
 }
 .tctl-b:hover { background:rgba(42,120,214,.10); border-color:#2a78d6; color:inherit; }
 
+/* The MIT scale as five rows. The empty top of the scale is the finding, so the zero
+   rows are drawn rather than dropped, and the bars are measured against the largest
+   band so the shape reads at a glance. */
+.srows { display:flex; flex-direction:column; gap:4px; margin:4px 0 10px; }
+.srow {
+  display:grid; grid-template-columns:190px 1fr 130px; gap:14px; align-items:center;
+  padding:5px 8px; border-radius:9px; text-decoration:none !important; color:inherit;
+  border:1px solid transparent;
+}
+.srow:hover { background:rgba(42,120,214,.07); }
+.srow.on { border-color:#2a78d6; background:rgba(42,120,214,.10); }
+.strack {
+  display:flex; align-items:center; gap:3px; height:22px; background:#e1e0d9;
+  border-radius:5px; overflow:hidden;
+}
+.sbar { height:100%; display:block; border-radius:0; }
+.sbar.extra { background:transparent; border:2px dashed; box-sizing:border-box; }
+.scount { font-weight:700; font-variant-numeric:tabular-nums; color:#52514e; }
+.scount small { font-weight:600; font-size:11px; color:#52514e; }
+/* No prefers-color-scheme override on these. Streamlit picks the page theme on its
+   own, and when the two disagreed the track rendered dark on a light page. */
+p.legend {
+  display:flex; flex-direction:column; gap:2px; margin:8px 0 4px; font-size:12px;
+}
+p.legend span { color:#52514e; line-height:1.45; }
+@media (max-width: 760px) {
+  .srow { grid-template-columns:140px 1fr 90px; gap:8px; }
+}
+
 /* Group headings. A bare word was not carrying enough, so the band name is sized up and
    the count sits beside it rather than inside the same sentence. */
 .ghead {
@@ -297,7 +326,7 @@ table.cases tr.notcounted td { color: var(--muted); }
   font-size:13px; font-weight:700; color:var(--ink-2); text-transform:uppercase;
   letter-spacing:.04em;
 }
-p.gmean { font-size:13px; color:var(--ink-2); margin:0 0 10px; max-width:760px; line-height:1.5; }
+p.gmean { font-size:13px; color:#52514e; margin:0 0 10px; max-width:760px; line-height:1.5; }
 .crow-empty {
   padding:14px; font-size:14px; color:var(--muted); border-top:1px solid var(--grid-line);
 }
@@ -771,32 +800,39 @@ def headline(frame):
 # ------------------------------------------------------------------------------ home
 
 
-def severity_strip(frame):
-    """The MIT severity spread as one bar. Severity is this site's only data colour."""
-    total = len(frame)
-    segments, key = [], []
+def severity_rows(counted, uncounted, active, link_for):
+    """The MIT scale as five rows, including the empty top.
+
+    A stacked bar hid the shape that matters: the two levels this register never
+    reaches. Five rows with a zero on them say it outright. Severity is this site's
+    only data colour, so the bars carry it and nothing else here does.
+    """
+    widest = max([int((counted["mit_level"] == l).sum()) for l in MIT_ORDER] + [1])
+    rows = []
     for level in MIT_ORDER:
-        count = int((frame["mit_level"] == level).sum())
-        if not count:
-            continue
-        segments.append(
-            f'<div style="width:{100 * count / total:.4f}%;'
-            f'background:var(--sev-{MIT_SLUG[level]});height:30px;display:flex;'
-            f'align-items:center;justify-content:center;color:#fff;font-size:13px;'
-            f'font-weight:650" title="{esc(MIT_LEVELS[level])}: {count} of {total}">'
-            f"{count}</div>"
+        n = int((counted["mit_level"] == level).sum())
+        extra = int((uncounted["mit_level"] == level).sum())
+        on = " on" if active == MIT_LEVELS[level] else ""
+        width = 100 * n / widest if widest else 0
+        extra_width = 100 * extra / widest if widest else 0
+        bar = (
+            f'<span class="sbar" style="width:{width:.2f}%;'
+            f'background:var(--sev-{MIT_SLUG[level]})"></span>'
         )
-        key.append(
-            f'<span style="display:inline-flex;align-items:center;gap:6px;'
-            f'margin:0 14px 4px 0"><i style="width:11px;height:11px;border-radius:3px;'
-            f'display:inline-block;background:var(--sev-{MIT_SLUG[level]})"></i>'
-            f"{esc(MIT_LEVELS[level])} {count}</span>"
+        if extra:
+            bar += (
+                f'<span class="sbar extra" style="width:{extra_width:.2f}%;'
+                f'border-color:var(--sev-{MIT_SLUG[level]})"></span>'
+            )
+        rows.append(
+            f'<a class="srow{on}" target="_self" href="{esc(link_for(MIT_LEVELS[level]))}">'
+            f'<span class="slabel">{severity_pill(level)}</span>'
+            f'<span class="strack">{bar}</span>'
+            f'<span class="scount">{n}'
+            + (f'<small> +{extra} not counted</small>' if extra else "")
+            + "</span></a>"
         )
-    return (
-        '<div style="display:flex;border-radius:8px;overflow:hidden;margin:4px 0 10px">'
-        f'{"".join(segments)}</div>'
-        f'<div style="font-size:13px;color:var(--ink-2)">{"".join(key)}</div>'
-    )
+    return f'<div class="srows">{"".join(rows)}</div>'
 
 
 def dots(filled, total):
@@ -832,11 +868,14 @@ def tab_what_was_missing(frame):
     )
     uncounted = sorted(frame[~frame["counted"]]["id"])
 
-    st.markdown("#### What was missing?")
     st.markdown(
-        "**In most of these cases, the AI didn't fail by getting facts wrong. It failed "
-        "because it was allowed to do too much, or because it obeyed instructions it "
-        "should have ignored.**"
+        f"#### In {facts['not_accuracy']} of {facts['total']} cases, the missing "
+        "safeguard wasn't accuracy."
+    )
+    st.markdown(
+        "These agents did not mostly fail by getting facts wrong. They failed because "
+        "they were allowed to do too much, or because they obeyed instructions they "
+        "should have ignored."
     )
     st.markdown(
         f"Of the {facts['total']} cases with strong enough evidence to count, only "
@@ -962,54 +1001,27 @@ def tab_what_was_missing(frame):
 
 
 def tab_how_severe(frame):
-    """Every case, grouped by whichever framework the reader picks.
-
-    This used to be two panels of tiles that each filtered the table to one level. A
-    reader with two tiles active saw a count of one under tiles reading seven and five,
-    and no way to see the whole picture at once. One toggle and a grouped list shows all
-    of it, and nothing has to be clicked to understand the shape.
-    """
+    """Every case, measured against whichever framework the reader picks."""
     ratings, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     definitions = load_mit_framework(data_stamp(MIT_FRAMEWORK_FILE))
     harms = list(definitions["harm_type"].drop_duplicates())
 
-    st.markdown("#### How severe was the harm?")
-    st.markdown(
-        "**Measured against the full range of harm AI can cause, these cases are small. "
-        "Read them for how the harm happened, not how large it was.**"
-    )
-
     MIT_NAME = "MIT harm severity scale"
-    EU_NAME = "EU AI Act: serious-incident test"
-    # Keyed so the styling below reaches this radio and not the screen selector in the
-    # sidebar, which is the same widget type.
+    EU_NAME = "EU AI Act serious-incident test"
     with st.container(key="fwpick"):
-        st.markdown("**Measure these cases against**")
         which = st.radio(
-            "Measure these cases against",
+            "Rate the harm on",
             [MIT_NAME, EU_NAME],
+            captions=[
+                "How big was it, compared with all AI harm?",
+                "Would it trigger mandatory reporting in the EU?",
+            ],
             horizontal=True,
-            label_visibility="collapsed",
         )
 
-    if which == MIT_NAME:
-        st.caption(
-            "Built by the MIT AI Risk Initiative on CSET's taxonomy of AI harm. Five "
-            "levels, up to global-scale harm. "
-            "[About this scale &#8599;](https://airisk.mit.edu/ai-incident-tracker/harm-severity)"
-        )
-    else:
-        st.caption(
-            "Article 3(49) of the EU AI Act defines a serious incident. This is the "
-            "register's reading of the closest part of that definition, not a legal "
-            "classification. "
-            "[Read Article 3(49) &#8599;](https://artificialintelligenceact.eu/article/3/)"
-        )
-
-    # Ten chips in two rows was most of the clutter on this page, for a control almost
-    # nobody needs on a first read. Behind a button it costs one line.
+    chosen_harms = []
     with st.container(key="harmpick"), st.popover(
-        "Narrow to a harm type", icon=":material/filter_list:", width="content"
+        "Filter by type of harm", icon=":material/filter_list:", width="content"
     ):
         chosen_harms = st.pills(
             "Harm types", harms, selection_mode="multi", default=[],
@@ -1019,63 +1031,118 @@ def tab_how_severe(frame):
     if chosen_harms:
         ids = set(ratings[ratings["harm_type"].isin(chosen_harms)]["case_id"])
         view = view[view["id"].isin(ids)]
+    counted = view[view["counted"]]
+    uncounted = view[~view["counted"]]
+    n = len(counted)
 
-    shown, counted_shown = len(view), int(view["counted"].sum())
-    noun = "case" if shown == 1 else "cases"
-    lead = f"{'All' if not chosen_harms else 'The'} {shown} {noun}"
-    if chosen_harms:
-        lead += " affecting " + " and ".join(chosen_harms)
-    st.markdown(
-        f"##### {esc(lead)}, grouped by "
-        f"{'severity' if which == MIT_NAME else 'the EU test'}"
-    )
-    bar = f"**{counted_shown} of these {shown} feed the figures elsewhere on this site.**"
-    if chosen_harms:
-        bar += "  ·  [Show every case](?screen=Findings)"
-    st.markdown(bar)
+    # The heading is the finding, so it has to be built from the data every time.
+    if which == MIT_NAME:
+        middle = int((counted["mit_level"] == 3).sum())
+        st.markdown(
+            f"#### No case reached the top two levels of harm. {middle} reached the middle."
+        )
+        st.markdown(
+            "On MIT's five-level scale, built to rank AI harm up to global catastrophe, "
+            "the worst case here is Substantial. The lesson is in how the harm happened: "
+            "the same missing safeguards could allow far larger harm in a bigger "
+            "deployment."
+        )
+    else:
+        meets = int((counted["eu_serious_incident"] == "Meets").sum())
+        nd = int(
+            (counted["eu_serious_incident"] == "Not determinable from the record").sum()
+        )
+        st.markdown(
+            f"#### {meets} of {n} cases clearly meet the EU's serious-incident test. "
+            f"{nd} can't be judged from the public record."
+        )
+        st.markdown(
+            "Article 3(49) of the EU AI Act defines a serious incident. This is the "
+            "register's reading of the closest part of that definition, not a legal "
+            "classification. Where a published account does not settle it, the register "
+            "says so rather than guessing."
+        )
+
+    active_level = st.query_params.get("level") if which == MIT_NAME else None
+
+    def level_link(name):
+        parts = ["screen=Findings"]
+        if active_level != name:
+            parts.append(f"level={quote_plus(name)}")
+        return "?" + "&".join(parts)
+
+    if which == MIT_NAME:
+        st.markdown(f"##### Where the {n} cases fall on MIT's scale")
+        st.markdown(
+            severity_rows(counted, uncounted, active_level, level_link),
+            unsafe_allow_html=True,
+        )
+        st.caption("Click a level to show only those cases.")
+        st.markdown(
+            '<p class="legend">'
+            + ("".join(
+                f'<span>{esc(MIT_LEVELS[l])}: {esc(MIT_SEVERITY_MEANING[l])}</span>'
+                for l in MIT_ORDER
+            ))
+            + "</p>",
+            unsafe_allow_html=True,
+        )
+
+    if not len(uncounted) == 0:
+        ids = ", ".join(sorted(uncounted["id"]))
+        st.caption(
+            f"{ids} is shown but not counted: it rests on a single source."
+            if len(uncounted) == 1 else
+            f"{ids} are shown but not counted: they rest on a single source."
+        )
 
     if view.empty:
         st.info("No cases affect that harm type. [Show every case](?screen=Findings)", icon="🔍")
         return
 
-    if which == MIT_NAME:
-        st.markdown(severity_strip(view), unsafe_allow_html=True)
-        groups = [
-            (
-                MIT_LEVELS[level],
-                MIT_SEVERITY_MEANING[level],
-                view[view["mit_level"] == level],
-                MIT_SLUG[level],
-            )
-            for level in MIT_ORDER
-        ]
+    # One level selected shows that level alone. Otherwise every case, grouped.
+    if active_level:
+        rows = view[view["mit_level"].map(MIT_LEVELS) == active_level]
+        st.markdown(
+            f"##### {len(rows)} case{'s' if len(rows) != 1 else ''} rated "
+            f"{esc(active_level)}  ·  [Show every level](?screen=Findings)"
+        )
+        st.markdown(table_controls(), unsafe_allow_html=True)
+        st.markdown(
+            case_table(rows.sort_values("id"), ratings=ratings),
+            unsafe_allow_html=True,
+        )
     else:
-        groups = [
-            (value, EU_GROUP_MEANING[value], view[view["eu_serious_incident"] == value], None)
-            for value in ("Meets", "Does not meet", "Not determinable from the record")
-        ]
-
-    # Findings never auto-opens a row. A ?case= link is a link into the case list on
-    # Home, and honouring it here as well is what made one case appear open on a page
-    # the reader had just navigated to.
-    st.markdown(table_controls(), unsafe_allow_html=True)
-    open_id = None
-    for name, meaning, rows, slug in groups:
-        n = len(rows)
-        tint = f' style="border-left:6px solid var(--sev-{slug})"' if slug else ""
-        st.markdown(
-            f'<div class="ghead"{tint}><span class="gname">{esc(name)}</span>'
-            f'<span class="gcount">{n} {"case" if n == 1 else "cases"}</span></div>'
-            f'<p class="gmean">{esc(meaning)}</p>',
-            unsafe_allow_html=True,
-        )
-        if rows.empty:
-            st.markdown(empty_case_table(), unsafe_allow_html=True)
-            continue
-        st.markdown(
-            case_table(rows.sort_values("id"), ratings=ratings, open_id=open_id),
-            unsafe_allow_html=True,
-        )
+        label = "severity" if which == MIT_NAME else "the EU test"
+        st.markdown(f"##### All {len(view)} cases, grouped by {label}")
+        st.markdown(table_controls(), unsafe_allow_html=True)
+        if which == MIT_NAME:
+            groups = [
+                (MIT_LEVELS[l], MIT_SEVERITY_MEANING[l],
+                 view[view["mit_level"] == l], MIT_SLUG[l])
+                for l in MIT_ORDER
+            ]
+        else:
+            groups = [
+                (v, EU_GROUP_MEANING[v], view[view["eu_serious_incident"] == v], None)
+                for v in ("Meets", "Does not meet", "Not determinable from the record")
+            ]
+        for name, meaning, rows, slug in groups:
+            count = len(rows)
+            tint = f' style="border-left:6px solid var(--sev-{slug})"' if slug else ""
+            st.markdown(
+                f'<div class="ghead"{tint}><span class="gname">{esc(name)}</span>'
+                f'<span class="gcount">{count} {"case" if count == 1 else "cases"}</span>'
+                f'</div><p class="gmean">{esc(meaning)}</p>',
+                unsafe_allow_html=True,
+            )
+            if rows.empty:
+                st.markdown(empty_case_table(), unsafe_allow_html=True)
+                continue
+            st.markdown(
+                case_table(rows.sort_values("id"), ratings=ratings),
+                unsafe_allow_html=True,
+            )
 
     how_to_read(
         "'At least' means the record doesn't establish the full size of the harm, so the "
@@ -1092,25 +1159,22 @@ def tab_what_the_record_shows(frame):
         ["AIR-013", "AIR-015", "AIR-020", "AIR-021"]
     )]["id"])
 
-    st.markdown("#### What does the record actually show?")
-    st.markdown(
-        "**Who documents a failure decides which failures exist on paper.** Failures make "
-        "the news. Recoveries rarely do."
+    with_review = facts["total"] - facts["no_review_recorded"]
+    review_clause = (
+        "In none does it say when the agent would be reviewed."
+        if with_review == 0 else
+        f"In only {with_review} of {facts['total']} does it say when the agent would be "
+        "reviewed."
     )
     st.markdown(
-        "**In this register, almost nothing was set up to notice the failure.**"
+        f"#### In {facts['no_stop_authority_recorded']} of {facts['total']} cases, the "
+        f"record doesn't say who could stop the agent. {review_clause}"
     )
     st.markdown(
-        f"In {facts['no_stop_authority_recorded']} of the {facts['total']} counted cases, "
-        "the public record does not name a role that could have halted the deployment. In "
-        f"{facts['no_review_recorded']} of {facts['total']}, there is no date set to look "
-        "at the agent again. That second figure is every counted case here."
-    )
-    st.markdown(
-        "Neither number says nobody could have stopped it, and neither says nobody ever "
-        "looked. They say the published account does not answer the question. A safeguard "
-        "nobody can name is one a reader cannot check. For your own agent, write down who "
-        "can switch it off and the date you will next review it."
+        "Neither figure says nobody could have stopped it, and neither says nobody ever "
+        "looked. They say the published account does not answer the question, and a "
+        "safeguard nobody can name is one a reader cannot check. For your own agent, "
+        "write down who can switch it off and the date you will next review it."
     )
     st.markdown("**Where the newest cases came from is itself a finding.**")
     st.markdown(
@@ -1236,11 +1300,11 @@ def tab_what_the_record_shows(frame):
 def screen_findings(frame):
     st.title("Findings")
     st.markdown(
-        "Every figure on this page is calculated from the register's data, never typed "
-        "in by hand."
+        f"What {len(frame)} documented incidents show, measured against recognised "
+        "frameworks."
     )
     severe, missing, record = st.tabs(
-        ["How severe", "What was missing", "What the record shows"]
+        ["Severity", "Missing safeguards", "Gaps in the record"]
     )
     with severe:
         tab_how_severe(frame)
@@ -1248,6 +1312,11 @@ def screen_findings(frame):
         tab_what_was_missing(frame)
     with record:
         tab_what_the_record_shows(frame)
+    st.markdown("")
+    st.caption(
+        "Every figure on this page is calculated from the register's data, never typed "
+        "in by hand."
+    )
 
 
 def incident_card(row):

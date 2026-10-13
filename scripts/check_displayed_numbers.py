@@ -124,15 +124,26 @@ def main(argv):
         else:
             print(f"  ok   counter = {shown} of {total}")
 
-    # Count only inside the case table. The open case below it renders its own pill, so
-    # a whole-page count would include that case twice.
-    table = re.search(r'<table class="cases">.*?</table>', home_markdown, re.S)
-    filled = table.group(0).count('class="f"') if table else 0
-    if filled and filled != expected["filled meter bars"]:
+    # Count only inside the case table, and only the summary rows: an open row renders
+    # the same pill again inside its Evidence pane, which would double some cases.
+    #
+    # This check scoped to <table class="cases"> until 13 October 2026, when the rows
+    # became <details> elements. The selector matched nothing, filled came out zero, and
+    # the guard was written so that zero skipped the check instead of failing it. It went
+    # quiet for several releases. A check that can pass by finding nothing is not a check,
+    # so a zero is now a failure.
+    table = re.search(r'<div class="ctbl">.*</div>', home_markdown, re.S)
+    summaries = re.findall(r"<summary>.*?</summary>", table.group(0), re.S) if table else []
+    filled = sum(part.count('class="f"') for part in summaries)
+    if not filled:
+        problems.append(
+            "found no severity meters in the case table, so the checksum did not run"
+        )
+    elif filled != expected["filled meter bars"]:
         problems.append(
             f"severity meters have {filled} filled bars, data says {expected['filled meter bars']}"
         )
-    elif filled:
+    else:
         print(f"  ok   severity meters = {filled} filled bars")
 
     # The not-accuracy claim moved to the Findings tab, so it is read there.
