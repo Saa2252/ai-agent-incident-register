@@ -1,24 +1,20 @@
 """AI Agent Incident Register.
 
-Twelve real AI agent failures, each traced to the control that was missing, the test
-that would have caught it before launch, and the signal that would have shown it
-after. A visitor can also answer six questions about their own agent and download a
-watch list built from the same cases.
+Real AI agent failures, each traced to the safeguard that was missing, the test that
+would have caught it before launch, and the signal that would have shown it after.
 
 Three rules run through this file.
 
-1. Every number on screen is computed from data/incidents.csv. Nothing is typed into
-   the page, so no count can drift away from the rows behind it.
+1. Every number on screen is computed from the case data. Nothing is typed into the
+   page, so no count can drift away from the rows behind it.
 2. Only grade A and grade B rows feed a number. Grade C rows appear in the register,
    labelled, and are excluded from every count.
-3. The watch list runs on fixed rules in rules/watchlist_rules.json. No model runs
-   inside this app, and every output line shows the rule and the incidents behind it.
+3. No model runs anywhere in this app. Every figure is arithmetic over the case data.
 """
 
 import csv
 import html
 from collections import Counter
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -355,14 +351,6 @@ UPDATED = "13 October 2026"
 sys.path.insert(0, str(APP_DIR / "scripts"))
 import validate_register as rules_check  # noqa: E402
 
-# The rule engine is loaded by explicit path. "evaluate" is a common module name and
-# this must always resolve to the one in this repo.
-_spec = importlib.util.spec_from_file_location(
-    "watchlist_engine", APP_DIR / "rules" / "evaluate.py"
-)
-engine = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(engine)
-
 COUNTED_GRADES = rules_check.COUNTED_GRADES
 CONTROL_CLASSES = rules_check.CONTROL_CLASSES
 OWASP_CODES = rules_check.OWASP_CODES
@@ -418,7 +406,6 @@ def data_stamp(*paths):
 
 RATINGS_FILE = APP_DIR / "data" / "case_harm_ratings.csv"
 MIT_FRAMEWORK_FILE = APP_DIR / "frameworks" / "mit_severity_framework.csv"
-RULES_FILE = APP_DIR / "rules" / "watchlist_rules.json"
 
 
 @st.cache_data
@@ -455,11 +442,6 @@ def load_mit_framework(_stamp):
     frame = pd.read_csv(MIT_FRAMEWORK_FILE, dtype=str)
     frame["level"] = frame["level"].astype(int)
     return frame
-
-
-@st.cache_data
-def load_rules(_stamp):
-    return engine.load_rules()
 
 
 def esc(value) -> str:
@@ -1251,7 +1233,7 @@ def tab_what_the_record_shows(frame):
         )
 
 
-def screen_findings(frame, rules):
+def screen_findings(frame):
     st.title("Findings")
     st.markdown(
         "Every figure on this page is calculated from the register's data, never typed "
@@ -1472,7 +1454,7 @@ def finding_counts(frame):
     }
 
 
-def screen_home(frame, rules):
+def screen_home(frame):
     """Home is the register. The case list used to be a second page showing the same
     twelve rows under a second set of headline numbers, which meant a reader met the
     findings twice before reaching a case."""
@@ -1651,240 +1633,6 @@ def screen_home(frame, rules):
     )
 
 
-# ------------------------------------------------------------------------ watch list
-
-
-def roles_checklist(frame):
-    st.markdown("### Who holds these controls in your organisation?")
-    st.markdown(
-        "This register names organisations and never individuals, and that is the "
-        "stronger version rather than the cautious one. A name is unusable to you. A "
-        "**role** is a lookup into your own org chart. These are the roles that came up "
-        f"across the {headline(frame)['total']} counted cases, and the useful exercise is "
-        "to put a name against each one for your own agent and see which lines you cannot "
-        "fill."
-    )
-    # Twenty seven rows is not an exercise, it is a wall. The roles that came up more
-    # than once are the ones worth a name, and the single-case tail sits behind a line
-    # rather than padding the table.
-    all_roles = sorted(headline(frame)["roles"].items(), key=lambda item: (-item[1], item[0]))
-    role_rows = [(name, count) for name, count in all_roles if count > 1]
-    tail = [name for name, count in all_roles if count == 1]
-    template = pd.DataFrame(
-        [{"Role": name, "Cases": count, "Who is this in your organisation?": ""}
-         for name, count in role_rows]
-    )
-    # The return value, not session state. Session state holds a pending-edits object
-    # rather than the frame. on_click="ignore" keeps the download from re-running the
-    # script, which would otherwise throw away whatever the reader has typed.
-    edited = st.data_editor(
-        template,
-        key="roles_checklist",
-        num_rows="fixed",
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "Role": st.column_config.TextColumn("Role", width=300, disabled=True),
-            "Cases": st.column_config.NumberColumn(
-                "Cases", width=80, disabled=True,
-                help="Counted cases where this role was the one that mattered.",
-            ),
-            "Who is this in your organisation?": st.column_config.TextColumn(
-                "Who is this in your organisation?", width="large", max_chars=120,
-            ),
-        },
-    )
-    st.download_button(
-        "Download your filled checklist",
-        data=edited.to_csv(index=False).encode("utf-8"),
-        file_name="roles-checklist.csv",
-        mime="text/csv",
-        on_click="ignore",
-        help="Type into the third column first. Your answers stay in your browser.",
-    )
-    if tail:
-        with st.expander(f"The other {len(tail)} roles, each from a single case"):
-            st.markdown("\n".join(f"- {esc(name)}" for name in tail))
-    st.caption(
-        "Type into the third column and download it. Each case names the role that runs "
-        "the control and the role that answers when it fails, which are rarely the same. "
-        "A row you cannot fill is the finding, and it is the row worth taking to whoever "
-        "owns the agent."
-    )
-
-
-def screen_watchlist(frame, rules):
-    st.title("Build your watch list")
-    st.markdown(
-        "Six plain questions about your own agent. The answers trigger fixed rules and "
-        "return the tests to run before launch and the signals to watch after. Nothing "
-        "here is generated, so every line shows the rule that produced it and the "
-        "incidents behind that rule."
-    )
-    st.info(
-        "No model runs in this tool and nothing you answer is stored or sent anywhere. "
-        f"The rules are a fixed list, version {rules['version']}, published in the "
-        "repository and explained on Method.",
-        icon="🔒",
-    )
-
-    answers = {}
-    st.markdown("### The six questions")
-    for question in rules["questions"]:
-        choice = st.radio(
-            f"**{question['id']}. {question['text']}**",
-            ["Not sure yet", "Yes", "No"],
-            horizontal=True,
-            key=f"answer_{question['id']}",
-        )
-        st.caption(question["plain"])
-        if choice == "Yes":
-            answers[question["id"]] = True
-        elif choice == "No":
-            answers[question["id"]] = False
-
-    selected = engine.evaluate(answers, rules)
-    unanswered = [q["id"] for q in rules["questions"] if q["id"] not in answers]
-
-    st.markdown("---")
-
-    if not answers:
-        st.markdown("### Your list")
-        st.info(
-            "Answer the questions above and the list builds itself as you go. Two items "
-            "apply to every agent regardless of the answers, and they are already waiting "
-            "below.",
-            icon="👆",
-        )
-        with st.expander("See the two that apply to every agent"):
-            for rule in selected:
-                st.markdown(f"**{rule['id']}. {rule['title']}**")
-                st.caption(rule["test"])
-        st.caption(
-            f"This is a starting point built from {headline(frame)['total']} counted "
-            "cases, not an assessment of your system."
-        )
-        roles_checklist(frame)
-        return
-
-    st.markdown(f"### Your list, {len(selected)} items")
-
-    if unanswered:
-        note = (
-            "Still unanswered: " + ", ".join(unanswered) + ". Those questions trigger no "
-            "rules, so your list is shorter than it should be."
-        )
-        if {"Q1", "Q6"} & set(unanswered):
-            note += (
-                " An agent nobody can say whether it can delete data, or whether a person "
-                "approves what it does, is itself a finding. Go and find out before you "
-                "use this list."
-            )
-        st.warning(note, icon="⚠️")
-
-    # Q6 is "does a person approve", so a yes there is the narrow case rather than a risk.
-    # Counting it inside any() made this branch unsatisfiable and the message never showed.
-    risk_answers = [value for key, value in answers.items() if key != "Q6"]
-    if answers and not any(risk_answers) and answers.get("Q6") is True:
-        st.success(
-            "A read-only agent with a person approving its actions is the narrowest case "
-            f"in this register, and {_narrowest(frame)} of the {headline(frame)['all_rows']} "
-            "cases still apply to it.",
-            icon="✅",
-        )
-
-    categories = {}
-    for rule in selected:
-        categories[rule["nist_800_4_category"]] = categories.get(rule["nist_800_4_category"], 0) + 1
-    if categories:
-        st.caption(
-            "By NIST AI 800-4 monitoring category: "
-            + ", ".join(f"{name} {count}" for name, count in sorted(categories.items()))
-        )
-
-    titles = dict(zip(frame["id"], frame["title"]))
-    levels = dict(zip(frame["id"], frame["mit_level"]))
-
-    # A list of twenty one items is a backlog, not a watch list. The order is evidence
-    # rather than an invented priority: the worst harm among the cases behind a rule,
-    # then how many cases back it. Both are read from the register, so a rule rises
-    # because the record moved and not because somebody re-ranked it.
-    def weight(rule):
-        mine = [levels.get(i, 0) for i in rule["incident_ids"]]
-        return (max(mine) if mine else 0, len(mine))
-
-    selected = sorted(selected, key=weight, reverse=True)
-    head, tail = selected[:5], selected[5:]
-
-    def render(rule):
-        mine = [levels.get(i, 0) for i in rule["incident_ids"]]
-        worst = MIT_LEVELS[max(mine)] if mine else "not rated"
-        n = len(rule["incident_ids"])
-        with st.expander(
-            f"{rule['id']} · {rule['title']}  —  {n} case{'s' if n != 1 else ''}, "
-            f"worst {worst}",
-            expanded=False,
-        ):
-            st.markdown(f"**Why this is on your list.** {esc(rule['triggered_by'])}")
-            st.warning(
-                f"**Test before launch.** {esc(rule['test'])}\n\n"
-                f"**Pass mark.** {esc(rule['pass_mark'])}",
-                icon="🧪",
-            )
-            st.success(f"**Signal after launch.** {esc(rule['signal'])}", icon="📈")
-            st.markdown(
-                f"- **Owner.** {esc(rule['owner_role'])}\n"
-                f"- **Monitoring category, NIST AI 800-4.** {esc(rule['nist_800_4_category'])}\n"
-                f"- **Failure pattern, OWASP Agentic Top 10 2026.** {rule['owasp_code']}, "
-                f"{OWASP_CODES[rule['owasp_code']]}"
-            )
-            st.markdown("**Incidents behind this rule**")
-            for incident in rule["incident_ids"]:
-                st.markdown(f"- **{incident}** {esc(titles.get(incident, 'not found'))}")
-            st.markdown(f"**What those cases show.** {esc(rule['why'])}")
-
-    st.markdown(
-        f"**Start with these {len(head)}.** They are the ones whose cases did the most "
-        "harm in this register, and where most cases back the rule."
-    )
-    for rule in head:
-        render(rule)
-    if tail:
-        with st.expander(f"The other {len(tail)} items on your list"):
-            for rule in tail:
-                render(rule)
-
-    st.markdown("---")
-    if selected:
-        st.download_button(
-            "Download your watch list",
-            data=engine.to_markdown(selected, answers, rules),
-            file_name="agent_watch_list.md",
-            mime="text/markdown",
-            type="primary",
-        )
-    st.markdown("---")
-    st.caption(
-        f"This is a starting point built from {headline(frame)['total']} counted cases, "
-        "not an assessment of your system. It will miss risks specific to your setting, "
-        "and passing every test here does not make an agent safe."
-    )
-    roles_checklist(frame)
-
-
-# ---------------------------------------------------------------------------- method
-
-
-def _narrowest(frame):
-    """Cases a read-only agent with a human approval step still applies to. Computed."""
-    acts = {"Write", "Delete", "Pay", "Promise"}
-    return int(
-        frame.apply(
-            lambda row: not (acts & set(row["authority"].split("|")))
-            and row["human_approval"].startswith("Yes"),
-            axis=1,
-        ).sum()
-    )
 
 
 def _leads():
@@ -1894,7 +1642,7 @@ def _leads():
         return sum(1 for _ in csv.DictReader(handle))
 
 
-def screen_method(frame, rules):
+def screen_method(frame):
     st.title("Method")
     st.markdown(f"Version {VERSION}, last updated {UPDATED}. Single coder.")
     st.markdown(
@@ -2131,30 +1879,6 @@ def screen_method(frame, rules):
         "above protects against."
     )
 
-    st.markdown("### The watch list")
-    st.markdown(
-        f"Six questions, {len(rules['rules'])} fixed rules, version {rules['version']}. No "
-        "model runs in the tool. Each question maps to rules by a trigger written in the "
-        "rule file, and the validator fails if a question triggers nothing, if a rule "
-        "points at an incident that does not exist, or if a rule carries a category or a "
-        "pattern code outside the published taxonomies."
-    )
-    trigger_rows = []
-    for question in rules["questions"]:
-        fired = [r["id"] for r in rules["rules"] if r["trigger"].startswith(question["id"])]
-        trigger_rows.append({
-            "Question": f"{question['id']}. {question['text']}",
-            "Rules it can trigger": ", ".join(fired),
-        })
-    trigger_rows.append({
-        "Question": "Applies to every agent",
-        "Rules it can trigger": ", ".join(r["id"] for r in rules["rules"] if r["trigger"] == "always"),
-    })
-    st.markdown(
-        "| Question | Rules it can trigger |\n| --- | --- |\n"
-        + "\n".join(f"| {r['Question']} | {r['Rules it can trigger']} |" for r in trigger_rows)
-    )
-
     st.markdown("### Standards and frameworks used")
     st.markdown(
         "Each one links to the thing itself, not to a summary of it. That is the same bar "
@@ -2356,6 +2080,21 @@ def screen_method(frame, rules):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 1.0 | 2026-10-13 | **The watch list screen is removed.** It asked six "
+        "questions about a reader's own agent and returned the tests to run. The "
+        "questions did not discriminate. Three unlike systems, a read-only public "
+        "chatbot, an internal coding agent and a back-office automation that spends "
+        "money, each returned sixteen items. Across all sixty four possible answer "
+        "sets the median was thirteen and fifty two returned ten or more, so the only "
+        "way to get a short list was to describe an agent that barely exists. A "
+        "questionnaire where almost every answer gives almost the same output is a "
+        "list with extra steps, and sixteen items each carrying a test, a pass mark, a "
+        "signal, an owner, two framework codes and a case list is not a watch list. "
+        "The tests themselves were never the problem and they have not gone anywhere: "
+        "every one is still on the case it came from, under Test before launch. The "
+        "twenty four rules, the engine that applied them, their validator checks and "
+        "their continuous integration step are removed with the screen rather than "
+        "left in the repository unused. |\n"
         "| 1.0 | 2026-10-13 | **The release broke the live site, and the cause is this "
         "register's own subject.** v1.0 reached the hosted app as a KeyError on the home "
         "screen. The data loaders were cached, and the cache keys on the function's code "
@@ -2570,14 +2309,13 @@ def screen_method(frame, rules):
 def main():
     st.markdown(PAGE_CSS, unsafe_allow_html=True)
     frame = load_register(data_stamp(DATA_FILE, RATINGS_FILE))
-    rules = load_rules(data_stamp(RULES_FILE))
 
     with st.sidebar:
         st.markdown("## AI Agent Incident Register")
         # The screen lives in the URL as well as in session state, because the filter
         # tiles on Findings are links. Without this, following one would land the reader
         # back on Home with their filter applied to a page they were not looking at.
-        screens = ["Home", "Findings", "Build your watch list", "Method"]
+        screens = ["Home", "Findings", "Method"]
         asked = st.query_params.get("screen")
         screen = st.radio(
             "Screen",
@@ -2628,13 +2366,11 @@ def main():
     )
 
     if screen == "Home":
-        screen_home(frame, rules)
+        screen_home(frame)
     elif screen == "Findings":
-        screen_findings(frame, rules)
-    elif screen == "Build your watch list":
-        screen_watchlist(frame, rules)
+        screen_findings(frame)
     else:
-        screen_method(frame, rules)
+        screen_method(frame)
 
     with st.sidebar:
         st.caption(

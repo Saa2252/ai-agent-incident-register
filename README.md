@@ -44,10 +44,6 @@ a monitoring signal tagged to a NIST AI 800-4 category, the closest NIST AI RMF,
 42001 and EU AI Act clauses, the deployer's own response, and an evidence grade with
 links you can follow.
 
-**Build your watch list.** Six plain questions about your own agent. The answers trigger
-18 fixed rules and return the tests to run before launch and the signals to watch after,
-with the owner for each. No model runs in the tool, so every output line names the rule
-that produced it and the incidents behind that rule. The list downloads as Markdown.
 
 **Method.** The inclusion rule, the four-level severity scale, the evidence grades, the
 ordered coding rubric, the naming policy, the standards used, the limits, and the change
@@ -66,8 +62,6 @@ of this stops being true.
   no count can drift away from the rows behind it.
 - **Fixed vocabularies.** Severity, control class, monitoring category and failure
   pattern come from published lists, so a count means the same thing in every row.
-- **Every watch-list rule points at incidents that exist,** and every question triggers
-  at least one rule. A question on the form that changes nothing is a failure.
 - **A disputed row must carry the deployer's position.**
 - **No em dashes, no semicolons, no double hyphens,** in any field or any rule. The
   register should read as though a person wrote it, because a person did.
@@ -90,11 +84,10 @@ python3 -m venv .venv
 .venv/bin/streamlit run app.py
 ```
 
-Check the data, the rules and the pages:
+Check the data and the pages:
 
 ```bash
 python3 scripts/validate_register.py .
-python3 rules/evaluate.py
 python3 -m unittest discover tests
 python3 scripts/smoke_test.py .
 python3 scripts/check_displayed_numbers.py .
@@ -138,11 +131,9 @@ row about.
 ## Layout
 
 ```
-app.py                        Four screens. Home, register, watch list, method.
+app.py                        Three screens. Home, findings, method.
 data/incidents.csv            One row per case, 32 fields. The source of truth.
 data/data_dictionary.md       Every field, every allowed value, and how to add a row.
-rules/watchlist_rules.json    Six questions, 18 fixed rules. Readable without running anything.
-rules/evaluate.py             Applies the rules. Pure stdlib, with a self-test.
 scripts/validate_register.py  The method as code. Runs in CI.
 scripts/check_links.py        Link checker. Run by hand.
 scripts/smoke_test.py         Renders every screen headlessly. Runs in CI.
@@ -197,6 +188,6 @@ A register nobody corrects is a blog post.
 ## Licence
 
 Code under the MIT licence. The register content, meaning `data/incidents.csv`,
-`data/data_dictionary.md` and `rules/watchlist_rules.json`, under CC BY 4.0. Attribute
+`data/data_dictionary.md` and ``, under CC BY 4.0. Attribute
 to the AI Agent Incident Register and link back. The underlying facts belong to the
 public record and to the publishers cited in each row.

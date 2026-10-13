@@ -13,16 +13,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Validate the data file and the rule file
+      - name: Validate the data file
         run: python3 scripts/validate_register.py .
-      - name: Run the watch-list rule engine self-test
-        run: python3 rules/evaluate.py
       - name: Run the control tests
         run: python3 -m unittest discover tests
       - name: Render every screen headlessly
         # Parsing app.py was never enough. A nested expander shipped for six commits
-        # with this job green, because nothing here ran the page. This renders all four
-        # screens and opens an incident card.
+        # with this job green, because nothing here ran the page. This renders every
+        # screen and opens an incident card.
         run: |
           python3 -m pip install --quiet -r requirements.txt
           python3 scripts/smoke_test.py .

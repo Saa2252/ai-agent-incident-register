@@ -24,7 +24,7 @@ import csv
 import sys
 from pathlib import Path
 
-SCREENS = ["Home", "Findings", "Build your watch list", "Method"]
+SCREENS = ["Home", "Findings", "Method"]
 TIMEOUT = 120
 
 
@@ -179,53 +179,6 @@ def main(argv):
             clean = False
         else:
             print(f"          card {key}: {want} counted, {got} rows shown")
-
-    # The watch list only produces rules once questions are answered, so answer them.
-    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
-    at.run()
-    at.radio[0].set_value("Build your watch list").run()
-    answered = 0
-    for widget in at.radio:
-        if widget.label and widget.label.startswith("**Q"):
-            widget.set_value("Yes")
-            answered += 1
-    at.run()
-    clean = report(f"Build your watch list, {answered} questions answered as yes", at) and clean
-
-    # The watch list carried three typed counts that went stale as the register grew, and
-    # the roles table described itself with one total while being computed from another.
-    # Nothing on this screen should name a figure the data does not produce.
-    watch_md = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
-    watch_md += "\n".join(str(getattr(e, "value", "")) for e in at.caption)
-    stale = [bad for bad in ("12 public cases", "out of 11", "11 cases") if bad in watch_md]
-    if stale:
-        print(f"  FAIL  the watch list names a stale figure: {stale}", file=sys.stderr)
-        clean = False
-    elif "**Start with these" not in watch_md:
-        print("  FAIL  the watch list is not ordered into a head and a tail", file=sys.stderr)
-        clean = False
-    else:
-        print("          no stale figures, and the list has a head and a tail")
-
-    # The narrowest case: no risky authority, but a person approves. This branch was
-    # unsatisfiable until 12 October 2026, because a yes on Q6 was counted as a risk
-    # answer, so the message never rendered while every screen still passed. Rendering
-    # is not enough on its own, so this asserts the message is actually there.
-    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
-    at.run()
-    at.radio[0].set_value("Build your watch list").run()
-    for index in range(5):
-        at.radio[index].set_value("No")
-    at.radio[5].set_value("Yes")
-    at.run()
-    boxes = " ".join(str(box.value) for box in at.success)
-    narrow_ok = "cases still apply to it" in boxes
-    clean = report("Build your watch list, the narrowest case", at) and clean
-    if narrow_ok:
-        print("          the narrowest case message rendered")
-    else:
-        print("  FAIL  the narrowest case message did not render", file=sys.stderr)
-        clean = False
 
     # v1.0 reached the live site as a KeyError because st.cache_data keys on the
     # function, not on the files it opens, so a new column in the case data left the

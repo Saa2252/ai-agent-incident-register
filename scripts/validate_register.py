@@ -657,52 +657,6 @@ def validate_mit_framework(report, project_dir, register_ids):
     return headline
 
 
-def validate_rules(report, project_dir, register_ids):
-    path = project_dir / "rules" / "watchlist_rules.json"
-    if not path.exists():
-        report.error("rules", "watchlist_rules.json is missing")
-        return
-    with open(path, encoding="utf-8") as fh:
-        rules = json.load(fh)
-
-    question_ids = {question["id"] for question in rules["questions"]}
-    if len(question_ids) != 6:
-        report.error("rules", f"expected 6 questions, found {len(question_ids)}")
-
-    fired = set()
-    for rule in rules["rules"]:
-        where = f"rules.{rule['id']}"
-        trigger = rule["trigger"]
-        if trigger != "always":
-            question_id, _, answer = trigger.partition(":")
-            if question_id not in question_ids:
-                report.error(where, f"triggers on unknown question {question_id}")
-            if answer not in {"yes", "no"}:
-                report.error(where, f"trigger answer '{answer}' must be yes or no")
-            fired.add(question_id)
-        if rule["nist_800_4_category"] not in NIST_800_4_CATEGORIES:
-            report.error(where, f"'{rule['nist_800_4_category']}' is not a NIST AI 800-4 category")
-        if rule["owasp_code"] not in OWASP_CODES:
-            report.error(where, f"'{rule['owasp_code']}' is not an OWASP Agentic Top 10 2026 code")
-        for incident in rule["incident_ids"]:
-            if incident not in register_ids:
-                report.error(where, f"points at {incident}, which is not in the register")
-        for tell, name in AI_TELLS.items():
-            for field in ("title", "test", "pass_mark", "signal", "why"):
-                if tell in rule[field]:
-                    report.error(f"{where}.{field}", f"contains a {name}, which the voice rule forbids")
-
-    # Every question has to change the output, otherwise it is on the form for show.
-    for question_id in sorted(question_ids - fired):
-        report.error("rules", f"{question_id} is asked but triggers no rule")
-
-    # Every row in the register has to be used by at least one rule, otherwise the
-    # register is carrying a case that teaches nothing.
-    used = {incident for rule in rules["rules"] for incident in rule["incident_ids"]}
-    for incident in sorted(register_ids - used):
-        report.warn("rules", f"{incident} is in the register but no watch-list rule cites it")
-
-
 def check_analytical_split(report, project_dir, rows):
     """The register's load-bearing claim, checked rather than remembered.
 
@@ -881,7 +835,6 @@ def main(argv):
 
     today = date.today()
     validate_rows(report, rows, today)
-    validate_rules(report, project_dir, {row["id"] for row in rows})
     mit = validate_mit_framework(report, project_dir, {row["id"] for row in rows})
     check_analytical_split(report, project_dir, rows)
     check_freshness(report, project_dir)
