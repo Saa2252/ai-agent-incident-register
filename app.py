@@ -857,8 +857,6 @@ def tab_how_severe(frame):
     }
 
     counted_here = frame[frame["counted"]]
-    level_counts = Counter(counted_here["mit_level"])
-    eu_counts = Counter(counted_here["eu_serious_incident"])
 
     st.markdown("#### How severe was the harm?")
     st.markdown(
@@ -866,16 +864,37 @@ def tab_how_severe(frame):
         "Read them for how the harm happened, not how large it was.**"
     )
 
-    # The two frameworks the severity columns rest on, each one a filter. Links are
-    # plain query parameters so a filtered view stays shareable, and clicking the tile
-    # that is already on clears it.
     active_level = st.query_params.get("level")
     active_eu = st.query_params.get("eu")
+    chosen_harms = st.pills(
+        "Filter by harm type", harms, selection_mode="multi", default=[]
+    )
+
+    def apply_filters(rows, level=None, eu=None, harm_types=()):
+        """Every filter in one place, so the tile counts and the table cannot disagree."""
+        if level:
+            rows = rows[rows["mit_level"].map(MIT_LEVELS) == level]
+        if eu:
+            rows = rows[rows["eu_serious_incident"] == eu]
+        if harm_types:
+            ids = set(ratings[ratings["harm_type"].isin(harm_types)]["case_id"])
+            rows = rows[rows["id"].isin(ids)]
+        return rows
+
+    # A tile shows what clicking it would give you, taking the other filters into
+    # account. Showing each tile's total in isolation is what made a 7 and a 5 produce
+    # a 1 with nothing on the page explaining it.
+    def tile_count(level=None, eu=None):
+        return len(apply_filters(
+            counted_here,
+            level=level or active_level,
+            eu=eu or active_eu,
+            harm_types=chosen_harms,
+        ))
 
     def tile_link(param, value, current):
         keep = [] if current == value else [f"{param}={quote_plus(value)}"]
-        other = "eu" if param == "level" else "level"
-        held = active_eu if param == "level" else active_level
+        other, held = ("eu", active_eu) if param == "level" else ("level", active_level)
         if held:
             keep.append(f"{other}={quote_plus(held)}")
         keep.append("screen=Findings")
@@ -885,20 +904,22 @@ def tab_how_severe(frame):
     for level in MIT_ORDER:
         name = MIT_LEVELS[level]
         on = " on" if active_level == name else ""
+        n = tile_count(level=name) if active_level != name else tile_count()
         tiles.append(
             f'<a class="tile{on}" target="_self" '
             f'href="{esc(tile_link("level", name, active_level))}">'
             f'<span class="tlabel">{severity_pill(level)}</span>'
-            f'<span class="tcount">{level_counts.get(level, 0)}</span></a>'
+            f'<span class="tcount">{n}</span></a>'
         )
     eu_tiles = []
     for value in ("Meets", "Does not meet", "Not determinable from the record"):
         on = " on" if active_eu == value else ""
+        n = tile_count(eu=value) if active_eu != value else tile_count()
         eu_tiles.append(
             f'<a class="tile{on}" target="_self" '
             f'href="{esc(tile_link("eu", value, active_eu))}">'
             f'<span class="tlabel">{esc(value)}</span>'
-            f'<span class="tcount">{eu_counts.get(value, 0)}</span></a>'
+            f'<span class="tcount">{n}</span></a>'
         )
 
     st.markdown(
@@ -906,7 +927,8 @@ def tab_how_severe(frame):
         '<section class="panel"><h4>MIT harm severity scale</h4>'
         f'<div class="tiles">{"".join(tiles)}</div>'
         "<p>Built by the MIT AI Risk Initiative on CSET's taxonomy of AI harm. Five "
-        "levels, up to global-scale harm.</p>"
+        "levels, up to global-scale harm. Each number counts the cases you would see if "
+        "you clicked it, with any other filter still applied.</p>"
         '<p><a href="https://airisk.mit.edu/ai-incident-tracker/harm-severity" '
         'target="_blank" rel="noopener">About this scale &#8599;</a></p></section>'
         '<section class="panel"><h4>EU AI Act: serious-incident test</h4>'
@@ -919,40 +941,58 @@ def tab_how_severe(frame):
         unsafe_allow_html=True,
     )
 
-    chosen_harms = st.pills(
-        "Filter by harm type",
-        harms,
-        selection_mode="multi",
-        default=[],
+    # Counted rows only, so the table matches the tile that opened it. The grade C row
+    # is offered separately rather than quietly making the numbers disagree.
+    show_uncounted = st.query_params.get("c") == "1"
+    all_matching = apply_filters(
+        frame, level=active_level, eu=active_eu, harm_types=chosen_harms
     )
+    view = all_matching if show_uncounted else all_matching[all_matching["counted"]]
+    uncounted_matches = sorted(all_matching[~all_matching["counted"]]["id"])
 
-    view = frame
-    if active_level:
-        view = view[view["mit_level"].map(MIT_LEVELS) == active_level]
-    if active_eu:
-        view = view[view["eu_serious_incident"] == active_eu]
-    if chosen_harms:
-        matching = set(ratings[ratings["harm_type"].isin(chosen_harms)]["case_id"])
-        view = view[view["id"].isin(matching)]
-
-    bits = []
-    if active_level:
-        bits.append(f"rated {active_level}")
-    if active_eu:
-        bits.append(f"where the EU test is {active_eu[0].lower() + active_eu[1:]}")
-    if chosen_harms:
-        bits.append("affecting " + " and ".join(chosen_harms))
-    heading = f"{len(view)} cases " + ", ".join(bits) if bits else f"All {len(view)} cases"
+    EU_PHRASE = {
+        "Meets": ("meets", "meet"),
+        "Does not meet": ("does not meet", "do not meet"),
+        "Not determinable from the record": (
+            "cannot be settled from the record", "cannot be settled from the record"
+        ),
+    }
+    n = len(view)
+    noun = "case" if n == 1 else "cases"
+    if not (active_level or active_eu or chosen_harms):
+        heading = f"All {n} counted {noun}"
+    else:
+        parts = [f"{n} {noun}"]
+        if active_level:
+            parts.append(f"rated {active_level}")
+        if active_eu:
+            verb = EU_PHRASE[active_eu][0 if n == 1 else 1]
+            joiner = "that also" if active_level else "that"
+            if active_eu == "Not determinable from the record":
+                parts.append(f"{joiner} {verb} against the EU serious-incident test")
+            else:
+                parts.append(f"{joiner} {verb} the EU serious-incident test")
+        if chosen_harms:
+            parts.append("affecting " + " and ".join(chosen_harms))
+        heading = " ".join(parts)
     st.markdown(f"##### {esc(heading)}")
-    st.markdown(f"**Showing {len(view)} of {len(frame)}**")
-    not_counted = sorted(view[~view["counted"]]["id"])
-    if not_counted:
+
+    bar = f"**Showing {n} of {len(counted_here)} counted cases**"
+    if active_level or active_eu or chosen_harms:
+        bar += "  ·  [Clear filters](?screen=Findings)"
+    st.markdown(bar)
+    if uncounted_matches and not show_uncounted:
+        joined = ", ".join(uncounted_matches)
+        more = "?" + "&".join(
+            [f"{k}={quote_plus(v)}" for k, v in (("level", active_level), ("eu", active_eu)) if v]
+            + ["c=1", "screen=Findings"]
+        )
         st.caption(
-            f"{', '.join(not_counted)} is shown here but not counted in any figure, "
-            "because it rests on a single source."
-            if len(not_counted) == 1 else
-            f"{', '.join(not_counted)} are shown here but not counted in any figure, "
-            "because they rest on a single source."
+            f"{joined} also matches but is not counted, because it rests on a single "
+            f"source. [Show it anyway]({more})"
+            if len(uncounted_matches) == 1 else
+            f"{joined} also match but are not counted, because they rest on a single "
+            f"source. [Show them anyway]({more})"
         )
 
     if view.empty:
