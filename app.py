@@ -373,7 +373,7 @@ APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
 VERSION = "1.0"
-UPDATED = "13 October 2026"
+UPDATED = "14 October 2026"
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
 # restating them. A value the validator would reject cannot be displayed as valid here.
@@ -1455,7 +1455,7 @@ def incident_card(row):
             st.caption(f"Checked {row['date_checked']}. No archived copy yet.")
         st.markdown(
             f"**Closest clauses.** NIST AI RMF {esc(row['nist_ai_rmf'])} · "
-            f"ISO/IEC 42001 {esc(row['iso_42001'])} · EU AI Act {esc(row['eu_ai_act'])}"
+            f"EU AI Act {esc(row['eu_ai_act'])}"
         )
         st.caption(
             "Closest clause, not a legal classification."
@@ -1716,12 +1716,11 @@ def screen_method(frame):
     st.markdown(f"Version {VERSION}, last updated {UPDATED}. Single coder.")
     st.markdown(
         "This page is the argument for trusting the register, and the fastest way through "
-        "it is to start with what it cannot do. **Limits** is four sections down and names "
-        "four weaknesses: the sample is biased along the same axis the headline measures, "
-        "the ISO/IEC 42001 clause numbers come from the standard's structure rather than "
-        "its paywalled text, one person coded every row, and the secondary class has no "
-        "rubric. The **change log** at the bottom records every correction, including the "
-        "ones that went against this project. If you only read two things here, read those."
+        "it is to start with what it cannot do. **Limits**, below, names them: the sample "
+        "is biased along the same axis the headline measures, one person coded every row, "
+        "and the secondary class has no rubric. The **change log** at the bottom records "
+        "every correction, including the ones that went against this project. If you only "
+        "read two things here, read those."
     )
 
     st.markdown("### What counts as a case")
@@ -1958,10 +1957,7 @@ def screen_method(frame):
         "March 2026.** A research report, not a standard. It proposes six monitoring "
         "categories and this register uses them to tag every signal: functionality, "
         "operational, human factors, security, compliance, large-scale impacts.\n"
-        "- **ISO/IEC 42001:2023 Annex A.** Mostly A.6.2.6 on operation and monitoring, "
-        "A.6.2.8 on event logs, A.8.4 on communication of incidents and A.10.3 on "
-        "suppliers. Deliberately unlinked, because the standard is paywalled and a link "
-        "to a shop is not a link to the text. See the limits below.\n"
+
         "- **[EU AI Act, Regulation (EU) 2024/1689]"
         "(https://eur-lex.europa.eu/eli/reg/2024/1689/oj).** Articles 9, 14, 15, 26, 50 "
         "and 73 as closest clauses. Article 3(49) defines a serious incident, which is the "
@@ -2099,13 +2095,12 @@ def screen_method(frame):
         "survived six green builds, because the build parsed the app and never rendered "
         "it. The register codes that failure mode as Implemented in other people's "
         "systems, and it is the honest label for both of these.\n"
-        "- **The clause references have not been line-checked against every official text.** "
-        "The NIST AI RMF and the EU AI Act are public and were used directly. ISO/IEC 42001 "
-        "is paywalled, and the Annex A control numbers here come from the standard's "
-        "published structure rather than from a reading of the clause text, because "
-        "secondary sites disagree on the numbering and do not count as a check. Treat the "
-        "ISO column as the weakest part of this register, and corrections to it are the "
-        "most useful thing you can send."
+        "- **The clause references are the nearest fit, not a legal classification.** "
+        "Every NIST AI RMF subcategory and EU AI Act article shown on this site is checked "
+        "against the published list it comes from, and the build refuses a value that is "
+        "not in that list. Whether the clause applies to a given deployment is a separate "
+        "question this register does not answer, and corrections to a clause reference are "
+        "among the most useful things you can send."
     )
 
     st.markdown("### Dates that matter")
@@ -2149,6 +2144,18 @@ def screen_method(frame):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 1.1 in progress | 2026-10-14 | ISO/IEC 42001 column removed pending "
+        "verification against the standard's text. The numbers stay in the data file "
+        "and appear on no page. |\n"
+        "| 1.1 in progress | 2026-10-14 | Framework values are checked against published "
+        "lists rather than against a pattern. The NIST AI RMF core, 72 subcategories with "
+        "their official text, the EU AI Act article titles, and the six NIST AI 800-4 "
+        "monitoring categories are now files in the repository, each with its source and "
+        "the date it was read. Until now a subcategory or an article that does not exist "
+        "would pass, because the check only asked whether a value looked right. Two basis "
+        "columns were added so each mapping says whether a framework owner applied it or "
+        "this register did. A new value is also allowed where no provision addresses the "
+        "missing safeguard, written as None with the closest article named. |\n"
         "| 1.0 | 2026-10-13 | **The watch list screen is removed.** It asked six "
         "questions about a reader's own agent and returned the tests to run. The "
         "questions did not discriminate. Three unlike systems, a read-only public "

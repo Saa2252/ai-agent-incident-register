@@ -44,7 +44,8 @@ FIELDS = [
     "control_class", "secondary_class", "control_maturity", "missing_control",
     "missing_control_basis", "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "control_owner_role",
-    "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act", "what_changed_after",
+    "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act",
+    "nist_ai_rmf_basis", "eu_ai_act_basis", "what_changed_after",
     "disputed", "aftermath_status", "aftermath_source_url", "inclusion",
     "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
     "source_2_url", "date_checked", "facts_changed_at", "derived_rechecked_at",
@@ -94,10 +95,7 @@ CONTROL_CLASSES = {
 }
 
 # NIST AI 800-4, Challenges to the Monitoring of Deployed AI Systems, March 2026.
-NIST_800_4_CATEGORIES = {
-    "Functionality", "Operational", "Human factors",
-    "Security", "Compliance", "Large-scale impacts",
-}
+
 
 # OWASP Top 10 for Agentic Applications 2026, published 9 December 2025.
 # Allowed values come from frameworks/*.csv, copied from the source with a URL, a
@@ -111,6 +109,26 @@ def _load_framework(name):
     with open(path, newline="", encoding="utf-8") as fh:
         return {row["code"]: row for row in csv.DictReader(fh)}
 
+
+def _load_framework_by(name, key):
+    path = Path(__file__).parent.parent / "frameworks" / name
+    if not path.exists():
+        return {}
+    with open(path, newline="", encoding="utf-8") as fh:
+        return {row[key]: row for row in csv.DictReader(fh)}
+
+
+# Added 14 October 2026. These were shape checks before: anything matching "FUNCTION N.N"
+# or "Article N" passed, including a subcategory or an article that does not exist. The
+# values are now checked against the published lists, the same way OWASP codes are.
+NIST_RMF_ROWS = _load_framework_by("nist_ai_rmf_1.0.csv", "subcategory")
+EU_ARTICLE_ROWS = _load_framework_by("eu_ai_act_articles.csv", "article")
+NIST_800_4_ROWS = _load_framework_by("nist_ai_800_4_categories.csv", "category")
+
+NIST_800_4_CATEGORIES = set(NIST_800_4_ROWS) or {
+    "Functionality", "Operational", "Human factors",
+    "Security", "Compliance", "Large-scale impacts",
+}
 
 OWASP_ROWS = _load_framework("owasp_agentic_2026.csv")
 OWASP_CODES = {code: row["name"] for code, row in OWASP_ROWS.items()}
@@ -266,18 +284,49 @@ def check_style(report, where, row):
                 report.error(f"{where}.{field}", f"contains a {name}, which the voice rule forbids")
 
 
+NONE_CLOSEST = re.compile(r"^None \(closest: Article \d+\)$")
+
+
 def check_clauses(report, where, row):
-    for field, pattern, shape in (
-        ("nist_ai_rmf", NIST_RMF_PATTERN, "FUNCTION N.N, for example MANAGE 4.1"),
-        ("iso_42001", ISO_PATTERN, "A.N.N or A.N.N.N, for example A.6.2.6"),
-        ("eu_ai_act", EU_PATTERN, "Article N or Article N(N), for example Article 26"),
+    """Clause references must exist, not merely look right.
+
+    ISO/IEC 42001 is checked for shape only and is not shown on any page. The standard
+    is paywalled, so its Annex A numbers have never been read against the text.
+    """
+    for field, known, shape, name in (
+        ("nist_ai_rmf", set(NIST_RMF_ROWS), "FUNCTION N.N, for example MANAGE 4.1",
+         "frameworks/nist_ai_rmf_1.0.csv"),
+        ("eu_ai_act", set(EU_ARTICLE_ROWS), "Article N, for example Article 26",
+         "frameworks/eu_ai_act_articles.csv"),
     ):
         refs = [part.strip() for part in row[field].split(",") if part.strip()]
         if not refs:
             report.error(f"{where}.{field}", "no clause reference given")
         for ref in refs:
-            if not pattern.match(ref):
+            # "None (closest: Article N)" says no provision addresses the missing
+            # safeguard, which is a real answer and not a gap in the coding.
+            if field == "eu_ai_act" and NONE_CLOSEST.match(ref):
+                inner = "Article " + ref.split("Article ")[1].rstrip(")")
+                if known and inner not in known:
+                    report.error(f"{where}.{field}", f"'{inner}' is not in {name}")
+                continue
+            if known and ref not in known:
+                report.error(
+                    f"{where}.{field}",
+                    f"'{ref}' is not in {name}. Add it from the published list, with its "
+                    "source and retrieval date, before using it",
+                )
+            elif not known and not re.match(r"^(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+$|^Article \d+", ref):
                 report.error(f"{where}.{field}", f"'{ref}' is not shaped like {shape}")
+
+    refs = [part.strip() for part in row["iso_42001"].split(",") if part.strip()]
+    for ref in refs:
+        if not ISO_PATTERN.match(ref):
+            report.error(f"{where}.iso_42001", f"'{ref}' is not shaped like A.N.N")
+
+    for field in ("nist_ai_rmf_basis", "eu_ai_act_basis"):
+        if row[field] not in FRAMEWORK_BASIS:
+            report.error(f"{where}.{field}", f"must be one of {sorted(FRAMEWORK_BASIS)}")
 
 
 def check_evidence(report, where, row):
