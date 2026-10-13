@@ -945,6 +945,40 @@ def how_to_read(text):
     st.caption(text)
 
 
+def and_join(items):
+    """A, B and C. One place, so every list of IDs on the site reads the same way."""
+    items = list(items)
+    if not items:
+        return "none"
+    if len(items) == 1:
+        return items[0]
+    return " and ".join([", ".join(items[:-1]), items[-1]])
+
+
+def count_word(n):
+    """Small counts read better spelled out, and the sentence stays computed."""
+    return {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}.get(n, str(n))
+
+
+def own_account_rows(counted):
+    """The rows whose primary record the implicated organisation published itself, and
+    the subset of those with no corroboration beyond restatement.
+
+    Read off the source label rather than listed by hand. A label reading "CNN, 12 July
+    2025, reporting the company's own account" names a news outlet as the primary
+    record, not the account itself, so "reporting" excludes the row: the earlier
+    sentence counted AIR-016 and so said six where the claim holds for five. The subset
+    is the grade B rows, because grade A already requires the second source to
+    corroborate rather than restate, so a grade A row is corroborated by definition.
+    Findings and the Limits bullet both call this, so the two cannot drift apart.
+    """
+    own = counted[
+        counted["source_1_label"].str.contains("own account", case=False)
+        & ~counted["source_1_label"].str.contains("reporting", case=False)
+    ]
+    return sorted(own["id"]), sorted(own[own["evidence_grade"] == "B"]["id"])
+
+
 def tab_what_was_missing(frame):
     facts = headline(frame)
     counted = frame[frame["counted"]]
@@ -995,10 +1029,7 @@ def tab_what_was_missing(frame):
     words = {1: "once", 2: "twice", 3: "three times", 4: "four times", 5: "five times"}
     how_often = words.get(len(bypass), f"{len(bypass)} times")
     st.markdown(f"##### One trick worked {how_often}")
-    joined = (
-        bypass[0] if len(bypass) == 1
-        else " and ".join([", ".join(bypass[:-1]), bypass[-1]])
-    )
+    joined = and_join(bypass)
     st.markdown(
         f"In {joined}, attackers got past the model's safeguards simply by telling it "
         "the work was authorised security testing. Nothing in the public record shows "
@@ -1258,9 +1289,7 @@ def tab_what_the_record_shows(frame):
     # named AIR-015, whose primary record is a build tool maintainer's advisory, so the
     # sentence also called Nx an AI company. The field supports a narrower and stronger
     # claim: the primary record is the implicated organisation's own account.
-    own_report = sorted(
-        counted[counted["source_1_label"].str.contains("own account", case=False)]["id"]
-    )
+    own_report, uncorroborated = own_account_rows(counted)
 
     with_review = facts["total"] - facts["no_review_recorded"]
     review_clause = (
@@ -1280,12 +1309,26 @@ def tab_what_the_record_shows(frame):
         "write down who can switch it off and the date you will next review it."
     )
     st.markdown("**Where the newest cases came from is itself a finding.**")
+    # The Limits page says three rows rest on one party's account. Read next to this
+    # sentence the two numbers look like they disagree, so the subset is named here.
+    if len(uncorroborated) > 1:
+        subset = (
+            f", of which {len(uncorroborated)} have no corroboration beyond restatement "
+            "(see Limits)"
+        )
+    elif uncorroborated:
+        subset = (
+            f", of which {uncorroborated[0]} has no corroboration beyond restatement "
+            "(see Limits)"
+        )
+    else:
+        subset = ""
     st.markdown(
         f"In {len(own_report)} of the {facts['total']} counted cases the primary record "
         "is the implicated organisation's own published account of what happened. They "
-        f"are {', '.join(own_report)}. Several are AI companies or an AI evaluation body, "
-        "which run threat intelligence teams and publish what they find. Most "
-        "organisations do neither."
+        f"are {and_join(own_report)}{subset}. Several are AI companies or an AI "
+        "evaluation body, which run threat intelligence teams and publish what they "
+        "find. Most organisations do neither."
     )
     st.markdown(
         "So the failures that exist on paper are the ones the best instrumented "
@@ -2117,6 +2160,12 @@ def screen_method(frame):
     )
 
     st.markdown("### Limits")
+    # The same derivation the Findings sentence uses, so the two counts are one count.
+    own_account, one_party = own_account_rows(frame[frame["counted"]])
+    if len(one_party) == 1:
+        head, verb, them, they = "row rests", "is", "it", "It"
+    else:
+        head, verb, them, they = "rows rest", "are", "them", "They"
     st.markdown(
         "- **One coder.** Every judgement on this site is mine. There is no second rater and "
         "no inter-rater reliability figure, so the coding should be read as one defensible "
@@ -2168,14 +2217,17 @@ def screen_method(frame):
         "several that are in, and the trade is deliberate: the bar is set on what a reader "
         "can check from two directions, not on how good the one account is. It is listed in "
         "the considered and not included table with that reasoning.\n"
-        "- **Three rows rest on one party's account.** AIR-013, AIR-020 and AIR-021 are "
-        "graded B with a reputable outlet as the second source, and in each case that outlet "
-        "is reporting the primary account rather than verifying it. No indicators of "
-        "compromise, no victim statement and no third-party investigation exist for any of "
-        "them. They clear grade B, which asks for two independent reputable reports, and "
-        "they would not clear grade A, which asks the second source to corroborate rather "
-        "than restate. Read them as the organisation's own account, carefully written and "
-        "unverified.\n"
+        f"- **{count_word(len(one_party)).capitalize()} {head} on one party's account.** "
+        f"{and_join(one_party)} {verb} graded B with a reputable outlet as the second "
+        "source, and in each case that outlet is reporting the primary account rather "
+        "than verifying it. No indicators of compromise, no victim statement and no "
+        f"third-party investigation exist for any of {them}. {they} clear grade B, which "
+        "asks for two independent reputable reports, and would not clear grade A, which "
+        "asks the second source to corroborate rather than restate. These are the "
+        f"{count_word(len(one_party))} rows the Findings page points here, out of the "
+        f"{count_word(len(own_account))} whose primary record the organisation published "
+        "itself. Read "
+        f"{them} as the organisation's own account, carefully written and unverified.\n"
         "- **A convenience sample, not a population.** These cases are the ones with "
         "a usable public record. Agent failures that were handled quietly are the majority "
         "and none of them are here, which also biases the counts toward the visible and "
@@ -2256,6 +2308,17 @@ def screen_method(frame):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 1.1 in progress | 2026-10-14 | A sentence on Findings said four cases rest on "
+        "a report published by an AI company, and named them by hand. One of the four "
+        "was a build tool maintainer's security advisory, so the page called that "
+        "maintainer an AI company. The sentence is now read off the source label and "
+        "says what the label supports, which is that the primary record is the "
+        "implicated organisation's own published account. That first came out as six, "
+        "which counted a case whose primary record is a news outlet relaying the "
+        "company's account rather than the account itself. It is five. The rows the "
+        "Limits section says rest on one party's account are the subset of those five "
+        "that no second source corroborates, and both figures now come from one "
+        "function, so the two screens cannot disagree. |\n"
         "| 1.1 in progress | 2026-10-14 | Validator checked framework values for shape, "
         "not membership, until v1.1. Both now rejected. No existing row failed the new "
         "check: every subcategory and article already in the register is a real one, so "

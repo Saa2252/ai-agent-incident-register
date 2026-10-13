@@ -44,6 +44,22 @@ def main(argv):
         "stated": sum(1 for r in counted if r["missing_control_basis"].startswith("Stated")),
         "entailed": sum(1 for r in counted if r["missing_control_basis"].startswith("Entailed")),
         "reading": sum(1 for r in counted if r["missing_control_basis"].startswith("Reading")),
+        # Two sentences on two screens describe the same set: Findings says how many
+        # primary records the organisation published itself, Limits says how many of
+        # those rest on one party's account. They read as a contradiction if either
+        # drifts, so both are recomputed here. "reporting" in a label marks a news
+        # outlet relaying the account, which is not the organisation publishing it.
+        "own publication": sum(
+            1 for r in counted
+            if "own account" in r["source_1_label"].lower()
+            and "reporting" not in r["source_1_label"].lower()
+        ),
+        "one party only": sum(
+            1 for r in counted
+            if "own account" in r["source_1_label"].lower()
+            and "reporting" not in r["source_1_label"].lower()
+            and r["evidence_grade"] == "B"
+        ),
         # Severity now lives in its own file on MIT's five-level framework. The checksum
         # is the total filled meter bars across every case's headline level.
         "filled meter bars": sum(
@@ -169,6 +185,70 @@ def main(argv):
                 )
             else:
                 print(f"  ok   findings accuracy-first claim = {got} of {of}")
+
+        own = re.search(
+            r"In (\d+) of the (\d+) counted cases the primary record is the implicated "
+            r"organisation's own published account",
+            text,
+        )
+        if not own:
+            problems.append("could not find the own-account sentence on Findings")
+        elif (int(own.group(1)), int(own.group(2))) != (
+            expected["own publication"], expected["counted"]
+        ):
+            problems.append(
+                f"findings own-account sentence says {own.group(1)} of {own.group(2)}, "
+                f"data says {expected['own publication']} of {expected['counted']}"
+            )
+        else:
+            print(
+                f"  ok   findings own-account sentence = {own.group(1)} of "
+                f"{own.group(2)}"
+            )
+        subset = re.search(
+            r"of which (\d+) have no corroboration beyond restatement", text
+        )
+        if not subset:
+            problems.append("the own-account sentence does not name the Limits subset")
+        elif int(subset.group(1)) != expected["one party only"]:
+            problems.append(
+                f"findings subset clause says {subset.group(1)}, data says "
+                f"{expected['one party only']}"
+            )
+        else:
+            print(f"  ok   findings subset clause = {subset.group(1)} of the above")
+
+    # Same two numbers again, from the Limits bullet on Method. A reader sees them side
+    # by side, so a disagreement between the screens is the failure worth catching.
+    method = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)
+    method.run()
+    method.radio[0].set_value("Method").run()
+    if method.exception:
+        problems.append(f"the method screen raised: {method.exception[0].value}")
+    else:
+        text = "\n".join(str(getattr(e, "value", "")) for e in method.markdown)
+        words = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+        bullet = re.search(
+            r"These are the (\w+) rows the Findings page points here, out of the (\w+)",
+            text,
+        )
+        got = (
+            tuple(words.get(g, g if not g.isdigit() else int(g)) for g in bullet.groups())
+            if bullet else None
+        )
+        if not bullet:
+            problems.append("could not find the one-party bullet on Method")
+        elif got != (expected["one party only"], expected["own publication"]):
+            problems.append(
+                f"method one-party bullet says {got[0]} of {got[1]}, "
+                f"data says {expected['one party only']} of "
+                f"{expected['own publication']}"
+            )
+        else:
+            print(
+                f"  ok   method one-party bullet = {got[0]} of "
+                f"{got[1]}, agreeing with Findings"
+            )
 
     for line in problems:
         print(f"ERROR {line}", file=sys.stderr)
