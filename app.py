@@ -1654,6 +1654,65 @@ def screen_home(frame, rules):
 # ------------------------------------------------------------------------ watch list
 
 
+def roles_checklist(frame):
+    st.markdown("### Who holds these controls in your organisation?")
+    st.markdown(
+        "This register names organisations and never individuals, and that is the "
+        "stronger version rather than the cautious one. A name is unusable to you. A "
+        "**role** is a lookup into your own org chart. These are the roles that came up "
+        f"across the {headline(frame)['total']} counted cases, and the useful exercise is "
+        "to put a name against each one for your own agent and see which lines you cannot "
+        "fill."
+    )
+    # Twenty seven rows is not an exercise, it is a wall. The roles that came up more
+    # than once are the ones worth a name, and the single-case tail sits behind a line
+    # rather than padding the table.
+    all_roles = sorted(headline(frame)["roles"].items(), key=lambda item: (-item[1], item[0]))
+    role_rows = [(name, count) for name, count in all_roles if count > 1]
+    tail = [name for name, count in all_roles if count == 1]
+    template = pd.DataFrame(
+        [{"Role": name, "Cases": count, "Who is this in your organisation?": ""}
+         for name, count in role_rows]
+    )
+    # The return value, not session state. Session state holds a pending-edits object
+    # rather than the frame. on_click="ignore" keeps the download from re-running the
+    # script, which would otherwise throw away whatever the reader has typed.
+    edited = st.data_editor(
+        template,
+        key="roles_checklist",
+        num_rows="fixed",
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Role": st.column_config.TextColumn("Role", width=300, disabled=True),
+            "Cases": st.column_config.NumberColumn(
+                "Cases", width=80, disabled=True,
+                help="Counted cases where this role was the one that mattered.",
+            ),
+            "Who is this in your organisation?": st.column_config.TextColumn(
+                "Who is this in your organisation?", width="large", max_chars=120,
+            ),
+        },
+    )
+    st.download_button(
+        "Download your filled checklist",
+        data=edited.to_csv(index=False).encode("utf-8"),
+        file_name="roles-checklist.csv",
+        mime="text/csv",
+        on_click="ignore",
+        help="Type into the third column first. Your answers stay in your browser.",
+    )
+    if tail:
+        with st.expander(f"The other {len(tail)} roles, each from a single case"):
+            st.markdown("\n".join(f"- {esc(name)}" for name in tail))
+    st.caption(
+        "Type into the third column and download it. Each case names the role that runs "
+        "the control and the role that answers when it fails, which are rarely the same. "
+        "A row you cannot fill is the finding, and it is the row worth taking to whoever "
+        "owns the agent."
+    )
+
+
 def screen_watchlist(frame, rules):
     st.title("Build your watch list")
     st.markdown(
@@ -1705,6 +1764,7 @@ def screen_watchlist(frame, rules):
             f"This is a starting point built from {headline(frame)['total']} counted "
             "cases, not an assessment of your system."
         )
+        roles_checklist(frame)
         return
 
     st.markdown(f"### Your list, {len(selected)} items")
@@ -1804,68 +1864,12 @@ def screen_watchlist(frame, rules):
             type="primary",
         )
     st.markdown("---")
-    st.markdown("### Who holds these controls in your organisation?")
-    st.markdown(
-        "This register names organisations and never individuals, and that is the "
-        "stronger version rather than the cautious one. A name is unusable to you. A "
-        "**role** is a lookup into your own org chart. These are the roles that came up "
-        f"across the {headline(frame)['total']} counted cases, and the useful exercise is "
-        "to put a name against each one for your own agent and see which lines you cannot "
-        "fill."
-    )
-    # Twenty seven rows is not an exercise, it is a wall. The roles that came up more
-    # than once are the ones worth a name, and the single-case tail sits behind a line
-    # rather than padding the table.
-    all_roles = sorted(headline(frame)["roles"].items(), key=lambda item: (-item[1], item[0]))
-    role_rows = [(name, count) for name, count in all_roles if count > 1]
-    tail = [name for name, count in all_roles if count == 1]
-    template = pd.DataFrame(
-        [{"Role": name, "Cases": count, "Who is this in your organisation?": ""}
-         for name, count in role_rows]
-    )
-    # The return value, not session state. Session state holds a pending-edits object
-    # rather than the frame. on_click="ignore" keeps the download from re-running the
-    # script, which would otherwise throw away whatever the reader has typed.
-    edited = st.data_editor(
-        template,
-        key="roles_checklist",
-        num_rows="fixed",
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "Role": st.column_config.TextColumn("Role", width=300, disabled=True),
-            "Cases": st.column_config.NumberColumn(
-                "Cases", width=80, disabled=True,
-                help="Counted cases where this role was the one that mattered.",
-            ),
-            "Who is this in your organisation?": st.column_config.TextColumn(
-                "Who is this in your organisation?", width="large", max_chars=120,
-            ),
-        },
-    )
-    st.download_button(
-        "Download your filled checklist",
-        data=edited.to_csv(index=False).encode("utf-8"),
-        file_name="roles-checklist.csv",
-        mime="text/csv",
-        on_click="ignore",
-        help="Type into the third column first. Your answers stay in your browser.",
-    )
-    if tail:
-        with st.expander(f"The other {len(tail)} roles, each from a single case"):
-            st.markdown("\n".join(f"- {esc(name)}" for name in tail))
-    st.caption(
-        "Type into the third column and download it. Each case names the role that runs "
-        "the control and the role that answers when it fails, which are rarely the same. "
-        "A row you cannot fill is the finding, and it is the row worth taking to whoever "
-        "owns the agent."
-    )
-
     st.caption(
         f"This is a starting point built from {headline(frame)['total']} counted cases, "
         "not an assessment of your system. It will miss risks specific to your setting, "
         "and passing every test here does not make an agent safe."
     )
+    roles_checklist(frame)
 
 
 # ---------------------------------------------------------------------------- method
