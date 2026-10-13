@@ -113,6 +113,26 @@ def main(argv):
         if all(got == want for got, want in checks.values()):
             print(f"          five tabs per row, one pane open, across {n_rows} rows")
 
+    # The row tabs and the open and close controls are wired by one delegated listener.
+    # It lived inside the home screen for a while, which left both dead on Findings with
+    # the markup still rendering and nothing erroring. Every screen that draws rows has
+    # to carry the listener.
+    for screen_name in ("Home", "Findings"):
+        at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+        if screen_name != "Home":
+            at.query_params["screen"] = screen_name
+        at.run()
+        html = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        rows = html.count('<details class="crow')
+        if rows and not html.count('class="tctl-b"'):
+            print(
+                f"  FAIL  {screen_name} draws {rows} rows with no open and close control",
+                file=sys.stderr,
+            )
+            clean = False
+        else:
+            print(f"          {screen_name}: {rows} rows, controls present")
+
     # A ?case= link opens that row, and must not leave the parameter behind to pin the
     # same row open on every later screen. Findings read the parameter too, so a stale
     # one opened a case there as well.

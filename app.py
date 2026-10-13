@@ -1076,6 +1076,7 @@ def tab_how_severe(frame):
     # Findings never auto-opens a row. A ?case= link is a link into the case list on
     # Home, and honouring it here as well is what made one case appear open on a page
     # the reader had just navigated to.
+    st.markdown(table_controls(), unsafe_allow_html=True)
     open_id = None
     for name, meaning, rows, slug in groups:
         n = len(rows)
@@ -1623,35 +1624,6 @@ def screen_home(frame, rules):
         st.info("No cases match these filters. [Clear them](?) and try again.", icon="🔍")
         return
 
-    # One delegated listener for every case's tabs, rather than a handler per row.
-    # Registered once and guarded, because Streamlit reruns re-execute this block.
-    components.html(
-        "<script>"
-        "const doc = window.parent.document;"
-        "if (!doc.__caseTabs) {"
-        "  doc.__caseTabs = true;"
-        "  doc.addEventListener('click', (e) => {"
-        "    const all = e.target.closest && e.target.closest('.tctl-b');"
-        "    if (all) {"
-        "      const want = all.dataset.all === 'open';"
-        "      const scope = all.closest('[data-testid=\\'stMarkdownContainer\\']')"
-        "        || doc;"
-        "      scope.querySelectorAll('details.crow').forEach(d => { d.open = want; });"
-        "      return;"
-        "    }"
-        "    const b = e.target.closest && e.target.closest('.ctabs .tb');"
-        "    if (!b) return;"
-        "    const box = b.closest('.ctabs');"
-        "    const tabs = [...box.querySelectorAll(':scope > .tabrow > .tb')];"
-        "    const panes = [...box.querySelectorAll(':scope > .pane')];"
-        "    const i = tabs.indexOf(b);"
-        "    tabs.forEach((t, n) => t.classList.toggle('on', n === i));"
-        "    panes.forEach((p, n) => p.classList.toggle('on', n === i));"
-        "  });"
-        "}"
-        "</script>",
-        height=0,
-    )
 
     ratings_for_cards, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     st.markdown(
@@ -2577,6 +2549,40 @@ def main():
         st.query_params["screen"] = screen
     with st.sidebar:
         st.markdown("---")
+
+    # One delegated listener for the row tabs and the open and close controls, on
+    # every screen rather than only Home. It lived inside the home screen until 13
+    # October 2026, which left the tabs and the controls dead on Findings: the markup
+    # rendered, nothing was wired to it, and nothing errored.
+    components.html(
+        "<script>"
+        "const doc = window.parent.document;"
+        "if (!doc.__caseTabs) {"
+        "  doc.__caseTabs = true;"
+        "  doc.addEventListener('click', (e) => {"
+        "    const all = e.target.closest && e.target.closest('.tctl-b');"
+        "    if (all) {"
+        "      const want = all.dataset.all === 'open';"
+        "      let scope = all.parentElement;"
+        "      while (scope && !scope.querySelector('details.crow')) "
+        "        scope = scope.parentElement;"
+        "      (scope || doc).querySelectorAll('details.crow')"
+        "        .forEach(d => { d.open = want; });"
+        "      return;"
+        "    }"
+        "    const b = e.target.closest && e.target.closest('.ctabs .tb');"
+        "    if (!b) return;"
+        "    const box = b.closest('.ctabs');"
+        "    const tabs = [...box.querySelectorAll(':scope > .tabrow > .tb')];"
+        "    const panes = [...box.querySelectorAll(':scope > .pane')];"
+        "    const i = tabs.indexOf(b);"
+        "    tabs.forEach((t, n) => t.classList.toggle('on', n === i));"
+        "    panes.forEach((p, n) => p.classList.toggle('on', n === i));"
+        "  });"
+        "}"
+        "</script>",
+        height=0,
+    )
 
     if screen == "Home":
         screen_home(frame, rules)
