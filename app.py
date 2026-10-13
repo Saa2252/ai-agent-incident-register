@@ -303,6 +303,11 @@ table.cases tr.notcounted td { color: var(--muted); }
 /* Five options rather than two, so they wrap instead of running off the measure. */
 .st-key-lenspick-kind [role="radiogroup"] { gap:18px; flex-wrap:wrap; }
 .st-key-lenspick-kind [role="radiogroup"] > label { max-width:260px; }
+/* Top-align, so a two-line option does not push its radio to the middle of the text. */
+.st-key-lenspick-bad [role="radiogroup"] > label,
+.st-key-lenspick-kind [role="radiogroup"] > label { align-items:flex-start; }
+.st-key-lenspick-bad [role="radiogroup"] > label > div:first-child,
+.st-key-lenspick-kind [role="radiogroup"] > label > div:first-child { margin-top:3px; }
 
 /* The harm filter is a secondary control, so it is one tinted button rather than ten
    chips across two rows. */
@@ -367,6 +372,9 @@ p.legend span { color:#52514e; line-height:1.45; }
 .ghead .gcount {
   font-size:13px; font-weight:700; color:var(--ink-2); text-transform:uppercase;
   letter-spacing:.04em;
+}
+.ghead .gcount small {
+  font-weight:600; font-size:11px; text-transform:none; letter-spacing:0; color:#52514e;
 }
 p.gmean { font-size:13px; color:#52514e; margin:0 0 10px; max-width:760px; line-height:1.5; }
 .crow-empty {
@@ -1165,8 +1173,7 @@ LENS_LABEL = {
     "mit": ("MIT harm severity scale", "How big was it, compared with all AI harm?"),
     "eu": ("EU AI Act serious-incident test",
            "Would it trigger mandatory reporting in the EU?"),
-    "classes": ("This register's missing-control classes",
-                "Which safeguard was missing?"),
+    "classes": ("This register's classes", "Which safeguard was missing?"),
     "owasp": ("OWASP Agentic Top 10", "Which known attack pattern?"),
     "rmf": ("NIST AI RMF", "Which governance function was missing?"),
     "articles": ("EU AI Act articles",
@@ -1279,6 +1286,23 @@ FRAMEWORK_LENSES = {
 }
 
 
+def group_header(name, counted, uncounted, meaning="", cls="", style=""):
+    """A group label on the same basis as every heading above it.
+
+    It used to print the number of rows in the group, which counted the single-source
+    row and so disagreed with the heading and the bar directly above it. It now prints
+    the counted figure and carries the not-counted row as a separate mark, in the same
+    small style the bars use.
+    """
+    tail = f"<small> +{uncounted} not counted</small>" if uncounted else ""
+    return (
+        f'<div class="ghead{cls}"{style}><span class="gname">{esc(name)}</span>'
+        f'<span class="gcount">{counted} {"case" if counted == 1 else "cases"}{tail}'
+        "</span></div>"
+        + (f'<p class="gmean">{esc(meaning)}</p>' if meaning else "")
+    )
+
+
 def category_rows(pairs):
     """One neutral bar per category, with the count printed and empty rows drawn.
 
@@ -1352,6 +1376,13 @@ def framework_view(frame, slug):
             f"#### {n} of {total} cases fall under {esc(top)}: "
             f"{esc(OWASP_CODES.get(top, ''))}."
         )
+        # A description of what is in this register, not a claim about agent failures
+        # in general. The opening words say so, and the three codes are computed.
+        three = sorted(hits, key=lambda k: (-hits[k], k))[:3]
+        st.markdown(
+            f"In this register, three patterns ({and_join(three)}) account for "
+            f"{sum(hits[k] for k in three)} of {total}."
+        )
     elif slug == "rmf":
         st.markdown(
             f"#### {n} of {total} cases point to {esc(top)}: "
@@ -1398,13 +1429,11 @@ def framework_view(frame, slug):
     st.markdown(table_controls(), unsafe_allow_html=True)
     for key in order:
         rows = frame[frame.apply(lambda r: key in spec["values"](r), axis=1)]
-        count = len(rows)
         st.markdown(
-            f'<div class="ghead"><span class="gname">{esc(spec["label"](key))}</span>'
-            f'<span class="gcount">{count} {"case" if count == 1 else "cases"}</span>'
-            "</div>"
-            + (f'<p class="gmean">{esc(spec["meaning"](key))}</p>'
-               if spec["meaning"](key) else ""),
+            group_header(
+                spec["label"](key), hits[key], extras[key], spec["meaning"](key),
+                cls=" lens",
+            ),
             unsafe_allow_html=True,
         )
         if rows.empty:
@@ -1613,12 +1642,11 @@ def tab_how_severe(frame):
                 for v in ("Meets", "Does not meet", "Not determinable from the record")
             ]
         for name, meaning, rows, slug in groups:
-            count = len(rows)
+            in_group = int(rows["counted"].sum())
+            out_group = len(rows) - in_group
             tint = f' style="border-left:6px solid var(--sev-{slug})"' if slug else ""
             st.markdown(
-                f'<div class="ghead"{tint}><span class="gname">{esc(name)}</span>'
-                f'<span class="gcount">{count} {"case" if count == 1 else "cases"}</span>'
-                f'</div><p class="gmean">{esc(meaning)}</p>',
+                group_header(name, in_group, out_group, meaning, style=tint),
                 unsafe_allow_html=True,
             )
             if rows.empty:
@@ -2209,10 +2237,17 @@ def screen_home(frame):
 
 
 def _leads():
-    """How many leads were checked and not included. Read from the file, never typed."""
+    """Leads checked and not included, and the number since reconsidered.
+
+    Counted from the status column rather than from the row count, because a row that
+    was reconsidered and admitted stays in the file with its reasoning. Dropping it
+    would hide the mistake, and counting it as a rejection would misstate the total.
+    """
     path = Path(__file__).parent / "data" / "leads" / "considered_not_included.csv"
     with open(path, encoding="utf-8") as handle:
-        return sum(1 for _ in csv.DictReader(handle))
+        rows = list(csv.DictReader(handle))
+    reconsidered = [r for r in rows if r.get("status", "").startswith("Reconsidered")]
+    return len(rows) - len(reconsidered), len(reconsidered)
 
 
 def screen_method(frame):
@@ -2554,22 +2589,25 @@ def screen_method(frame):
         "records, so the current headline is at least as exposed to this bias as the one "
         "it replaced. The repair was to publish the long list of candidates that were "
         "considered and dropped, with the test each failed, so the shape of what the rules "
-        f"excluded can be read rather than guessed at. That is now done: {_leads()} leads are "
-        "listed in data/leads/considered_not_included.csv, and the largest group by far is "
-        "cases where an AI system produced text and a person read it, which this register "
-        "excludes by design and which is where most public reporting of AI harm sits.\n"
-        "- **The clearest case this rule excludes.** In February 2026 a coding agent ran "
-        "terraform destroy against the production infrastructure of a course platform, "
-        "taking the database, the environment and every automated backup with it, and about "
-        "two and a half years of student submissions. The founder published a detailed "
-        "first-hand postmortem naming the stale state file, the auto-approve, the row count "
-        "and the recovery, and it even records that the agent advised against the approach "
-        "and a person approved anyway. It is not in this register. No reputable independent "
-        "outlet covered it, so a single source makes it grade C, and the inclusion rule "
-        "admits only A and B. That is the rule excluding a case documented better than "
-        "several that are in, and the trade is deliberate: the bar is set on what a reader "
-        "can check from two directions, not on how good the one account is. It is listed in "
-        "the considered and not included table with that reasoning.\n"
+        f"excluded can be read rather than guessed at. That is now done: {_leads()[0]} "
+        "leads are listed in data/leads/considered_not_included.csv with the test each "
+        f"failed, {count_word(_leads()[1])} of them since reconsidered and admitted, and "
+        "the largest group by far is cases where an AI system produced text and a person "
+        "read it, which this register excludes by design and which is where most public "
+        "reporting of AI harm sits.\n"
+        "- **A case this register first excluded, wrongly.** In February 2026 a coding "
+        "agent ran terraform destroy against the production infrastructure of a course "
+        "platform, taking the database, the environment and every automated backup with "
+        "it, and about two and a half years of student submissions. The organisation "
+        "published a detailed first-hand postmortem naming the stale state file, the "
+        "auto-approve, the row count and the recovery, and it even records that the agent "
+        "advised against the approach and a person approved anyway. It was rejected as a "
+        "single source and graded C. That was a search failure, not a judgement call: a "
+        "reputable trade outlet had covered it seven months earlier, and that report was "
+        "already sitting in the lead export the rejection was written from. It is now "
+        "AIR-023. The row stays in the considered and not included table with the "
+        "reasoning and the correction, because a register that quietly deletes its "
+        "mistakes is worth less than one that can be checked.\n"
         f"- **{count_word(len(one_party)).capitalize()} {head} on one party's account.** "
         f"{and_join(one_party)} {verb} graded B with a reputable outlet as the second "
         "source, and in each case that outlet is reporting the primary account rather "
@@ -2661,6 +2699,25 @@ def screen_method(frame):
     st.markdown("### Change log")
     st.markdown(
         "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        "| 1.1 in progress | 2026-10-14 | **AIR-023 added, and it should have been here "
+        "already.** On 12 October a lead was rejected for want of a second source, on the "
+        "reasoning that no reputable independent outlet had covered it. One had, seven "
+        "months earlier, and that report was already in the lead export the rejection was "
+        "written from. The case is an own account with a reputable outlet relaying it, "
+        "which is the same shape the evidence rule already accepts on three other rows. "
+        "The error was a search that stopped at the first source, not a rule that was too "
+        "strict. Every figure moved: 21 documented cases to 22, 20 counted to 21, 14 grade "
+        "B rows to 15. The missing safeguard was not accuracy in 17 of 20, now 18 of 21. "
+        "With accuracy tested first, 10 of 20 becomes 11 of 21. The record does not say "
+        "who could stop the agent in 19 of 20, now 19 of 21, because this row is the "
+        "first where it does. No review date in 20 of 20, now 21 of 21. The control was "
+        "never built in 9 cases, now 10. No attacker was involved in 12 of 20, now 13 of "
+        "21. Authority rose from 7 to 8 and is still the largest class. The MIT Minor band "
+        "went from 7 to 8. Not determinable on the EU test went from 15 to 16. The primary "
+        "record is the organisation's own publication in 5 cases, now 6, and the rows that "
+        "rest on one party's account went from three to four. Entailed as the basis for "
+        "the missing control went from 5 to 6. The leads table holds 114 rejections rather "
+        "than 115, with the reconsidered row kept in place. |\n"
         "| 1.1 in progress | 2026-10-14 | The fix that was meant to stop a schema "
         "change reaching the live site as a crash had never worked. Streamlit's data "
         "cache leaves out any argument whose name begins with an underscore, and the "

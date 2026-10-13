@@ -266,12 +266,22 @@ def main(argv):
     rmf_order, _ = catalogue("nist_ai_rmf_1.0.csv", "subcategory")
     mon_order, _ = catalogue("nist_ai_800_4_categories.csv", "category")
 
-    def tally(field):
+    def tally(field, over=None):
         found = {}
-        for r in counted:
+        for r in (counted if over is None else over):
             for value in (v.strip() for v in r[field].split(",") if v.strip()):
                 found[value] = found.get(value, 0) + 1
         return found
+
+    # A case that is not counted still appears in its group, marked. A case with two
+    # values appears in two groups and is marked in both, so the marks are counted the
+    # same way the bars are: once per mapping. Under the primary-mapping rule each case
+    # carries one value per lens and this becomes the number of uncounted cases.
+    shelved = [r for r in rows if r["evidence_grade"] not in {"A", "B"}]
+    lens_field = {
+        "owasp": "owasp_code", "rmf": "nist_ai_rmf",
+        "articles": "eu_ai_act", "monitoring": "nist_800_4_category",
+    }
 
     def top_of(found, order):
         """The app walks its row order and keeps the first strict maximum. Same here."""
@@ -327,9 +337,33 @@ def main(argv):
                 f"{sum(found.values())}"
             )
             continue
+        # The group labels under the chart have to be on the same basis as the bars
+        # above it. They counted every row in the group, including the single-source
+        # one, so a group read one higher than its own bar.
+        heads = re.findall(
+            r'<div class="ghead lens">.*?<span class="gcount">(\d+) cases?(.*?)</span>',
+            shown,
+        )
+        labelled = sum(int(h[0]) for h in heads)
+        not_counted = sum(
+            int(x) for h in heads for x in re.findall(r"\+(\d+) not counted", h[1])
+        )
+        uncounted_rows = sum(tally(lens_field[slug], over=shelved).values())
+        if labelled != printed:
+            problems.append(
+                f"?lens={slug} group labels total {labelled}, the bars above them "
+                f"total {printed}"
+            )
+            continue
+        if not_counted != uncounted_rows:
+            problems.append(
+                f"?lens={slug} marks {not_counted} mappings as not counted, the "
+                f"data has {uncounted_rows}"
+            )
+            continue
         print(
-            f"  ok   ?lens={slug} heading = {top} in {n} of {len(counted)}, bars total "
-            f"{printed}"
+            f"  ok   ?lens={slug} heading = {top} in {n} of {len(counted)}, bars and "
+            f"group labels both {printed}, {not_counted} marked not counted"
         )
 
     for line in problems:

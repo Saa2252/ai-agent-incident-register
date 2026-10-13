@@ -49,7 +49,7 @@ FIELDS = [
     "disputed", "aftermath_status", "aftermath_source_url", "inclusion",
     "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
     "source_2_url", "date_checked", "facts_changed_at", "derived_rechecked_at",
-    "archive_urls",
+    "archive_urls", "aiid_id",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -64,6 +64,10 @@ OPTIONAL_FIELDS = {
     # Filled by scripts/archive_sources.py. A row may legitimately have no snapshot yet
     # if the Wayback Machine refused the capture, which is reported as a warning.
     "archive_urls",
+    # The AI Incident Database's own number for the same event, where one exists. A
+    # cross-reference for a reader, never a source: incidentdatabase.ai is on the
+    # aggregator list above and is how cases are found, not evidence that they happened.
+    "aiid_id",
 }
 
 # ---- fixed vocabularies ----
