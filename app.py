@@ -281,11 +281,20 @@ table.cases tr.notcounted td { color: var(--muted); }
 }
 .st-key-harmpick button:hover { background:rgba(42,120,214,.20) !important; }
 
+/* Open and close every row. Buttons rather than links, because this changes nothing a
+   reader would want to share or bookmark. */
+.tctl { display:flex; gap:6px; margin:0 0 8px; }
+.tctl-b {
+  font:inherit; font-size:13px; font-weight:600; padding:5px 11px; cursor:pointer;
+  color:var(--ink-2); background:none; border:1px solid var(--grid-line); border-radius:8px;
+}
+.tctl-b:hover { background:rgba(42,120,214,.10); border-color:#2a78d6; color:inherit; }
+
 /* Group headings. A bare word was not carrying enough, so the band name is sized up and
    the count sits beside it rather than inside the same sentence. */
 .ghead {
   display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
-  margin:22px 0 2px; padding-bottom:6px; border-bottom:2px solid var(--grid-line);
+  margin:22px 0 2px; padding:0 0 6px 12px; border-bottom:2px solid var(--grid-line);
 }
 .ghead .gname { font-size:20px; font-weight:700; letter-spacing:-.01em; }
 .ghead .gcount {
@@ -667,6 +676,16 @@ def empty_case_table():
     )
 
 
+def table_controls():
+    """Open and close every row at once. Client side, so it costs no rerun."""
+    return (
+        '<div class="tctl">'
+        '<button type="button" class="tctl-b" data-all="open">Open all</button>'
+        '<button type="button" class="tctl-b" data-all="close">Close all</button>'
+        "</div>"
+    )
+
+
 def case_table(view, ratings=None, open_id=None):
     """The case index, with each row expanding in place.
 
@@ -1038,13 +1057,19 @@ def tab_how_severe(frame):
         return
 
     if which == MIT_NAME:
+        st.markdown(severity_strip(view), unsafe_allow_html=True)
         groups = [
-            (MIT_LEVELS[level], MIT_SEVERITY_MEANING[level], view[view["mit_level"] == level])
+            (
+                MIT_LEVELS[level],
+                MIT_SEVERITY_MEANING[level],
+                view[view["mit_level"] == level],
+                MIT_SLUG[level],
+            )
             for level in MIT_ORDER
         ]
     else:
         groups = [
-            (value, EU_GROUP_MEANING[value], view[view["eu_serious_incident"] == value])
+            (value, EU_GROUP_MEANING[value], view[view["eu_serious_incident"] == value], None)
             for value in ("Meets", "Does not meet", "Not determinable from the record")
         ]
 
@@ -1052,10 +1077,11 @@ def tab_how_severe(frame):
     # Home, and honouring it here as well is what made one case appear open on a page
     # the reader had just navigated to.
     open_id = None
-    for name, meaning, rows in groups:
+    for name, meaning, rows, slug in groups:
         n = len(rows)
+        tint = f' style="border-left:6px solid var(--sev-{slug})"' if slug else ""
         st.markdown(
-            f'<div class="ghead"><span class="gname">{esc(name)}</span>'
+            f'<div class="ghead"{tint}><span class="gname">{esc(name)}</span>'
             f'<span class="gcount">{n} {"case" if n == 1 else "cases"}</span></div>'
             f'<p class="gmean">{esc(meaning)}</p>',
             unsafe_allow_html=True,
@@ -1605,6 +1631,14 @@ def screen_home(frame, rules):
         "if (!doc.__caseTabs) {"
         "  doc.__caseTabs = true;"
         "  doc.addEventListener('click', (e) => {"
+        "    const all = e.target.closest && e.target.closest('.tctl-b');"
+        "    if (all) {"
+        "      const want = all.dataset.all === 'open';"
+        "      const scope = all.closest('[data-testid=\\'stMarkdownContainer\\']')"
+        "        || doc;"
+        "      scope.querySelectorAll('details.crow').forEach(d => { d.open = want; });"
+        "      return;"
+        "    }"
         "    const b = e.target.closest && e.target.closest('.ctabs .tb');"
         "    if (!b) return;"
         "    const box = b.closest('.ctabs');"
@@ -1621,7 +1655,8 @@ def screen_home(frame, rules):
 
     ratings_for_cards, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     st.markdown(
-        case_table(view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])),
+        table_controls()
+        + case_table(view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])),
         unsafe_allow_html=True,
     )
 
