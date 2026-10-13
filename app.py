@@ -75,6 +75,32 @@ MIT_LEVELS = {
 MIT_SLUG = {1: "neg", 2: "min", 3: "sub", 4: "sev", 5: "cat"}
 MIT_ORDER = [5, 4, 3, 2, 1]
 
+# What each band means, so a heading is not a bare word. The MIT wording summarises the
+# level's descriptors across the ten harm types rather than quoting one of them.
+MIT_SEVERITY_MEANING = {
+    5: "Societal or global breakdown. Nothing in this register comes near this level.",
+    4: "Harm at the scale of a region or a nation, or to hundreds of thousands of people.",
+    3: "Serious harm, affecting up to a million people or a critical service.",
+    2: "Real harm to a bounded group, up to about a thousand people.",
+    1: "Contained harm, or harm the record cannot show went further.",
+}
+
+EU_GROUP_MEANING = {
+    "Meets": (
+        "The published record shows harm of the kind Article 3(49) describes, such as "
+        "serious harm to health, to critical infrastructure, to fundamental rights or to "
+        "property."
+    ),
+    "Does not meet": (
+        "The record is clear enough to say the harm falls outside that definition."
+    ),
+    "Not determinable from the record": (
+        "The published account does not settle it either way. This is the honest default "
+        "rather than a judgement that the case was minor, and it is where most cases sit "
+        "because deployers rarely publish enough to decide it."
+    ),
+}
+
 MIT_ATTRIBUTION = (
     "Framework: MIT AI Risk Initiative, AI Incident Tracker (CC BY 4.0), based on CSET's "
     "Taxonomy of AI Harm, as modified by MIT. Captured 10 October 2026. Scores are this "
@@ -238,6 +264,39 @@ table.cases tr.notcounted td { color: var(--muted); }
   padding:14px 18px 18px 46px; background:rgba(127,127,127,.09);
   border-top:1px solid var(--grid-line); font-size:14px; line-height:1.55;
 }
+/* The framework choice is the control this page turns on, so it reads as a choice
+   rather than a stray pair of radio buttons. Scoped by container key, because the screen
+   selector in the sidebar is the same widget and must not grow with it. */
+.st-key-fwpick {
+  border:1px solid var(--grid-line); border-radius:12px; padding:14px 16px; margin:4px 0 10px;
+}
+.st-key-fwpick label p { font-size:17px !important; font-weight:700 !important; }
+.st-key-fwpick [role="radiogroup"] { gap:26px; }
+
+/* The harm filter is a secondary control, so it is one tinted button rather than ten
+   chips across two rows. */
+.st-key-harmpick button {
+  background:rgba(42,120,214,.12) !important; border:1px solid #2a78d6 !important;
+  font-weight:600 !important;
+}
+.st-key-harmpick button:hover { background:rgba(42,120,214,.20) !important; }
+
+/* Group headings. A bare word was not carrying enough, so the band name is sized up and
+   the count sits beside it rather than inside the same sentence. */
+.ghead {
+  display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+  margin:22px 0 2px; padding-bottom:6px; border-bottom:2px solid var(--grid-line);
+}
+.ghead .gname { font-size:20px; font-weight:700; letter-spacing:-.01em; }
+.ghead .gcount {
+  font-size:13px; font-weight:700; color:var(--ink-2); text-transform:uppercase;
+  letter-spacing:.04em;
+}
+p.gmean { font-size:13px; color:var(--ink-2); margin:0 0 10px; max-width:760px; line-height:1.5; }
+.crow-empty {
+  padding:14px; font-size:14px; color:var(--muted); border-top:1px solid var(--grid-line);
+}
+
 /* Tabs inside an open row. The active pane is a class rather than :checked, because
    React resets natively injected form controls and the radio trick died silently. */
 .ctabs .tabrow { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 12px; }
@@ -550,6 +609,20 @@ def case_sections_html(row, ratings=None):
         + "</div></div>"
     )
 
+
+
+def empty_case_table():
+    """A group with no cases still gets the table, so the shape of the scale is visible.
+
+    Dropping the empty levels would quietly flatter the data: the point of using a scale
+    that reaches further than this register does is that a reader can see how far.
+    """
+    return (
+        '<div class="ctbl"><div class="ctbl-head"><span>ID</span>'
+        "<span>What happened</span><span>Missing control</span><span>Severity</span>"
+        '<span>Evidence</span></div>'
+        '<div class="crow-empty">No cases in this register</div></div>'
+    )
 
 
 def case_table(view, ratings=None, open_id=None):
@@ -865,42 +938,54 @@ def tab_how_severe(frame):
 
     MIT_NAME = "MIT harm severity scale"
     EU_NAME = "EU AI Act: serious-incident test"
-    which = st.radio(
-        "Group the cases by",
-        [MIT_NAME, EU_NAME],
-        horizontal=True,
-        label_visibility="collapsed",
-    )
+    # Keyed so the styling below reaches this radio and not the screen selector in the
+    # sidebar, which is the same widget type.
+    with st.container(key="fwpick"):
+        st.markdown("**Measure these cases against**")
+        which = st.radio(
+            "Measure these cases against",
+            [MIT_NAME, EU_NAME],
+            horizontal=True,
+            label_visibility="collapsed",
+        )
 
     if which == MIT_NAME:
-        st.markdown(
+        st.caption(
             "Built by the MIT AI Risk Initiative on CSET's taxonomy of AI harm. Five "
             "levels, up to global-scale harm. "
             "[About this scale &#8599;](https://airisk.mit.edu/ai-incident-tracker/harm-severity)"
         )
     else:
-        st.markdown(
+        st.caption(
             "Article 3(49) of the EU AI Act defines a serious incident. This is the "
             "register's reading of the closest part of that definition, not a legal "
             "classification. "
             "[Read Article 3(49) &#8599;](https://artificialintelligenceact.eu/article/3/)"
         )
 
-    chosen_harms = st.pills(
-        "Narrow to a harm type", harms, selection_mode="multi", default=[]
-    )
+    # Ten chips in two rows was most of the clutter on this page, for a control almost
+    # nobody needs on a first read. Behind a button it costs one line.
+    with st.container(key="harmpick"), st.popover(
+        "Narrow to a harm type", icon=":material/filter_list:", width="content"
+    ):
+        chosen_harms = st.pills(
+            "Harm types", harms, selection_mode="multi", default=[],
+            label_visibility="collapsed",
+        )
     view = frame
     if chosen_harms:
         ids = set(ratings[ratings["harm_type"].isin(chosen_harms)]["case_id"])
         view = view[view["id"].isin(ids)]
 
     shown, counted_shown = len(view), int(view["counted"].sum())
-    scope = "All" if not chosen_harms else "The"
     noun = "case" if shown == 1 else "cases"
-    lead = f"{scope} {shown} {noun}"
+    lead = f"{'All' if not chosen_harms else 'The'} {shown} {noun}"
     if chosen_harms:
         lead += " affecting " + " and ".join(chosen_harms)
-    st.markdown(f"##### {esc(lead)}, grouped by {'severity' if which == MIT_NAME else 'the EU test'}")
+    st.markdown(
+        f"##### {esc(lead)}, grouped by "
+        f"{'severity' if which == MIT_NAME else 'the EU test'}"
+    )
     bar = f"**{counted_shown} of these {shown} feed the figures elsewhere on this site.**"
     if chosen_harms:
         bar += "  ·  [Show every case](?screen=Findings)"
@@ -912,22 +997,26 @@ def tab_how_severe(frame):
 
     if which == MIT_NAME:
         groups = [
-            (MIT_LEVELS[level], view[view["mit_level"] == level]) for level in MIT_ORDER
+            (MIT_LEVELS[level], MIT_SEVERITY_MEANING[level], view[view["mit_level"] == level])
+            for level in MIT_ORDER
         ]
-        empty_note = "No case in this register reaches this level."
     else:
         groups = [
-            (value, view[view["eu_serious_incident"] == value])
+            (value, EU_GROUP_MEANING[value], view[view["eu_serious_incident"] == value])
             for value in ("Meets", "Does not meet", "Not determinable from the record")
         ]
-        empty_note = "No case in this register falls here."
 
     open_id = st.query_params.get("case")
-    for name, rows in groups:
+    for name, meaning, rows in groups:
         n = len(rows)
-        st.markdown(f"**{esc(name)} &middot; {n} {'case' if n == 1 else 'cases'}**")
+        st.markdown(
+            f'<div class="ghead"><span class="gname">{esc(name)}</span>'
+            f'<span class="gcount">{n} {"case" if n == 1 else "cases"}</span></div>'
+            f'<p class="gmean">{esc(meaning)}</p>',
+            unsafe_allow_html=True,
+        )
         if rows.empty:
-            st.caption(empty_note)
+            st.markdown(empty_case_table(), unsafe_allow_html=True)
             continue
         st.markdown(
             case_table(rows.sort_values("id"), ratings=ratings, open_id=open_id),
