@@ -304,10 +304,12 @@ table.cases tr.notcounted td { color: var(--muted); }
 }
 .crow .cdate { font-variant-numeric:tabular-nums; white-space:nowrap; }
 
-/* The internal register view. Three public columns and nine an organisation fills from
-   its own logs and tickets, drawn empty because no public source can fill them. Date,
-   missing control and evidence are dropped here so the nine fit at 1280 without
-   sideways scrolling, and they are all still on the card. */
+/* The internal register view. Four public columns and nine an organisation fills from
+   its own logs and tickets, drawn empty because no public source can fill them. Missing
+   control, severity and evidence are dropped here so the nine have a readable width,
+   and all three are still on the card. Date stays: a register a reader cannot date is
+   not a register, and the comment here said it had been dropped for a release after it
+   had been put back. */
 /* Twelve columns do not fit the page width at a readable size, so the table scrolls
    inside its own container instead of squeezing every label to one word a line. */
 .ctbl.itbl { overflow-x:auto; }
@@ -800,9 +802,17 @@ def event_date_label(row):
     """The event date shown at the precision the record actually supports.
 
     Every row still carries a full date so the table can sort and the validator can
-    compare. Two rows are dated less precisely than that by their own sources, and
+    compare. Several rows are dated less precisely than that by their own sources, and
     printing a day for them would be precision this register does not have.
+
+    Where date_shown is filled it wins outright. It holds the way the sources date the
+    event, in their own words: a range, a month, a report date, a hedge. The derivation
+    below is what a row gets when nobody has written that down, and it can only ever
+    reach a month or a week.
     """
+    shown = (row.get("date_shown") or "").strip()
+    if shown:
+        return shown
     precision = (row.get("event_date_precision") or "day").strip()
     if precision == "day":
         return row["event_date"]
@@ -1401,15 +1411,28 @@ def tab_what_was_missing(frame):
         f"<th>Case IDs</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>",
         unsafe_allow_html=True,
     )
-    how_to_read(
-        f"One more case, {uncounted[0] if uncounted else 'none'}, is shown in the register "
-        "but not counted, because it rests on a single source. Each case is given one "
-        "missing safeguard, chosen by a fixed order of checks that tests accuracy last."
-        if len(uncounted) == 1 else
-        f"{len(uncounted)} cases are shown in the register but not counted, because they "
-        "rest on a single source. Each case is given one missing safeguard, chosen by a "
-        "fixed order of checks that tests accuracy last."
+    # The zero branch is the state the register reached on 14 October 2026, when the
+    # last grade C row was regraded. Without it the sentence read "0 cases are shown in
+    # the register but not counted", which is true and reads as a missing number.
+    rubric = (
+        " Each case is given one missing safeguard, chosen by a fixed order of checks "
+        "that tests accuracy last."
     )
+    if not uncounted:
+        how_to_read(
+            "Every case in the register is counted here. No row rests on a single "
+            "source." + rubric
+        )
+    elif len(uncounted) == 1:
+        how_to_read(
+            f"One more case, {uncounted[0]}, is shown in the register but not counted, "
+            "because it rests on a single source." + rubric
+        )
+    else:
+        how_to_read(
+            f"{len(uncounted)} cases are shown in the register but not counted, because "
+            "they rest on a single source." + rubric
+        )
 
     st.markdown("")
     st.markdown("#### What state was that control in?")
@@ -1443,7 +1466,7 @@ def tab_what_was_missing(frame):
         f"In {facts['no_approval']} of {facts['total']}, the public account describes no "
         "approval step before the action took effect. That field carries no source of "
         "its own, unlike the stop-authority field, so read it as this register's reading "
-        "of each account rather than a sourced absence."
+        "of each account."
     )
     st.markdown(
         f"In {facts['read_only']} of the {facts['total']}, the agent could only read. It "
@@ -1521,13 +1544,16 @@ FRAMEWORK_LENSES = {
         "catalogue": lambda: list(OWASP_CODES),
         "values": lambda row: _split(row["owasp_code"]),
         "label": lambda key: f"{key} {OWASP_CODES.get(key, '')}".strip(),
-        "meaning": lambda key: OWASP_DESCRIPTIONS.get(key, ""),
+        # No one-liner under a group header here. The descriptions are this register's
+        # summary of each entry, and printing one under an OWASP entry name reads as
+        # OWASP's own definition of it however the caption is worded. They stay on the
+        # case card, where the basis sits beside them. The line under the chart says
+        # which half of this view is OWASP's and which is not.
+        "meaning": lambda key: "",
         "sentence": (
             "OWASP's list names the attack patterns that apply to an agent rather than "
             "to a chatbot. Each case is given the one code whose entry describes the "
-            "mechanism of its failure, or Not applicable where no entry does. The code "
-            "names are OWASP's. The one-line descriptions are this register's summary, "
-            "not OWASP's wording."
+            "mechanism of its failure, or Not applicable where no entry does."
         ),
     },
     "rmf": {
@@ -1542,10 +1568,17 @@ FRAMEWORK_LENSES = {
         "values": lambda row: _split(row["nist_ai_rmf"]),
         "label": lambda key: key,
         "meaning": lambda key: NIST_RMF_ROWS.get(key, {}).get("text", ""),
+        # The same words as the mapping rule on the Method page. The explainer here
+        # used to state a shorter version of that rule, which left a reader comparing
+        # two wordings of one test and no way to tell whether they meant the same.
         "sentence": (
             "The framework names the practices an organisation is meant to have in "
-            "place. A case is listed under the subcategory whose text names the missing "
-            "safeguard."
+            "place. A case is listed under the subcategory whose text names the "
+            "missing safeguard, in the function where that safeguard would have lived: "
+            "GOVERN for policy, MAP for context, MEASURE for testing, MANAGE for "
+            "operating controls. A subcategory that names the specific safeguard beats "
+            "a generic one. MANAGE 4.1, which covers post-deployment monitoring in "
+            "general, is the primary only when nothing more specific fits."
         ),
     },
     "articles": {
@@ -1717,6 +1750,10 @@ def framework_view(frame, slug):
         ]),
         unsafe_allow_html=True,
     )
+    if slug == "owasp":
+        st.caption(
+            "Entry names are OWASP's. The mapping is this register's."
+        )
     used = [k for k in order if k in catalogue and (hits[k] or extras[k])]
     if spec["show_zeros"]:
         st.caption(
@@ -1780,23 +1817,30 @@ def framework_view(frame, slug):
         )
     url = src.get("source_url", "")
     host = url.split("/")[2] if "//" in url else url
-    # Two of the four files record an edition line that already names the framework,
-    # so printing both read as a stutter. The name is added only when it is missing.
+    # Three of the four files record an edition line that already names the framework,
+    # so printing both read as a stutter and the edition line is used on its own. The
+    # fourth, OWASP's, does not name the framework at all: it records which of the two
+    # publications the owner put out that same day was read. That belongs beside the
+    # link rather than appended to the framework's name, where it read as part of the
+    # title.
     edition = src.get("verified_against", "")
+    which = ""
     if not edition:
         lead = spec["name"]
     elif spec["name"].split(",")[0].lower() in edition.lower():
         lead = edition
     else:
-        lead = f"{spec['name']}, {edition}"
+        lead = spec["name"]
+        which = f", the {edition},"
     st.caption(
-        f"Source: {lead}, read from [{host}]({url}) on {src.get('retrieved', '')}. "
-        f"{basis}"
+        f"Source: {lead}, read from [{host}]({url}){which} on "
+        f"{src.get('retrieved', '')}. {basis}"
     )
-    how_to_read(
-        "A greyed row rests on a single source, so it is shown in its group and left "
-        "out of every figure, including the dashed part of a bar."
-    )
+    if len(uncounted):
+        how_to_read(
+            "A greyed row rests on a single source, so it is shown in its group and "
+            "left out of every figure, including the dashed part of a bar."
+        )
 
 
 def lens_picker(group, key):
@@ -1976,8 +2020,12 @@ def tab_how_severe(frame):
 
     how_to_read(
         "'At least' means the record doesn't establish the full size of the harm, so the "
-        "rating is the lowest level the record supports. A greyed row rests on a single "
-        "source, so it is shown here and left out of every figure."
+        "rating is the lowest level the record supports."
+        + (
+            " A greyed row rests on a single source, so it is shown here and left out "
+            "of every figure."
+            if len(uncounted) else ""
+        )
     )
 
 
@@ -2053,8 +2101,8 @@ def tab_what_the_record_shows(frame):
     )
     corrections = [
         ("A database and its backups were destroyed, newest copy three months old",
-         "The platform published a postmortem saying the data was recovered two and a "
-         "half days later"),
+         "The platform published a postmortem saying the data was recovered. The "
+         "founder's own account puts the outage at about 30 hours"),
         ("An eating disorder helpline was shut",
          "The number was taken over by another charity and still reaches therapists"),
         ("A regulator's settlement terms, with no mention of the company's response",
@@ -2118,8 +2166,8 @@ def tab_what_the_record_shows(frame):
     st.markdown("")
     st.markdown("#### How much of this is the register's own judgement?")
     st.markdown(
-        f"**{facts['basis_stated'] + facts['basis_entailed']} of {facts['total']} do not "
-        "rest on this register's opinion.**"
+        f"**{facts['basis_stated'] + facts['basis_entailed']} of {facts['total']} are "
+        "not this register's opinion.**"
     )
     tiers = [
         ("Stated", facts["basis_stated"], "The deployer, a regulator or a ruling said it."),
@@ -2205,7 +2253,7 @@ def incident_card(row):
     )
     st.markdown(
         f"**{esc(row['deployer'])}** · {esc(row['sector'])} · {esc(row['agent_type'])} "
-        f"· {esc(row['event_date'])}"
+        f"· {esc(event_date_label(row))}"
     )
 
     happened, missing, test, evidence, aftermath = st.tabs(
@@ -2696,7 +2744,7 @@ def screen_method(frame):
     st.markdown("### Two kinds of count, and which is which")
     st.markdown(
         f"**Descriptive counts** describe what is in the register and cover all "
-        f"{len(frame)} rows, including the grade C one. **Analytical counts** are any "
+        f"{len(frame)} rows, whatever their grade. **Analytical counts** are any "
         f"number used to support a claim, and those use only the {int(frame['counted'].sum())} "
         "grade A and grade B rows. Every table below says which it is. The validator "
         "enforces three things on this: that the function producing the headline filters "
@@ -2785,9 +2833,7 @@ def screen_method(frame):
         "A grade B row needs two reports on two different sites, and in practice usually "
         "includes the deployer's own public statement. Where the deployer confirmed the "
         "event but the harm is known only from reporting, the row stays at B rather than "
-        "rising to A. The register keeps one grade C row, labelled on its card and "
-        "excluded from every count, because dropping it would hide a failure pattern that "
-        "no counted row shows as plainly."
+        "rising to A. No grade C row remains."
     )
     st.markdown(
         "**A note on sources, which turned into a finding of its own.** Searching for these "
@@ -3292,6 +3338,18 @@ def screen_method(frame):
     with st.container(key="changelog"):
         st.markdown(
             "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        f"| {WORKING} | 2026-10-14 | **AIR-007 was graded C as single-source. Two "
+        "reputable reports existed. The test that admits AIR-023 admits it.** Its "
+        "primary record is the visitor's own post carrying the exchange, with The "
+        "Autopian the next day and Jalopnik the day after that. The row is grade B and "
+        "no grade C row remains, so every figure on the site now covers every case in "
+        "it. The counts moved and are recomputed, not retyped. |\n"
+        f"| {WORKING} | 2026-10-14 | Rows carry how their own sources date the event, in "
+        "the sources' words, where one ISO date would overstate them. Eleven say a "
+        "range, a month, a report date or a hedge, and that is what the tables and the "
+        "cards print. Sorting still uses the full date every row carries, and the "
+        "cross-reference line for those rows compares with the database on the month "
+        "rather than the day. |\n"
         f"| {WORKING} | 2026-10-14 | **The OWASP entries were read in full, and four "
         "more mappings changed.** The codes had first been read by name, then by the "
         "launch post's recap sentences, which describe 2025 incidents rather than "

@@ -56,8 +56,8 @@ of this stops being true.
 
 - **Only grade A and grade B rows feed a number.** Grade A needs a primary record plus a
   second source. Grade B needs two independent sources on different hosts. Grade C gets
-  one source, is labelled on its card, and is excluded from every count on the site. The
-  register carries one grade C row.
+  one source, is labelled on its card, and is excluded from every count on the site. No
+  grade C row remains.
 - **Every number on screen is computed from the CSV.** Nothing is typed into a page, so
   no count can drift away from the rows behind it.
 - **Fixed vocabularies.** Severity, control class, monitoring category and failure

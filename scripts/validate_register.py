@@ -33,7 +33,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 FIELDS = [
-    "id", "title", "event_date", "event_date_precision", "deployer", "sector", "agent_type", "what_happened",
+    "id", "title", "event_date", "event_date_precision", "date_shown", "deployer",
+    "sector", "agent_type", "what_happened",
     "why_in_register", "incident_or_hazard", "harm_type", "harm_borne_by",
     "could_have_prevented", "harm_bearer_had_control", "eu_serious_incident",
     "eu_closest_limb", "eu_basis", "eu_basis_type", "authority", "human_approval",
@@ -57,6 +58,11 @@ FIELDS = [
 # else must carry a value.
 OPTIONAL_FIELDS = {
     "source_2_label", "source_2_url",
+    # How the sources date the event, in their own words, where a single ISO date would
+    # overstate what they say. Blank on a row whose record names one day, and that is
+    # the common case. event_date still carries a full date on every row, because the
+    # table sorts on it and the validator compares against it.
+    "date_shown",
     # A deployment source is empty exactly when its answer is "Not disclosed", which is
     # checked by rule below rather than by presence.
     "deploy_evidence_source", "deploy_stop_authority_source", "deploy_review_date_source",
@@ -323,6 +329,16 @@ def check_date_precision(report, where, row):
         report.error(
             f"{where}.event_date_precision",
             f"must be one of {sorted(DATE_PRECISION)}",
+        )
+    # date_shown exists to print a range, a month or a hedge where one ISO date would
+    # overstate the sources. A second ISO date in it would be a duplicate of
+    # event_date and would start drifting from it.
+    shown = row.get("date_shown", "").strip()
+    if shown and DATE_PATTERN.match(shown):
+        report.error(
+            f"{where}.date_shown",
+            "is an ISO date. Leave it blank when the record names one day, so the row "
+            "has a single date to sort on and to check",
         )
 
 
@@ -828,8 +844,6 @@ def check_analytical_split(report, project_dir, rows):
 
     counted = [r for r in rows if r["evidence_grade"] in COUNTED_GRADES]
     uncounted = [r for r in rows if r["evidence_grade"] not in COUNTED_GRADES]
-    if not uncounted:
-        return
 
     # If every analytical figure came out the same over all rows, the separation would
     # be real in the prose and meaningless in the data, which is the version of this
@@ -841,7 +855,16 @@ def check_analytical_split(report, project_dir, rows):
             sum(1 for r in subset if r["said_something_untrue"] == "No"),
         )
 
-    if figures(counted) == figures(rows):
+    # Only while a row is actually excluded. With no grade C row the two sets are one
+    # set and their figures must match, which is not the bug this was written for.
+    #
+    # This whole function used to return here when no row was excluded, which took the
+    # structural check and the ordering floor below it out of the build along with the
+    # vacuity check. On 14 October 2026 the last grade C row was regraded, and the two
+    # checks the register's headline actually rests on would have gone quiet on that
+    # commit. Fourth time a control in this project has stopped watching without
+    # failing.
+    if uncounted and figures(counted) == figures(rows):
         report.error(
             "analytical split",
             "the counted and all-row figures are identical, so the exclusion rule is "
