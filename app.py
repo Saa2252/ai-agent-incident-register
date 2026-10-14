@@ -299,10 +299,15 @@ table.cases tr.notcounted td { color: var(--muted); }
    are now sized to what they actually hold, so the column carrying the sentence is the
    one that grows. */
 .ctbl-head, .crow > summary {
-  display:grid; grid-template-columns:76px 86px 140px minmax(0, 1fr) 104px 152px 66px;
+  display:grid; grid-template-columns:76px 118px 140px minmax(0, 1fr) 104px 152px 66px;
   gap:8px; align-items:center; padding:10px 14px;
 }
-.crow .cdate { font-variant-numeric:tabular-nums; white-space:nowrap; }
+/* The date column held an ISO date until 14 October 2026, so it was 86px and nowrap.
+   It now holds whatever the sources say, and "Jul-Aug 2025, report 27 Aug" at nowrap
+   ran straight across the organisation beside it: the grid track stays its declared
+   width and the overflow is drawn over the neighbour rather than widening anything.
+   Wider, and wrapping, because the column no longer has a known maximum. */
+.crow .cdate { font-variant-numeric:tabular-nums; overflow-wrap:break-word; }
 
 /* The internal register view. Four public columns and nine an organisation fills from
    its own logs and tickets, drawn empty because no public source can fill them. Missing
