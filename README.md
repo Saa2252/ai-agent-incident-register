@@ -1,19 +1,19 @@
 # AI Agent Incident Register
 
-Twenty one real AI agent failures, each traced to the control that was missing, the
+Twenty three real AI agent failures, each traced to the control that was missing, the
 test that would have caught it before launch, and the signal that would have shown it
-after. Version 1.0, released 13 October 2026.
+after. Version 1.1, released 14 October 2026.
 
 Live app: https://ai-agent-incident-register.streamlit.app
 
 **None of these failures was only the AI being wrong. Every one needed the AI to be
 allowed to act.**
 
-In 17 of the 20 counted cases the missing control was not accuracy: authority in 7 and
+In 19 of the 22 counted cases the missing control was not accuracy: authority in 9 and
 boundary in 6, against accuracy in 3. The register is mostly about what agents were
 allowed to **do** and what they accepted as an **instruction**. That count depends on
-accuracy being tested last in the rubric, so test it first instead and it is still 10 of
-20. The structural claim does not depend on the ordering at all: in no counted case was
+accuracy being tested last in the rubric, so test it first instead and it is still 11 of
+22. The structural claim does not depend on the ordering at all: in no counted case was
 an untrue statement sufficient on its own. Every one also required authority the agent
 should not have held, reach it should not
 have had, or a path nobody was monitoring. That is the finding that does not move when
@@ -38,7 +38,7 @@ already gone wrong. This is a small, checkable contribution to the second proble
 
 ## What is in it
 
-**The register.** Twenty one cases with a named deployer, the authority the agent actually
+**The register.** Twenty three cases with a named deployer, the authority the agent actually
 held, whether a person approved anything, the missing control, a test with a pass mark,
 a monitoring signal tagged to a NIST AI 800-4 category, the closest NIST AI RMF, ISO/IEC
 42001 and EU AI Act clauses, the deployer's own response, and an evidence grade with

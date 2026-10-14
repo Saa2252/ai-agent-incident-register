@@ -21,11 +21,25 @@ here rather than in tests/, where everything is standard library on purpose.
 """
 
 import csv
+import re
 import sys
 from pathlib import Path
 
 SCREENS = ["Home", "Findings", "Method"]
 TIMEOUT = 120
+
+
+def screen_radio(at):
+    """The sidebar's screen selector, found by its label.
+
+    These scripts used screen_radio(at), which meant "the first radio on the page". Adding
+    the public and internal register toggle to Home put a radio ahead of it and every
+    screen in every scenario silently became Home.
+    """
+    for widget in at.radio:
+        if widget.label == "Screen":
+            return widget
+    raise AssertionError("no radio labelled 'Screen' on this page")
 
 
 def report(label, at):
@@ -63,7 +77,7 @@ def main(argv):
             clean = report(f"{screen} (initial load)", at) and clean
             continue
         # The sidebar radio chooses the screen.
-        at.radio[0].set_value(screen).run()
+        screen_radio(at).set_value(screen).run()
         clean = report(screen, at) and clean
 
         # Home carries the case table and one open case. Both are checked rather than
@@ -80,7 +94,8 @@ def main(argv):
             if "<details" not in rendered:
                 print("          FAIL the case rows are not expandable")
                 clean = False
-            if 'class="crow" id="AIR-001" open' in rendered or " open>" in rendered:
+            if re.search(r'class="crow[^"]*" id="AIR-001" open', rendered) \
+                or " open>" in rendered:
                 print("          FAIL a row is open on Home with none requested")
                 clean = False
 
@@ -95,12 +110,12 @@ def main(argv):
         print("  FAIL  the requested row did not open in place", file=sys.stderr)
         clean = False
     else:
-        # Five tabs and five panes per row, with exactly one pane open in each. The whole
+        # Six tabs and six panes per row, with exactly one pane open in each. The whole
         # table is one markdown string, so these are counted across every row.
         n_rows = opened.count('<details class="crow')
         checks = {
-            "tabs": (opened.count('class="tb'), n_rows * 5),
-            "panes": (opened.count('class="pane'), n_rows * 5),
+            "tabs": (opened.count('class="tb'), n_rows * 6),
+            "panes": (opened.count('class="pane'), n_rows * 6),
             "open panes": (opened.count('class="pane on"'), n_rows),
         }
         for name, (got, want) in checks.items():
@@ -111,7 +126,7 @@ def main(argv):
                 )
                 clean = False
         if all(got == want for got, want in checks.values()):
-            print(f"          five tabs per row, one pane open, across {n_rows} rows")
+            print(f"          six tabs per row, one pane open, across {n_rows} rows")
 
     # The row tabs and the open and close controls are wired by one delegated listener.
     # It lived inside the home screen for a while, which left both dead on Findings with
@@ -132,6 +147,37 @@ def main(argv):
             clean = False
         else:
             print(f"          {screen_name}: {rows} rows, controls present")
+
+    # Every control-state label a card shows has to be one the Findings table uses. The
+    # two drifted apart once already: cards printed the raw value while the table printed
+    # a sentence, so the same state read as two different things depending on the page.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.run()
+    home_html = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+    at2 = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at2.query_params["screen"] = "Findings"
+    at2.run()
+    findings_html = "\n".join(str(getattr(e, "value", "")) for e in at2.markdown)
+    labels = [
+        "Never built", "On paper only", "Built but did not hold",
+        "Built but could be switched off", "Record does not say",
+    ]
+    shown = re.findall(r"State it was in: ([^.<]+)\.", home_html)
+    stray = sorted({v for v in shown if v not in labels})
+    missing_from_findings = [v for v in set(shown) if v not in findings_html]
+    if stray:
+        print(f"  FAIL  cards show control states the list does not have: {stray}",
+              file=sys.stderr)
+        clean = False
+    elif missing_from_findings:
+        print(
+            f"  FAIL  cards show states the Findings table never uses: "
+            f"{sorted(missing_from_findings)}",
+            file=sys.stderr,
+        )
+        clean = False
+    else:
+        print(f"          control-state wording matches, {len(set(shown))} states in use")
 
     # A ?case= link opens that row, and must not leave the parameter behind to pin the
     # same row open on every later screen. Findings read the parameter too, so a stale
@@ -180,6 +226,214 @@ def main(argv):
         else:
             print(f"          card {key}: {want} counted, {got} rows shown")
 
+    # Seven lenses, two selectors, one URL parameter. The four framework views were
+    # added on 14 October 2026 and none of them is reachable from the default state of
+    # the page, so a view that raises or renders nothing would otherwise go unseen.
+    lenses = {
+        "mit": "MIT harm severity scale",
+        "eu": "EU AI Act serious-incident test",
+        "classes": "This register's classes",
+        "owasp": "OWASP Agentic Top 10",
+        "rmf": "NIST AI RMF",
+        "articles": "EU AI Act articles",
+        "monitoring": "NIST AI 800-4 monitoring",
+    }
+    for slug, label in lenses.items():
+        at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+        at.query_params["screen"] = "Findings"
+        at.query_params["lens"] = slug
+        at.run()
+        if not report(f"Findings through ?lens={slug}", at):
+            clean = False
+            continue
+        picked = [r.value for r in at.radio if r.label == "View the cases through"]
+        if label not in picked:
+            print(
+                f"          FAIL ?lens={slug} did not select {label!r}, selectors "
+                f"show {picked}",
+                file=sys.stderr,
+            )
+            clean = False
+            continue
+        rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        if slug in {"owasp", "rmf", "articles", "monitoring"}:
+            bars = rendered.count('<div class="srows lens">')
+            rows = len(re.findall(r'<div class="srow">', rendered))
+            if bars != 1 or rows == 0:
+                print(
+                    f"          FAIL ?lens={slug} drew {bars} bar charts and {rows} "
+                    "category rows",
+                    file=sys.stderr,
+                )
+                clean = False
+                continue
+            # Scoped to the chart, not to the page. The page's stylesheet carries
+            # the same hex for a hover state, so a search of the whole render would
+            # pass even with severity colours on the bars.
+            chart = re.search(
+                r'<div class="srows lens">.*?</div></div>', rendered, re.S
+            )
+            colours = set(re.findall(r"background:(#[0-9a-f]{6}|var\(--[a-z-]+\))",
+                                     chart.group(0) if chart else ""))
+            if colours != {"#2a78d6"}:
+                print(
+                    f"          FAIL ?lens={slug} bars are coloured {sorted(colours)}, "
+                    "and severity is the only data colour on this site",
+                    file=sys.stderr,
+                )
+                clean = False
+                continue
+            print(f"          {rows} category rows, one neutral bar chart")
+        if rendered.count('<details class="crow') == 0:
+            print(f"          FAIL ?lens={slug} rendered no cases", file=sys.stderr)
+            clean = False
+
+    # The internal register view. Same rows, nine added columns that no public source
+    # can fill, and a computed line about how empty they are. A view whose whole claim
+    # is "these cells are empty" has to be checked against the data rather than looked
+    # at once.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["register"] = "internal"
+    at.run()
+    if report("Home as an organisation's own register", at):
+        rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        captions = "\n".join(str(getattr(e, "value", "")) for e in at.caption)
+        rows = len(re.findall(r'<details class="crow[^"]*"', rendered))
+        empty = rendered.count("icell empty")
+        known = rendered.count("icell known")
+        part = rendered.count("icell part")
+        said = re.search(
+            r"(\d+) of (\d+) internal-register cells are empty\. The public record "
+            r"fills (\d+) fully and (\d+) partly",
+            captions,
+        )
+        if not said:
+            print("          FAIL the internal view has no computed cell line",
+                  file=sys.stderr)
+            clean = False
+        elif [int(g) for g in said.groups()] != [empty, rows * 9, known, part]:
+            print(
+                f"          FAIL the line says {said.groups()}, the table draws "
+                f"{empty} empty, {rows * 9} cells, {known} known, {part} partly",
+                file=sys.stderr,
+            )
+            clean = False
+        elif known + part == 0:
+            print("          FAIL no cell is filled from the public record",
+                  file=sys.stderr)
+            clean = False
+        else:
+            print(
+                f"          {rows} rows, {empty} of {rows * 9} cells empty, "
+                f"{known} known and {part} partly from the record"
+            )
+    else:
+        clean = False
+
+    # The mapping rule, and the one-click route to it from a questioned row. Both the
+    # card and every lens chart link here, so a renamed section would break the only
+    # answer the site gives to "why this article and not that one".
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["screen"] = "Method"
+    at.query_params["rule"] = "enterprise"
+    at.run()
+    if report("Method through ?rule=enterprise", at):
+        text = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        if "What else changes inside an organisation" not in text:
+            print("          FAIL the enterprise section is not on Method",
+                  file=sys.stderr)
+            clean = False
+        elif 'id="enterprise"' not in text:
+            print("          FAIL the enterprise section has no anchor to land on",
+                  file=sys.stderr)
+            clean = False
+        else:
+            print("          the enterprise section and its anchor are both present")
+    else:
+        clean = False
+
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["screen"] = "Method"
+    at.query_params["rule"] = "mapping"
+    at.run()
+    if report("Method through ?rule=mapping", at):
+        text = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        if "How a case is mapped to a framework" not in text:
+            print("          FAIL the mapping rule section is not on Method",
+                  file=sys.stderr)
+            clean = False
+        elif 'id="mapping-rule"' not in text:
+            print("          FAIL the mapping rule section has no anchor to land on",
+                  file=sys.stderr)
+            clean = False
+        else:
+            print("          the rule section and its anchor are both present")
+    else:
+        clean = False
+
+    # One primary per framework per card, marked, with the rest labelled. A card that
+    # marks two would mean two counts for one case on the Findings page.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["case"] = "AIR-012"
+    at.run()
+    if report("a card's Frameworks tab marks one primary per framework", at):
+        rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        card = re.search(
+            r'<details class="crow[^"]*" id="AIR-012".*?</details>', rendered, re.S
+        )
+        body = card.group(0) if card else ""
+        marked = body.count('class="fwtag"')
+        secondary = body.count("also maps to")
+        if marked != 4:
+            print(
+                f"          FAIL the card marks {marked} primary mappings, there are "
+                "four frameworks",
+                file=sys.stderr,
+            )
+            clean = False
+        elif secondary == 0:
+            print("          FAIL no mapping is labelled 'also maps to'",
+                  file=sys.stderr)
+            clean = False
+        elif "?screen=Method&amp;rule=mapping" not in body:
+            print("          FAIL the card does not link to the mapping rule",
+                  file=sys.stderr)
+            clean = False
+        else:
+            print(f"          four primaries marked, {secondary} labelled, rule linked")
+    else:
+        clean = False
+
+    # Every card's What happened tab carries both labelled parts. The second one is
+    # the register's reading and the first is the sourced facts, and the split only
+    # means anything if every card actually shows it.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.run()
+    rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+    cards = re.findall(
+        r'<details class="crow[^"]*" id="(AIR-\d+)".*?</details>', rendered, re.S
+    )
+    bodies = re.findall(
+        r'<details class="crow[^"]*" id="AIR-\d+".*?</details>', rendered, re.S
+    )
+    missing_split = [
+        cid for cid, body in zip(cards, bodies)
+        if "Why it is in the register" not in body
+    ]
+    if not bodies:
+        print("  FAIL  no cards rendered to check the What happened split",
+              file=sys.stderr)
+        clean = False
+    elif missing_split:
+        print(
+            f"  FAIL  {len(missing_split)} cards have no 'Why it is in the register' "
+            f"heading: {', '.join(missing_split[:5])}",
+            file=sys.stderr,
+        )
+        clean = False
+    else:
+        print(f"  ok    all {len(bodies)} cards label both parts of What happened")
+
     # v1.0 reached the live site as a KeyError because st.cache_data keys on the
     # function, not on the files it opens, so a new column in the case data left the
     # key unchanged and new code ran against an old table. Nothing here would have
@@ -190,21 +444,38 @@ def main(argv):
     spec = importlib.util.spec_from_file_location("register_app", app)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    before = module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+    #
+    # This asserted only that the stamp moved, and the stamp moving was never the
+    # question. st.cache_data leaves any argument whose name starts with an underscore
+    # out of its key, and the loaders took the stamp as "_stamp", so the stamp moved
+    # and the cache returned the old table anyway. The same KeyError came back on a dev
+    # server on 14 October 2026 with this check green. It now adds a column to the
+    # file and asserts the loader returns a table that has it.
+    stamp = module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+    before = module.load_register(stamp)
     original = module.DATA_FILE.read_bytes()
+    lines = original.decode("utf-8").splitlines()
+    lines[0] += ",cache_probe"
+    lines[1:] = [line + ",x" for line in lines[1:]]
     try:
-        module.DATA_FILE.write_bytes(original + b"\n")
-        after = module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+        module.DATA_FILE.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+        after = module.load_register(
+            module.data_stamp(module.DATA_FILE, module.RATINGS_FILE)
+        )
     finally:
         module.DATA_FILE.write_bytes(original)
-    if before == after:
+    if "cache_probe" in before.columns:
+        print("  FAIL  the probe column was already there", file=sys.stderr)
+        clean = False
+    elif "cache_probe" not in after.columns:
         print(
-            "  FAIL  the cache stamp does not change when the case data changes",
+            "  FAIL  the loader served a cached table after the case data changed, so "
+            "a new column would reach the live site as a KeyError",
             file=sys.stderr,
         )
         clean = False
     else:
-        print("  ok    cache stamp moves when the case data moves")
+        print("  ok    the loader reloads when the case data changes")
 
     print("\nAll screens rendered." if clean else "\nAt least one screen raised.", file=sys.stderr if not clean else sys.stdout)
     return 0 if clean else 1

@@ -44,11 +44,13 @@ FIELDS = [
     "control_class", "secondary_class", "control_maturity", "missing_control",
     "missing_control_basis", "test_before_launch", "test_pass_mark",
     "signal_after_launch", "nist_800_4_category", "control_owner_role",
-    "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act", "what_changed_after",
+    "accountable_role", "nist_ai_rmf", "iso_42001", "eu_ai_act",
+    "nist_ai_rmf_basis", "eu_ai_act_basis", "what_changed_after",
     "disputed", "aftermath_status", "aftermath_source_url", "inclusion",
     "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
     "source_2_url", "date_checked", "facts_changed_at", "derived_rechecked_at",
-    "archive_urls",
+    "archive_urls", "aiid_id", "aiid_match_basis", "aiid_checked_on",
+    "evidence_note", "missing_control_note",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -63,6 +65,13 @@ OPTIONAL_FIELDS = {
     # Filled by scripts/archive_sources.py. A row may legitimately have no snapshot yet
     # if the Wayback Machine refused the capture, which is reported as a warning.
     "archive_urls",
+    # The AI Incident Database's own number for the same event, where one exists. A
+    # cross-reference for a reader, never a source: incidentdatabase.ai is on the
+    # aggregator list above and is how cases are found, not evidence that they happened.
+    "aiid_id",
+    # The reasoning that used to sit in the narrative. Most rows have none, because most
+    # rows raise no question about their grade or their class.
+    "evidence_note", "missing_control_note",
 }
 
 # ---- fixed vocabularies ----
@@ -94,10 +103,7 @@ CONTROL_CLASSES = {
 }
 
 # NIST AI 800-4, Challenges to the Monitoring of Deployed AI Systems, March 2026.
-NIST_800_4_CATEGORIES = {
-    "Functionality", "Operational", "Human factors",
-    "Security", "Compliance", "Large-scale impacts",
-}
+
 
 # OWASP Top 10 for Agentic Applications 2026, published 9 December 2025.
 # Allowed values come from frameworks/*.csv, copied from the source with a URL, a
@@ -111,6 +117,26 @@ def _load_framework(name):
     with open(path, newline="", encoding="utf-8") as fh:
         return {row["code"]: row for row in csv.DictReader(fh)}
 
+
+def _load_framework_by(name, key):
+    path = Path(__file__).parent.parent / "frameworks" / name
+    if not path.exists():
+        return {}
+    with open(path, newline="", encoding="utf-8") as fh:
+        return {row[key]: row for row in csv.DictReader(fh)}
+
+
+# Added 14 October 2026. These were shape checks before: anything matching "FUNCTION N.N"
+# or "Article N" passed, including a subcategory or an article that does not exist. The
+# values are now checked against the published lists, the same way OWASP codes are.
+NIST_RMF_ROWS = _load_framework_by("nist_ai_rmf_1.0.csv", "subcategory")
+EU_ARTICLE_ROWS = _load_framework_by("eu_ai_act_articles.csv", "article")
+NIST_800_4_ROWS = _load_framework_by("nist_ai_800_4_categories.csv", "category")
+
+NIST_800_4_CATEGORIES = set(NIST_800_4_ROWS) or {
+    "Functionality", "Operational", "Human factors",
+    "Security", "Compliance", "Large-scale impacts",
+}
 
 OWASP_ROWS = _load_framework("owasp_agentic_2026.csv")
 OWASP_CODES = {code: row["name"] for code, row in OWASP_ROWS.items()}
@@ -266,18 +292,109 @@ def check_style(report, where, row):
                 report.error(f"{where}.{field}", f"contains a {name}, which the voice rule forbids")
 
 
+NONE_CLOSEST = re.compile(r"^None \(closest: Article \d+\)$")
+
+NOT_APPLICABLE = "Not applicable"
+
+# The EU AI Act ordering published on the Method page. Specific before general, and the
+# first value in a row's list is its primary mapping. This is checked rather than
+# trusted, because the ordering is the whole claim: without it the mapping is one
+# person's pick and the bar on the Findings page is that pick counted up.
+EU_GROUPS = (
+    ("Article 14", "Article 15", "Article 9", "Article 10"),
+    ("Article 16", "Article 26"),
+    ("Article 50",),
+    ("Article 53", "Article 55"),
+    ("Article 72", "Article 73"),
+)
+EU_RANK = {
+    article: (group, position)
+    for group, articles in enumerate(EU_GROUPS)
+    for position, article in enumerate(articles)
+}
+
+
+def check_aiid(report, where, row):
+    """The cross-reference is a pointer for a reader, never a source.
+
+    Every row says whether the AI Incident Database holds the same event and when that
+    was last checked, including the rows where it holds nothing. A blank basis would
+    leave "no number here" and "nobody looked" indistinguishable.
+    """
+    if row["aiid_id"] and not row["aiid_id"].isdigit():
+        report.error(f"{where}.aiid_id", "must be the database's incident number")
+    if not row["aiid_match_basis"]:
+        report.error(
+            f"{where}.aiid_match_basis",
+            "every row says why it does or does not match, including the rows with no "
+            "match",
+        )
+    if not DATE_PATTERN.match(row["aiid_checked_on"] or ""):
+        report.error(f"{where}.aiid_checked_on", "needs the date the match was checked")
+
+
+def check_eu_order(report, where, row):
+    """The first article in the list has to be the one the rule puts first."""
+    values = [v.strip() for v in row["eu_ai_act"].split(",") if v.strip()]
+    if not values or NONE_CLOSEST.match(values[0]):
+        return
+    unknown = [v for v in values if v not in EU_RANK]
+    if unknown:
+        report.error(
+            f"{where}.eu_ai_act",
+            f"{', '.join(unknown)} is not in the published ordering, so the rule "
+            "cannot say whether it is the primary mapping",
+        )
+        return
+    best = min(EU_RANK[v] for v in values)
+    if EU_RANK[values[0]] != best:
+        should = [v for v in values if EU_RANK[v] == best][0]
+        report.error(
+            f"{where}.eu_ai_act",
+            f"{values[0]} is listed first but the rule makes {should} the primary",
+        )
+
+
 def check_clauses(report, where, row):
-    for field, pattern, shape in (
-        ("nist_ai_rmf", NIST_RMF_PATTERN, "FUNCTION N.N, for example MANAGE 4.1"),
-        ("iso_42001", ISO_PATTERN, "A.N.N or A.N.N.N, for example A.6.2.6"),
-        ("eu_ai_act", EU_PATTERN, "Article N or Article N(N), for example Article 26"),
+    """Clause references must exist, not merely look right.
+
+    ISO/IEC 42001 is checked for shape only and is not shown on any page. The standard
+    is paywalled, so its Annex A numbers have never been read against the text.
+    """
+    for field, known, shape, name in (
+        ("nist_ai_rmf", set(NIST_RMF_ROWS), "FUNCTION N.N, for example MANAGE 4.1",
+         "frameworks/nist_ai_rmf_1.0.csv"),
+        ("eu_ai_act", set(EU_ARTICLE_ROWS), "Article N, for example Article 26",
+         "frameworks/eu_ai_act_articles.csv"),
     ):
         refs = [part.strip() for part in row[field].split(",") if part.strip()]
         if not refs:
             report.error(f"{where}.{field}", "no clause reference given")
         for ref in refs:
-            if not pattern.match(ref):
+            # "None (closest: Article N)" says no provision addresses the missing
+            # safeguard, which is a real answer and not a gap in the coding.
+            if field == "eu_ai_act" and NONE_CLOSEST.match(ref):
+                inner = "Article " + ref.split("Article ")[1].rstrip(")")
+                if known and inner not in known:
+                    report.error(f"{where}.{field}", f"'{inner}' is not in {name}")
+                continue
+            if known and ref not in known:
+                report.error(
+                    f"{where}.{field}",
+                    f"'{ref}' is not in {name}. Add it from the published list, with its "
+                    "source and retrieval date, before using it",
+                )
+            elif not known and not re.match(r"^(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+$|^Article \d+", ref):
                 report.error(f"{where}.{field}", f"'{ref}' is not shaped like {shape}")
+
+    refs = [part.strip() for part in row["iso_42001"].split(",") if part.strip()]
+    for ref in refs:
+        if not ISO_PATTERN.match(ref):
+            report.error(f"{where}.iso_42001", f"'{ref}' is not shaped like A.N.N")
+
+    for field in ("nist_ai_rmf_basis", "eu_ai_act_basis"):
+        if row[field] not in FRAMEWORK_BASIS:
+            report.error(f"{where}.{field}", f"must be one of {sorted(FRAMEWORK_BASIS)}")
 
 
 def check_evidence(report, where, row):
@@ -406,7 +523,12 @@ def validate_rows(report, rows, today):
             report.error(f"{where}.control_class", f"'{row['control_class']}' is not one of {sorted(CONTROL_CLASSES)}")
         if row["nist_800_4_category"] not in NIST_800_4_CATEGORIES:
             report.error(f"{where}.nist_800_4_category", f"'{row['nist_800_4_category']}' is not a NIST AI 800-4 category")
-        if row["owasp_code"] not in OWASP_CODES:
+        # Added 14 October 2026 with the mapping rule. A case with no security path has
+        # no OWASP pattern, and picking the closest-looking code to avoid a blank was
+        # how five accuracy rows came to be labelled Human-Agent Trust Exploitation.
+        if row["owasp_code"] == NOT_APPLICABLE:
+            pass
+        elif row["owasp_code"] not in OWASP_CODES:
             report.error(
                 f"{where}.owasp_code",
                 f"'{row['owasp_code']}' is not in frameworks/owasp_agentic_2026.csv",
@@ -594,6 +716,8 @@ def validate_rows(report, rows, today):
                 )
 
         check_clauses(report, where, row)
+        check_eu_order(report, where, row)
+        check_aiid(report, where, row)
         check_evidence(report, where, row)
         check_style(report, where, row)
 

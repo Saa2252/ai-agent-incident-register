@@ -14,6 +14,7 @@ Three rules run through this file.
 
 import csv
 import html
+import importlib
 from collections import Counter
 import sys
 from pathlib import Path
@@ -50,6 +51,17 @@ st.set_page_config(
 # modified by MIT. Captured 10 October 2026 and transcribed into
 # frameworks/mit_severity_framework.csv. A case's headline level is the highest level it
 # reached on any harm type.
+# The words a reader sees for each control state. One map, used by the cards and by the
+# Findings table, because the two described the same state differently: a card showed the
+# raw value and the table said "Built but the attacker could switch it off".
+MATURITY_LABEL = {
+    "Absent": "Never built",
+    "Designed": "On paper only",
+    "Implemented": "Built but did not hold",
+    "Bypassable": "Built but could be switched off",
+    "Unknown": "Record does not say",
+}
+
 MATURITY_MEANING = {
     "Absent": "The control did not exist in any form.",
     "Designed": "It existed on paper, in a policy or an instruction, with nothing enforcing it.",
@@ -123,22 +135,58 @@ PAGE_CSS = """
 }
 
 /* Wide tables scroll in their own box rather than pushing the page sideways. */
-div[data-testid="stMarkdownContainer"]:has(> table) { overflow-x: auto; }
-div[data-testid="stMarkdownContainer"] > table { min-width: max-content; }
-div[data-testid="stTable"] { overflow-x: auto; }
-div[data-testid="stTable"] table { min-width: max-content; }
-div[data-testid="stTable"] th, div[data-testid="stTable"] td { white-space: nowrap; }
+/* Tables wrap rather than scroll. min-width: max-content with nowrap cells made every
+   long table as wide as its longest sentence: the change log ran 6,571px past the page
+   at 1280, and a reader had to scroll sideways through a paragraph to read it. */
+div[data-testid="stMarkdownContainer"] > table,
+div[data-testid="stTable"] table {
+  width: 100%; table-layout: auto; border-collapse: collapse;
+}
+div[data-testid="stMarkdownContainer"] > table th,
+div[data-testid="stMarkdownContainer"] > table td,
+div[data-testid="stTable"] th, div[data-testid="stTable"] td {
+  /* break-word, not anywhere. "anywhere" lets the browser count a break between
+     every pair of characters when it works out a column's minimum width, which
+     collapsed the change log's Version and Date columns to one character a line
+     once the table was made to fit. break-word still breaks a token that cannot
+     fit on a line of its own, which is all a long URL needs. */
+  white-space: normal; overflow-wrap: break-word; vertical-align: top;
+}
+div[data-testid="stMarkdownContainer"] > table th,
+div[data-testid="stTable"] th { color: #52514e; }
+
+/* The change log on a phone. Three columns of which one holds a paragraph cannot be a
+   table at 375px: the two narrow columns get a line each per word. Below 640px every
+   entry becomes a block, with its version and date as one caption line above the text. */
+@media (max-width: 640px) {
+  .st-key-changelog table, .st-key-changelog tbody, .st-key-changelog tr,
+  .st-key-changelog td { display:block; width:100%; }
+  .st-key-changelog thead { display:none; }
+  .st-key-changelog tr {
+    border:1px solid var(--grid-line); border-radius:10px;
+    padding:10px 12px; margin:0 0 10px;
+  }
+  .st-key-changelog td { border:0 !important; padding:0 !important; }
+  .st-key-changelog td:nth-child(1), .st-key-changelog td:nth-child(2) {
+    display:inline; font-size:12px; font-weight:700; color:#52514e;
+    text-transform:uppercase; letter-spacing:.04em;
+  }
+  .st-key-changelog td:nth-child(1)::after { content:" · "; font-weight:400; }
+  .st-key-changelog td:nth-child(2)::after { content:""; display:block; height:6px; }
+  .st-key-changelog td:nth-child(3) { font-size:14px; line-height:1.55; }
+}
+
 
 /* The case table. A real table with real headers, built as HTML because a severity
    meter cannot be expressed in a dataframe cell. */
 .case-table-wrap { overflow-x: auto; border: 1px solid var(--grid-line); border-radius: 12px; }
-table.cases { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+table.cases { border-collapse: collapse; width: 100%; font-size: 14px; }
 table.cases th, table.cases td {
   text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--grid-line);
   vertical-align: middle;
 }
 table.cases th {
-  font-size: 12px; color: var(--muted); font-weight: 600;
+  font-size: 12px; color: #52514e; font-weight: 600;
   text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
 }
 table.cases tr:last-child td { border-bottom: 0; }
@@ -180,9 +228,18 @@ table.cases tr.notcounted td { color: var(--muted); }
   background:none;
 }
 .hero-band p.fact { color:#c9d8ec; margin:0 0 10px; font-size:15px; font-weight:600; }
-.hero-band p.fact .sep { display:inline-block; padding:0 16px; }
+/* Two facts and a separator between them. The dot is drawn by the stylesheet rather
+   than written into the markup, so the rule below can take it away with the layout
+   instead of leaving it stranded on a line of its own. */
+.hero-band p.fact span + span::before { content:"·"; padding:0 16px; }
 .hero-band p.def {
   color:#c9d8ec; margin:0; font-size:14px; font-weight:400; max-width:720px; line-height:1.5;
+}
+/* The hero fact line. One line with a middle dot down to 480px, two lines below it,
+   because the dot ends up alone on a line of its own otherwise. */
+@media (max-width: 480px) {
+  .hero-band p.fact span { display:block; }
+  .hero-band p.fact span + span::before { content:none; }
 }
 
 /* One grid rather than three Streamlit columns, so the cards are the same height and
@@ -235,13 +292,60 @@ table.cases tr.notcounted td { color: var(--muted); }
 /* The case index. One <details> per case, summary laid out as a grid that lines up
    with the header, so it reads as a table and still expands in place. */
 .ctbl { border:1px solid var(--grid-line); border-radius:12px; overflow:hidden; }
+/* The fixed columns used to add up to 814px with the gaps, which left "What happened"
+   71px inside a tab panel and wrapped it one word to a line. The six labelled columns
+   are now sized to what they actually hold, so the column carrying the sentence is the
+   one that grows. */
 .ctbl-head, .crow > summary {
-  display:grid; grid-template-columns:96px 1fr 150px 190px 110px; gap:12px;
-  align-items:center; padding:10px 14px;
+  display:grid; grid-template-columns:76px 86px 140px minmax(0, 1fr) 104px 152px 66px;
+  gap:8px; align-items:center; padding:10px 14px;
+}
+.crow .cdate { font-variant-numeric:tabular-nums; white-space:nowrap; }
+
+/* The internal register view. Three public columns and nine an organisation fills from
+   its own logs and tickets, drawn empty because no public source can fill them. Date,
+   missing control and evidence are dropped here so the nine fit at 1280 without
+   sideways scrolling, and they are all still on the card. */
+.itbl .ctbl-head, .itbl .crow > summary, .ihead-groups {
+  grid-template-columns:68px 104px minmax(0, 1fr) repeat(9, 46px);
+  gap:5px; padding:8px 10px;
+}
+.ihead-groups {
+  display:grid; align-items:end; font-size:11px; font-weight:700; color:#52514e;
+  text-transform:uppercase; letter-spacing:.04em; padding-bottom:4px;
+}
+.ihead-groups .gpub { grid-column:span 3; }
+.ihead-groups .gint { border-bottom:2px dashed var(--grid-line); padding-bottom:3px; }
+.itbl .ctbl-head span { font-size:9px; line-height:1.15; overflow-wrap:break-word; }
+.itbl .crow > summary { font-size:13px; }
+.icell {
+  display:block; text-align:center; border-radius:5px; padding:4px 2px;
+  font-size:10px; line-height:1.2; overflow-wrap:break-word;
+}
+.icell.empty {
+  border:1.5px dashed var(--grid-line); background:rgba(127,127,127,.05); color:#8b8880;
+}
+.icell.known { border:1.5px solid #2a78d6; background:rgba(42,120,214,.10); color:#1d5fae; }
+.icell.part {
+  border:1.5px solid rgba(42,120,214,.45); background:rgba(42,120,214,.05); color:#1d5fae;
+}
+p.ilegend { display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:12px;
+  color:#52514e; margin:6px 0 10px; }
+p.ilegend .key { display:inline-block; width:22px; height:13px; border-radius:4px; }
+p.ilegend .key.solid { border:1.5px solid #2a78d6; background:rgba(42,120,214,.10); }
+p.ilegend .key.dotted {
+  border:1.5px dashed var(--grid-line); background:rgba(127,127,127,.05); margin-left:14px;
+}
+.st-key-regpick { margin:2px 0 8px; }
+.st-key-regpick [role="radiogroup"] { gap:22px; }
+@media (max-width: 900px) {
+  .itbl .ctbl-head, .ihead-groups { display:none; }
+  .itbl .crow > summary { grid-template-columns:1fr; gap:4px; }
+  .icell { text-align:left; }
 }
 .ctbl-head {
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
-  color:var(--ink-2); background:rgba(127,127,127,.14);
+  color:#52514e; background:rgba(127,127,127,.14);
 }
 .crow { border-top:1px solid var(--grid-line); }
 .crow > summary { cursor:pointer; list-style:none; font-size:14px; }
@@ -263,11 +367,21 @@ table.cases tr.notcounted td { color: var(--muted); }
 /* The framework choice is the control this page turns on, so it reads as a choice
    rather than a stray pair of radio buttons. Scoped by container key, because the screen
    selector in the sidebar is the same widget and must not grow with it. */
-.st-key-fwpick {
+.st-key-lenspick-bad, .st-key-lenspick-kind {
   border:1px solid var(--grid-line); border-radius:12px; padding:14px 16px; margin:4px 0 10px;
 }
-.st-key-fwpick label p { font-size:17px !important; font-weight:700 !important; }
-.st-key-fwpick [role="radiogroup"] { gap:26px; }
+.st-key-lenspick-bad label p, .st-key-lenspick-kind label p {
+  font-size:17px !important; font-weight:700 !important;
+}
+.st-key-lenspick-bad [role="radiogroup"] { gap:26px; }
+/* Five options rather than two, so they wrap instead of running off the measure. */
+.st-key-lenspick-kind [role="radiogroup"] { gap:18px; flex-wrap:wrap; }
+.st-key-lenspick-kind [role="radiogroup"] > label { max-width:260px; }
+/* Top-align, so a two-line option does not push its radio to the middle of the text. */
+.st-key-lenspick-bad [role="radiogroup"] > label,
+.st-key-lenspick-kind [role="radiogroup"] > label { align-items:flex-start; }
+.st-key-lenspick-bad [role="radiogroup"] > label > div:first-child,
+.st-key-lenspick-kind [role="radiogroup"] > label > div:first-child { margin-top:3px; }
 
 /* The harm filter is a secondary control, so it is one tinted button rather than ten
    chips across two rows. */
@@ -311,8 +425,15 @@ p.legend {
   display:flex; flex-direction:column; gap:2px; margin:8px 0 4px; font-size:12px;
 }
 p.legend span { color:#52514e; line-height:1.45; }
+/* The failure-type views. Longer labels than a severity pill, one neutral bar colour,
+   and no hover state, because these rows are not links. */
+.srows.lens .srow { grid-template-columns:270px 1fr 108px; cursor:default; }
+.srows.lens .slabel { font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+.srows.lens .srow:hover { background:transparent; }
 @media (max-width: 760px) {
   .srow { grid-template-columns:140px 1fr 90px; gap:8px; }
+  .srows.lens .srow { grid-template-columns:132px 1fr 76px; gap:8px; }
+  .srows.lens .slabel { font-size:12px; }
 }
 
 /* Group headings. A bare word was not carrying enough, so the band name is sized up and
@@ -326,9 +447,37 @@ p.legend span { color:#52514e; line-height:1.45; }
   font-size:13px; font-weight:700; color:var(--ink-2); text-transform:uppercase;
   letter-spacing:.04em;
 }
+.ghead .gcount small {
+  font-weight:600; font-size:11px; text-transform:none; letter-spacing:0; color:#52514e;
+}
 p.gmean { font-size:13px; color:#52514e; margin:0 0 10px; max-width:760px; line-height:1.5; }
 .crow-empty {
   padding:14px; font-size:14px; color:var(--muted); border-top:1px solid var(--grid-line);
+}
+
+.fwtable td.fwk { white-space:nowrap; font-weight:600; width:200px; }
+.fwtable tr.fwrow-s td.fwk { font-weight:400; font-style:italic; color:#52514e; }
+.fwtag {
+  display:inline-block; margin-left:8px; padding:1px 7px; border-radius:999px;
+  background:rgba(42,120,214,.12); border:1px solid #2a78d6; color:#1d5fae;
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+}
+a.fwlink { font-weight:700; }
+.fwbasis { font-size:12px; color:#52514e; margin-top:2px; }
+p.subhead {
+  font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+  color:#52514e; margin:14px 0 4px;
+}
+p.org { margin:0 0 9px; padding:8px 10px; background:rgba(127,127,127,.07);
+  border-radius:7px; }
+p.fwnote { font-size:12px; color:#52514e; margin:6px 0 0; line-height:1.5; }
+p.aiid {
+  margin:10px 0 0; padding:8px 10px; border-left:3px solid var(--grid-line);
+  background:rgba(127,127,127,.05); font-size:13px;
+}
+p.aiid span { font-size:12px; color:#52514e; }
+i.aiidmark {
+  font-style:normal; font-size:11px; color:#2a78d6; margin-left:4px; cursor:help;
 }
 
 /* Tabs inside an open row. The active pane is a class rather than :checked, because
@@ -372,18 +521,50 @@ p.gmean { font-size:13px; color:#52514e; margin:0 0 10px; max-width:760px; line-
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "1.0"
-UPDATED = "13 October 2026"
+VERSION = "1.1"
+UPDATED = "14 October 2026"
+
+# The version being written on this branch. Every change log row for unreleased work
+# carries WORKING rather than a typed string, so the release is two edits here and not
+# a search through the log: set VERSION to this number and IN_PROGRESS to "". The date
+# comes from UPDATED, which the pre-commit hook stamps from the commit itself.
+IN_PROGRESS = ""
+REPO_URL = "https://github.com/Saa2252/ai-agent-incident-register"
+WORKING = f"{IN_PROGRESS} in progress" if IN_PROGRESS else VERSION
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
 # restating them. A value the validator would reject cannot be displayed as valid here.
 sys.path.insert(0, str(APP_DIR / "scripts"))
 import validate_register as rules_check  # noqa: E402
 
+# Streamlit reloads app.py when it changes. It does not reload the modules app.py
+# imports, because those live in sys.modules for the life of the process, so a change
+# to the validator reaches the page only on a restart. On 14 October 2026 a server that
+# had been up since the morning raised AttributeError for a name added to the validator
+# that same day, while every headless check passed, because each of those starts a
+# fresh process and never sees the stale copy. This is the third time this project has
+# shipped a control that passed and was not watching the thing that broke.
+_rules_source = Path(rules_check.__file__)
+_rules_stamp = _rules_source.stat().st_mtime_ns if _rules_source.exists() else 0
+if getattr(rules_check, "_loaded_at", None) != _rules_stamp:
+    rules_check = importlib.reload(rules_check)
+    rules_check._loaded_at = _rules_stamp
+
 COUNTED_GRADES = rules_check.COUNTED_GRADES
 CONTROL_CLASSES = rules_check.CONTROL_CLASSES
 OWASP_CODES = rules_check.OWASP_CODES
 OWASP_STATUS = rules_check.OWASP_STATUS
+OWASP_ROWS = rules_check.OWASP_ROWS
+# OWASP's own one-line characterisation of each code, read from the same page the codes
+# come from. Added 14 October 2026, after six cases were coded Not applicable by
+# reasoning from the code names alone and five of them turned out to be described by
+# ASI09 word for word.
+OWASP_DESCRIPTIONS = {
+    code: row.get("description", "") for code, row in OWASP_ROWS.items()
+}
+NIST_RMF_ROWS = rules_check.NIST_RMF_ROWS
+EU_ARTICLE_ROWS = rules_check.EU_ARTICLE_ROWS
+NIST_800_4_ROWS = rules_check.NIST_800_4_ROWS
 
 GRADE_MEANING = {
     "A": "A primary record, meaning a ruling, a regulator notice, a vendor security advisory or a threat intelligence report, plus a second source on another site that corroborates it rather than restating it.",
@@ -426,6 +607,14 @@ def data_stamp(*paths):
     cached before the column existed, which is how v1.0 reached the live site as a
     KeyError while every local check passed. Local runs never caught it because each
     one starts with a cold cache.
+
+    The loaders take this as "stamp" and not as "_stamp". st.cache_data deliberately
+    leaves any argument whose name starts with an underscore out of the key, so the
+    first version of this fix was inert: the stamp moved, the key did not, and the
+    same KeyError came back on 14 October 2026 on a dev server that had been up since
+    before the framework basis columns were added. The test below it now changes the
+    file and asserts the loader returns the change, rather than asserting the stamp
+    moved and assuming the rest.
     """
     return tuple(
         (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else (0, 0)
@@ -438,7 +627,7 @@ MIT_FRAMEWORK_FILE = APP_DIR / "frameworks" / "mit_severity_framework.csv"
 
 
 @st.cache_data
-def load_register(_stamp):
+def load_register(stamp):
     frame = pd.read_csv(DATA_FILE, dtype=str).fillna("")
     frame["counted"] = frame["evidence_grade"].isin(COUNTED_GRADES)
     frame["year"] = frame["event_date"].str.slice(0, 4)
@@ -455,7 +644,7 @@ def load_register(_stamp):
 
 
 @st.cache_data
-def load_harm_ratings(_stamp):
+def load_harm_ratings(stamp):
     """Per-case harm ratings on MIT's framework, and the headline level per case."""
     ratings = pd.read_csv(RATINGS_FILE, dtype=str).fillna("")
     ratings["level"] = ratings["level"].astype(int)
@@ -467,7 +656,7 @@ def load_harm_ratings(_stamp):
 
 
 @st.cache_data
-def load_mit_framework(_stamp):
+def load_mit_framework(stamp):
     frame = pd.read_csv(MIT_FRAMEWORK_FILE, dtype=str)
     frame["level"] = frame["level"].astype(int)
     return frame
@@ -533,6 +722,110 @@ def _home_link(chosen, show_uncounted=False):
     return "?" + "&".join(parts) if parts else "?"
 
 
+def frameworks_html(row):
+    """Where this case sits in each published framework, with the official wording.
+
+    Every name and every clause text is read from the files in frameworks/, so a label
+    on a card is the framework owner's words and not a paraphrase typed here. ISO/IEC
+    42001 is deliberately absent: its numbers have never been read against the text.
+    """
+    def line(label, value, text, basis, primary):
+        """One mapping. The first for a framework is the one every count uses."""
+        body = f"<b>{esc(value)}</b>"
+        if text:
+            body += f" &middot; {esc(text)}"
+        mark = '<span class="fwtag">counted</span>' if primary else ""
+        return (
+            f'<tr class="{"fwrow-p" if primary else "fwrow-s"}">'
+            f'<td class="fwk">{esc(label)}</td><td>{body}{mark}'
+            f'<div class="fwbasis">{esc(basis)}</div></td></tr>'
+        )
+
+    def block(name, refs, text_for, basis):
+        out = []
+        for i, ref in enumerate(refs):
+            out.append(line(name if i == 0 else "also maps to", ref,
+                            text_for(ref), basis, i == 0))
+        return out
+
+    rows = []
+    rows += block(
+        "NIST AI RMF 1.0",
+        [r.strip() for r in row["nist_ai_rmf"].split(",") if r.strip()],
+        lambda ref: NIST_RMF_ROWS.get(ref, {}).get("text", ""),
+        row["nist_ai_rmf_basis"],
+    )
+
+    def eu_text(ref):
+        inner = ref
+        if ref.startswith("None (closest:"):
+            inner = "Article " + ref.split("Article ")[1].rstrip(")")
+        return EU_ARTICLE_ROWS.get(inner, {}).get("title", "")
+
+    rows += block(
+        "EU AI Act",
+        [r.strip() for r in row["eu_ai_act"].split(",") if r.strip()],
+        eu_text, row["eu_ai_act_basis"],
+    )
+    rows += block(
+        "OWASP Agentic Top 10 2026", [row["owasp_code"]],
+        lambda ref: " ".join(
+            x for x in (OWASP_CODES.get(ref, ""), OWASP_DESCRIPTIONS.get(ref, "")) if x
+        ),
+        row["owasp_code_basis"],
+    )
+    rows += block(
+        "NIST AI 800-4 monitoring", [row["nist_800_4_category"]],
+        lambda ref: NIST_800_4_ROWS.get(ref, {}).get("what_it_covers", ""),
+        "Register's summary, not NIST's wording",
+    )
+    return (
+        '<table class="mini fwtable"><tbody>' + "".join(rows) + "</tbody></table>"
+        "<p class=\"fwnote\">The row marked <b>counted</b> is this case's primary "
+        "mapping, and the only one any figure on the Findings page uses. The rest also "
+        "fit and are counted nowhere. Names and clause text come from the published "
+        "lists in this repository, each with its source and the date it was read."
+        '<br><a class="fwlink" target="_self" href="?screen=Method&amp;rule=mapping">'
+        "How these mappings were made &rarr;</a></p>"
+    )
+
+
+def aiid_mark(row):
+    """A marker in the ID cell when another index holds the same event.
+
+    Not a link. A link inside the summary would open the row as well as the page, so
+    the real link lives on the card where it does one thing.
+    """
+    if not row["aiid_id"]:
+        return ""
+    return (
+        f'<i class="aiidmark" title="AI Incident Database, incident '
+        f'{esc(row["aiid_id"])}">&#8599;</i>'
+    )
+
+
+def aiid_line(row):
+    """The same event's number in the AI Incident Database, as a pointer not a source.
+
+    The database is on the aggregator list, which means it is how cases are found and
+    never what a claim rests on. It is still the first place a reader will go to check
+    this register against something else, so every row says whether it is there.
+    """
+    if row["aiid_id"]:
+        body = (
+            '<a href="https://incidentdatabase.ai/cite/'
+            f'{esc(row["aiid_id"])}/" target="_blank" rel="noopener">'
+            f'AI Incident Database, incident {esc(row["aiid_id"])}</a>'
+        )
+    else:
+        body = "Not in the AI Incident Database."
+    return (
+        f'<p class="aiid"><b>Cross-reference, not a source.</b> {body}'
+        f'<br><span>{esc(row["aiid_match_basis"])} '
+        f'Checked {esc(row["aiid_checked_on"])}.</span></p>'
+    )
+
+
 def case_sections_html(row, ratings=None):
     """One case's full record as plain HTML.
 
@@ -579,16 +872,27 @@ def case_sections_html(row, ratings=None):
             )
 
     panes = [
-        ("What happened", para(row["what_happened"]) + para(row["why_in_register"])),
+        (
+            "What happened",
+            # Named here rather than worked into every title. Fourteen of the twenty one
+            # titles did not carry the organisation, and rewriting them to force it in
+            # would have risked the facts for the sake of a convention.
+            f'<p class="org"><b>Organisation.</b> {esc(row["deployer"])}'
+            f'<br><b>When.</b> {esc(row["event_date"])}</p>'
+            + para(row["what_happened"])
+            + '<p class="subhead">Why it is in the register</p>'
+            + para(row["why_in_register"]),
+        ),
         (
             "What was missing",
             f"<p><b>{esc(row['control_class'])}.</b> "
             f"{esc(CONTROL_CLASSES[row['control_class']])}</p>"
-            f"<p><b>State it was in: {esc(row['control_maturity'])}.</b> "
+            f"<p><b>State it was in: {esc(MATURITY_LABEL[row['control_maturity']])}.</b> "
             f"{esc(MATURITY_MEANING[row['control_maturity']])}</p>"
-            f"<p><b>Who pointed it at this: {esc(row['directed_by'])}.</b> "
+            f"<p><b>Who directed the agent: {esc(row['directed_by'])}.</b> "
             f"{esc(DIRECTED_MEANING[row['directed_by']])}</p>"
-            + para(row["missing_control"]) + para(row["missing_control_basis"]),
+            + para(row["missing_control"]) + para(row["missing_control_basis"])
+            + para(row["missing_control_note"]),
         ),
         (
             "Test before launch",
@@ -600,13 +904,16 @@ def case_sections_html(row, ratings=None):
             "Evidence",
             f"<p><b>Grade {esc(row['evidence_grade'])}.</b> "
             f"{esc(GRADE_MEANING[row['evidence_grade']])}</p>"
+            + para(row["evidence_note"])
             + sources
+            + aiid_line(row)
             + f'<table class="mini"><tbody>{deployment}</tbody></table>'
             + harm_rows
             + f"<p><b>EU Article 3(49), closest limb ({esc(row['eu_closest_limb'])}).</b> "
             f"{esc(row['eu_basis'])}</p>",
         ),
         ("Aftermath", para(row["what_changed_after"])),
+        ("Frameworks", frameworks_html(row)),
     ]
 
     # Tabs without a Streamlit widget. The first attempt used hidden radios and a CSS
@@ -679,12 +986,7 @@ def empty_case_table():
     Dropping the empty levels would quietly flatter the data: the point of using a scale
     that reaches further than this register does is that a reader can see how far.
     """
-    return (
-        '<div class="ctbl"><div class="ctbl-head"><span>ID</span>'
-        "<span>What happened</span><span>Missing control</span><span>Severity</span>"
-        '<span>Evidence</span></div>'
-        '<div class="crow-empty">No cases in this register</div></div>'
-    )
+    return '<div class="ctbl"><div class="crow-empty">No cases in this register</div></div>'
 
 
 def table_controls():
@@ -708,17 +1010,23 @@ def case_table(view, ratings=None, open_id=None):
     rerun, and the reader keeps their place, their filters and their scroll position.
     """
     head = (
-        '<div class="ctbl-head"><span>ID</span><span>What happened</span>'
+        '<div class="ctbl-head"><span>ID</span><span>Date</span>'
+        "<span>Organisation</span><span>What happened</span>"
         "<span>Missing control</span><span>Severity</span><span>Evidence</span></div>"
     )
     rows = []
     for _, row in view.iterrows():
         klass = " notcounted" if not row["counted"] else ""
         is_open = " open" if open_id and row["id"] == open_id else ""
+        # The deployer field names the organisation and sometimes the tool maker too.
+        # The column shows the organisation, and the card carries the full phrasing.
+        org = row["deployer"].split(",")[0].strip()
         rows.append(
             f'<details class="crow{klass}" id="{esc(row["id"])}"{is_open}>'
             '<summary><span class="cid"><i class="caret"></i>'
-            f'{esc(row["id"])}</span><span>{esc(row["title"])}</span>'
+            f'{esc(row["id"])}{aiid_mark(row)}</span>'
+            f'<span class="cdate">{esc(row["event_date"])}</span>'
+            f'<span>{esc(org)}</span><span>{esc(row["title"])}</span>'
             f'<span>{esc(row["control_class"])}</span>'
             f'<span>{severity_pill(row["mit_level"], row["mit_floored"])}</span>'
             f'<span>{grade_badge(row["evidence_grade"])}</span></summary>'
@@ -726,6 +1034,96 @@ def case_table(view, ratings=None, open_id=None):
             + "</details>"
         )
     return f'<div class="ctbl">{head}{"".join(rows)}</div>'
+
+
+# The nine columns an organisation's own incident register carries and a public record
+# cannot fill, in the three groups a response actually moves through.
+INTERNAL_GROUPS = (
+    ("Intake", ("Detected", "Reported by", "Owner")),
+    ("Response", ("Root cause", "Corrective action", "Due")),
+    ("Closure", ("Closed", "Approved by", "Regulator notified")),
+)
+INTERNAL_COLUMNS = [c for _, cols in INTERNAL_GROUPS for c in cols]
+
+# The one column a public record sometimes fills. Everything else in the nine is filled
+# from logs, tickets and the people involved, and none of that is published.
+CORRECTIVE = {
+    "Documented": ("On public record", "known"),
+    "Partial": ("Partly on record", "part"),
+    "Undocumented": ("", ""),
+}
+
+
+def internal_cells(row):
+    """The nine internal cells for one case, as markup and as a tally.
+
+    Nothing is invented. A cell a public record cannot fill is drawn empty and dashed,
+    which is the point of the view: the gap is the finding.
+    """
+    html_cells, filled, partly = [], 0, 0
+    for name in INTERNAL_COLUMNS:
+        text, state = "", ""
+        if name == "Corrective action":
+            text, state = CORRECTIVE.get(row["aftermath_status"], ("", ""))
+            if state == "known":
+                filled += 1
+            elif state == "part":
+                partly += 1
+        if text:
+            html_cells.append(f'<span class="icell {state}">{esc(text)}</span>')
+        else:
+            html_cells.append('<span class="icell empty">\u2013</span>')
+    return "".join(html_cells), filled, partly
+
+
+def internal_summary(view):
+    """The computed line under the table. Cells, not rows, because cells is the claim."""
+    total = len(view) * len(INTERNAL_COLUMNS)
+    filled = partly = 0
+    for _, row in view.iterrows():
+        _, f, p = internal_cells(row)
+        filled += f
+        partly += p
+    return total - filled - partly, total, filled, partly
+
+
+def internal_table(view, ratings=None, open_id=None):
+    """The same cases with the columns an internal register adds, drawn empty.
+
+    Date, missing control and evidence are dropped here so the nine dotted columns fit
+    at 1280 without sideways scrolling. They are all still on the card, which opens in
+    this view exactly as it does in the other.
+    """
+    groups = (
+        '<div class="ihead-groups"><span class="gpub">From the public record</span>'
+        + "".join(
+            f'<span class="gint" style="grid-column: span 3">{esc(name)}</span>'
+            for name, _ in INTERNAL_GROUPS
+        )
+        + "</div>"
+    )
+    head = (
+        '<div class="ctbl-head itbl-head"><span>ID</span><span>Organisation</span>'
+        "<span>What happened</span>"
+        + "".join(f"<span>{esc(c)}</span>" for c in INTERNAL_COLUMNS)
+        + "</div>"
+    )
+    rows = []
+    for _, row in view.iterrows():
+        klass = " notcounted" if not row["counted"] else ""
+        is_open = " open" if open_id and row["id"] == open_id else ""
+        org = row["deployer"].split(",")[0].strip()
+        cells, _, _ = internal_cells(row)
+        rows.append(
+            f'<details class="crow{klass}" id="{esc(row["id"])}"{is_open}>'
+            '<summary><span class="cid"><i class="caret"></i>'
+            f'{esc(row["id"])}</span>'
+            f'<span>{esc(org)}</span><span>{esc(row["title"])}</span>'
+            f"{cells}</summary>"
+            + case_sections_html(row, ratings)
+            + "</details>"
+        )
+    return f'<div class="ctbl itbl">{groups}{head}{"".join(rows)}</div>'
 
 
 def describe_count(total, counted):
@@ -768,6 +1166,12 @@ def headline(frame):
         "by_class": by_class,
         "accuracy_first": int(len(counted) - said_untrue.sum()),
         "would_change_class": int(said_untrue.sum() - accuracy),
+        # The IDs as well as the count. Three were typed here and the list went stale
+        # the moment the register grew past twelve cases.
+        "change_class_ids": sorted(
+            counted[(counted["said_something_untrue"] == "Yes")
+                    & (counted["control_class"] != "Accuracy")]["id"]
+        ),
         "said_nothing_untrue": int((~said_untrue).sum()),
         "said_untrue": int(said_untrue.sum()),
         "aftermath_documented": int((counted["aftermath_status"] == "Documented").sum()),
@@ -849,6 +1253,40 @@ def how_to_read(text):
     st.caption(text)
 
 
+def and_join(items):
+    """A, B and C. One place, so every list of IDs on the site reads the same way."""
+    items = list(items)
+    if not items:
+        return "none"
+    if len(items) == 1:
+        return items[0]
+    return " and ".join([", ".join(items[:-1]), items[-1]])
+
+
+def count_word(n):
+    """Small counts read better spelled out, and the sentence stays computed."""
+    return {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}.get(n, str(n))
+
+
+def own_account_rows(counted):
+    """The rows whose primary record the implicated organisation published itself, and
+    the subset of those with no corroboration beyond restatement.
+
+    Read off the source label rather than listed by hand. A label reading "CNN, 12 July
+    2025, reporting the company's own account" names a news outlet as the primary
+    record, not the account itself, so "reporting" excludes the row: the earlier
+    sentence counted AIR-016 and so said six where the claim holds for five. The subset
+    is the grade B rows, because grade A already requires the second source to
+    corroborate rather than restate, so a grade A row is corroborated by definition.
+    Findings and the Limits bullet both call this, so the two cannot drift apart.
+    """
+    own = counted[
+        counted["source_1_label"].str.contains("own account", case=False)
+        & ~counted["source_1_label"].str.contains("reporting", case=False)
+    ]
+    return sorted(own["id"]), sorted(own[own["evidence_grade"] == "B"]["id"])
+
+
 def tab_what_was_missing(frame):
     facts = headline(frame)
     counted = frame[frame["counted"]]
@@ -896,14 +1334,16 @@ def tab_what_was_missing(frame):
         "running it had set it up to do. Most failures in this register were not attacks. "
         "They came from how the agent was deployed."
     )
-    st.markdown(f"##### One trick worked {len(bypass)} times")
+    words = {1: "once", 2: "twice", 3: "three times", 4: "four times", 5: "five times"}
+    how_often = words.get(len(bypass), f"{len(bypass)} times")
+    st.markdown(f"##### One trick worked {how_often}")
+    joined = and_join(bypass)
     st.markdown(
-        f"In {', '.join(bypass[:-1])} and {bypass[-1]}, attackers got past the model's "
-        "safeguards simply by telling it the work was authorised security testing. This "
-        "worked on two different AI providers. Nothing in the public record shows either "
-        "provider has since changed how its models handle that claim. If your agent can "
-        "take security-sensitive actions, test whether this claim gets it past your own "
-        "safeguards."
+        f"In {joined}, attackers got past the model's safeguards simply by telling it "
+        "the work was authorised security testing. Nothing in the public record shows "
+        "any of the providers has since changed how its models handle that claim. If "
+        "your agent can take security-sensitive actions, test whether this claim gets it "
+        "past your own safeguards."
     )
     st.markdown(
         f"**The five types of missing safeguard, across the {facts['total']} counted "
@@ -945,10 +1385,7 @@ def tab_what_was_missing(frame):
     st.markdown(
         f"**{facts['control_absent']} of {facts['total']} had no such control in any form.**"
     )
-    labels = [("Absent", "Never built"), ("Designed", "On paper only"),
-              ("Implemented", "Built but did not hold"),
-              ("Bypassable", "Built but the attacker could switch it off"),
-              ("Unknown", "Record does not say")]
+    labels = list(MATURITY_LABEL.items())
     rows = []
     for key, label in labels:
         subset = counted[counted["control_maturity"] == key]
@@ -972,9 +1409,10 @@ def tab_what_was_missing(frame):
     st.markdown("")
     st.markdown("#### Two counts that change where you look")
     st.markdown(
-        f"In {facts['no_approval']} of the {facts['total']} counted cases, the record "
-        "shows no person approving the action before it took effect. In some of those, a "
-        "check existed and did not hold."
+        f"In {facts['no_approval']} of {facts['total']}, the public account describes no "
+        "approval step before the action took effect. That field carries no source of "
+        "its own, unlike the stop-authority field, so read it as this register's reading "
+        "of each account rather than a sourced absence."
     )
     st.markdown(
         f"In {facts['read_only']} of the {facts['total']}, the agent could only read. It "
@@ -1000,33 +1438,396 @@ def tab_what_was_missing(frame):
         )
 
 
+# ------------------------------------------------------------- framework lenses
+
+# Severity is this site's only data colour, so the failure-type views use one neutral
+# blue for every bar and print the category name beside it rather than encoding it.
+LENS_BAR = "#2a78d6"
+
+LENS_LABEL = {
+    "mit": ("MIT harm severity scale", "How big was it, compared with all AI harm?"),
+    "eu": ("EU AI Act serious-incident test",
+           "Would it trigger mandatory reporting in the EU?"),
+    "classes": ("This register's classes", "Which safeguard was missing?"),
+    "owasp": ("OWASP Agentic Top 10", "Which known attack pattern?"),
+    "rmf": ("NIST AI RMF", "Which governance function was missing?"),
+    "articles": ("EU AI Act articles",
+                 "Which provision addresses the missing safeguard?"),
+    "monitoring": ("NIST AI 800-4 monitoring", "What monitoring would have caught it?"),
+}
+LENS_BAD = ["mit", "eu"]
+LENS_KIND = ["classes", "owasp", "rmf", "articles", "monitoring"]
+HOW_BAD_TAB = "How bad"
+WHAT_KIND_TAB = "What kind of failure"
+LENS_TAB = dict(
+    [(s, HOW_BAD_TAB) for s in LENS_BAD] + [(s, WHAT_KIND_TAB) for s in LENS_KIND]
+)
+
+
+def _split(value):
+    """A comma separated field as a list. Two framework fields hold several values."""
+    return [v.strip() for v in str(value).split(",") if v.strip()]
+
+
+def _eu_article(value):
+    """The article a value points at. "None (closest: Article 15)" points at 15."""
+    if value.startswith("None (closest:"):
+        return "Article " + value.split("Article ")[1].rstrip(")")
+    return value
+
+
+def _eu_label(key):
+    title = EU_ARTICLE_ROWS.get(_eu_article(key), {}).get("title", "")
+    if key.startswith("None (closest:"):
+        return f"No provision applies, closest is {_eu_article(key)}"
+    return f"{key} {title}".strip()
+
+
+FRAMEWORK_LENSES = {
+    "owasp": {
+        "name": "OWASP Agentic Top 10 for Agentic Applications, 2026",
+        "unit": "pattern",
+        "plural": "patterns",
+        "multi": False,
+        "show_zeros": True,
+        "rows": lambda: OWASP_ROWS,
+        "basis_field": "owasp_code_basis",
+        "catalogue": lambda: list(OWASP_CODES),
+        "values": lambda row: _split(row["owasp_code"]),
+        "label": lambda key: f"{key} {OWASP_CODES.get(key, '')}".strip(),
+        "meaning": lambda key: OWASP_DESCRIPTIONS.get(key, ""),
+        "sentence": (
+            "OWASP's list names the attack patterns that apply to an agent rather than "
+            "to a chatbot. Each case is given the one code that fits its failure best, "
+            "so the counts below add up to the number of cases."
+        ),
+    },
+    "rmf": {
+        "name": "NIST AI Risk Management Framework 1.0",
+        "unit": "subcategory",
+        "plural": "subcategories",
+        "multi": True,
+        "show_zeros": False,
+        "rows": lambda: NIST_RMF_ROWS,
+        "basis_field": "nist_ai_rmf_basis",
+        "catalogue": lambda: list(NIST_RMF_ROWS),
+        "values": lambda row: _split(row["nist_ai_rmf"]),
+        "label": lambda key: key,
+        "meaning": lambda key: NIST_RMF_ROWS.get(key, {}).get("text", ""),
+        "sentence": (
+            "The framework names the practices an organisation is meant to have in "
+            "place. A case is listed under the subcategory whose practice would have "
+            "had to be working for the failure not to happen."
+        ),
+    },
+    "articles": {
+        "name": "Regulation (EU) 2024/1689, the EU AI Act",
+        "unit": "article",
+        "plural": "articles",
+        "multi": True,
+        "show_zeros": False,
+        "rows": lambda: EU_ARTICLE_ROWS,
+        "basis_field": "eu_ai_act_basis",
+        "catalogue": lambda: list(EU_ARTICLE_ROWS),
+        "values": lambda row: _split(row["eu_ai_act"]),
+        "label": _eu_label,
+        "meaning": lambda key: "",
+        "sentence": (
+            "These are the provisions that come closest to the missing safeguard. "
+            "Whether an obligation applies depends on the role, the system and the "
+            "jurisdiction, so read an article here as a starting point and not as a "
+            "finding of law."
+        ),
+    },
+    "monitoring": {
+        "name": "NIST AI 800-4, Challenges to the Monitoring of Deployed AI Systems",
+        "unit": "category",
+        "plural": "categories",
+        "multi": False,
+        "show_zeros": True,
+        "rows": lambda: NIST_800_4_ROWS,
+        "basis_field": None,
+        "catalogue": lambda: list(NIST_800_4_ROWS),
+        "values": lambda row: _split(row["nist_800_4_category"]),
+        "label": lambda key: key,
+        "meaning": lambda key: NIST_800_4_ROWS.get(key, {}).get("what_it_covers", ""),
+        "sentence": (
+            "NIST groups what an organisation has to watch for once a system is live. A "
+            "case is listed under the kind of monitoring that would have surfaced it. "
+            "The category names are NIST's. The one-line descriptions are this "
+            "register's summary, not NIST's wording."
+        ),
+    },
+}
+
+
+def group_header(name, counted, uncounted, meaning="", cls="", style=""):
+    """A group label on the same basis as every heading above it.
+
+    It used to print the number of rows in the group, which counted the single-source
+    row and so disagreed with the heading and the bar directly above it. It now prints
+    the counted figure and carries the not-counted row as a separate mark, in the same
+    small style the bars use.
+    """
+    tail = f"<small> +{uncounted} not counted</small>" if uncounted else ""
+    return (
+        f'<div class="ghead{cls}"{style}><span class="gname">{esc(name)}</span>'
+        f'<span class="gcount">{counted} {"case" if counted == 1 else "cases"}{tail}'
+        "</span></div>"
+        + (f'<p class="gmean">{esc(meaning)}</p>' if meaning else "")
+    )
+
+
+def category_rows(pairs):
+    """One neutral bar per category, with the count printed and empty rows drawn.
+
+    The same shape as the severity rows, without the colour and without the link.
+    Nothing here is clickable, because nothing behind it filters, and a row that looks
+    like a link and does nothing is worse than a row that looks like a row.
+    """
+    widest = max([n for _, n, _ in pairs] + [1])
+    out = []
+    for label, n, extra in pairs:
+        bar = (
+            f'<span class="sbar" style="width:{100 * n / widest:.2f}%;'
+            f'background:{LENS_BAR}"></span>'
+        )
+        if extra:
+            bar += (
+                f'<span class="sbar extra" style="width:'
+                f'{100 * extra / widest:.2f}%;border-color:{LENS_BAR}"></span>'
+            )
+        out.append(
+            f'<div class="srow"><span class="slabel">{esc(label)}</span>'
+            f'<span class="strack">{bar}</span>'
+            f'<span class="scount">{n}'
+            + (f"<small> +{extra} not counted</small>" if extra else "")
+            + "</span></div>"
+        )
+    return f'<div class="srows lens">{"".join(out)}</div>'
+
+
+def primary_mapping(spec, row):
+    """The one provision this case is counted under, which is the first in its list.
+
+    The order is the rule published on the Method page, and the validator rejects a
+    row whose first value is not the one that rule picks, so this is reading a decision
+    rather than making one.
+    """
+    values = spec["values"](row)
+    return values[0] if values else ""
+
+
+def framework_view(frame, slug):
+    """One published framework applied to every case, in the same shape for all four.
+
+    The finding as a computed heading, one sentence saying what the framework is, a
+    neutral bar for every category, the cases grouped under their category, and a
+    source line naming the file the labels were read from. Every label here is the
+    framework owner's wording, read from frameworks/, and every count is derived.
+    """
+    spec = FRAMEWORK_LENSES[slug]
+    ratings, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
+    counted = frame[frame["counted"]]
+    uncounted = frame[~frame["counted"]]
+    total = len(counted)
+
+    # Every count here is of primary mappings, so a case appears once however many
+    # provisions also fit. Before the mapping rule a case with two values was counted
+    # under both and the bars added up to more cases than the register holds.
+    hits = Counter(primary_mapping(spec, row) for _, row in counted.iterrows())
+    extras = Counter(primary_mapping(spec, row) for _, row in uncounted.iterrows())
+    hits.pop("", None)
+    extras.pop("", None)
+
+    catalogue = spec["catalogue"]()
+    seen = set(hits) | set(extras)
+    if spec["show_zeros"]:
+        order = catalogue + sorted(k for k in seen if k not in catalogue)
+    else:
+        order = sorted(seen, key=lambda k: (-hits[k], k))
+    if not order:
+        st.info("No case in this register carries a value from this framework.")
+        return
+
+    top = order[0]
+    for key in order:
+        if hits[key] > hits[top]:
+            top = key
+    n = hits[top]
+
+    if slug == "owasp":
+        st.markdown(
+            f"#### {n} of {total} cases fall under {esc(top)}: "
+            f"{esc(OWASP_CODES.get(top, ''))}."
+        )
+        # A description of what is in this register, not a claim about agent failures
+        # in general. The opening words say so, and the three codes are computed.
+        three = sorted(hits, key=lambda k: (-hits[k], k))[:3]
+        st.markdown(
+            f"In this register, three patterns ({and_join(three)}) account for "
+            f"{sum(hits[k] for k in three)} of {total}."
+        )
+    elif slug == "rmf":
+        st.markdown(f"#### {n} of {total} cases point to {esc(top)}.")
+        st.markdown(
+            f"{esc(top)} reads: {esc(NIST_RMF_ROWS.get(top, {}).get('text', ''))}"
+        )
+    elif slug == "articles":
+        st.markdown(
+            f"#### {esc(_eu_article(top))} is the closest provision in {n} of {total} "
+            "cases. None of these systems is confirmed high-risk."
+        )
+    else:
+        st.markdown(
+            f"#### {n} of {total} would have been caught by {esc(top)} monitoring."
+        )
+    st.markdown(spec["sentence"])
+
+    st.markdown(f"##### Where the {total} counted cases fall")
+    st.markdown(
+        category_rows([
+            (spec["label"](key), hits[key], extras[key]) for key in order
+        ]),
+        unsafe_allow_html=True,
+    )
+    used = [k for k in order if k in catalogue and (hits[k] or extras[k])]
+    if spec["show_zeros"]:
+        st.caption(
+            f"{len(used)} of the {len(catalogue)} {spec['plural']} in the published "
+            f"list have a case here. The other "
+            f"{count_word(len(catalogue) - len(used))} "
+            f"{'is' if len(catalogue) - len(used) == 1 else 'are'} drawn at zero, "
+            "because a category with no case is part of the shape."
+        )
+    else:
+        st.caption(
+            f"{len(used)} of the {len(catalogue)} {spec['plural']} this register "
+            "tracks appear here. The published list is too long to draw in full, so "
+            f"the {spec['plural']} with no case are left out rather than drawn at zero."
+        )
+
+    st.caption(
+        "Each case is counted once, under its primary mapping. Other mappings that fit "
+        "are on the case card and counted nowhere. "
+        "[How these mappings were made](?screen=Method&rule=mapping)"
+    )
+    st.markdown(f"##### All {len(frame)} cases, grouped by {spec['unit']}")
+    st.markdown(table_controls(), unsafe_allow_html=True)
+    for key in order:
+        rows = frame[frame.apply(lambda r: primary_mapping(spec, r) == key, axis=1)]
+        st.markdown(
+            group_header(
+                spec["label"](key), hits[key], extras[key], spec["meaning"](key),
+                cls=" lens",
+            ),
+            unsafe_allow_html=True,
+        )
+        if rows.empty:
+            st.markdown(empty_case_table(), unsafe_allow_html=True)
+            continue
+        st.markdown(
+            case_table(rows.sort_values("event_date", ascending=False), ratings=ratings),
+            unsafe_allow_html=True,
+        )
+
+    table = spec["rows"]()
+    src = (
+        table.get(_eu_article(top))
+        or table.get(top)
+        or next(iter(table.values()), {})
+    )
+    basis_field = spec["basis_field"]
+    if basis_field:
+        stated = int((counted[basis_field] == "Stated").sum())
+        basis = (
+            f"All {total} mappings are this register's reading, not the framework "
+            "owner's."
+            if stated == 0 else
+            f"{total - stated} of the {total} mappings are this register's reading. "
+            f"{stated} {'is' if stated == 1 else 'are'} applied to the case by the "
+            "publication itself."
+        )
+    else:
+        basis = (
+            f"All {total} mappings are this register's reading, not NIST's."
+        )
+    url = src.get("source_url", "")
+    host = url.split("/")[2] if "//" in url else url
+    # Two of the four files record an edition line that already names the framework,
+    # so printing both read as a stutter. The name is added only when it is missing.
+    edition = src.get("verified_against", "")
+    if not edition:
+        lead = spec["name"]
+    elif spec["name"].split(",")[0].lower() in edition.lower():
+        lead = edition
+    else:
+        lead = f"{spec['name']}, {edition}"
+    st.caption(
+        f"Source: {lead}, read from [{host}]({url}) on {src.get('retrieved', '')}. "
+        f"{basis}"
+    )
+    how_to_read(
+        "A greyed row rests on a single source, so it is shown in its group and left "
+        "out of every figure, including the dashed part of a bar."
+    )
+
+
+def lens_picker(group, key):
+    """The selector both Findings tabs carry, with the choice kept in the URL.
+
+    Written on change rather than on every run. Both tabs render on every run, so two
+    selectors writing the same parameter on every run would fight over it and the
+    reader would be moved back to whichever ran last.
+    """
+    slugs = LENS_BAD if group == "bad" else LENS_KIND
+    labels = [LENS_LABEL[s][0] for s in slugs]
+    asked = st.query_params.get("lens")
+
+    def remember():
+        st.query_params["lens"] = slugs[labels.index(st.session_state[key])]
+
+    with st.container(key=f"lenspick-{group}"):
+        chosen = st.radio(
+            "View the cases through",
+            labels,
+            captions=[LENS_LABEL[s][1] for s in slugs],
+            horizontal=True,
+            index=slugs.index(asked) if asked in slugs else 0,
+            key=key,
+            on_change=remember,
+        )
+    return slugs[labels.index(chosen)]
+
+
+def tab_what_kind(frame):
+    """What sort of failure it was, through the register's classes or four frameworks."""
+    lens = lens_picker("kind", "lens_kind")
+    if lens == "classes":
+        tab_what_was_missing(frame)
+    else:
+        framework_view(frame, lens)
+
+
 def tab_how_severe(frame):
-    """Every case, measured against whichever framework the reader picks."""
+    """Every case, measured against whichever of the two harm frameworks is picked."""
     ratings, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
     definitions = load_mit_framework(data_stamp(MIT_FRAMEWORK_FILE))
     harms = list(definitions["harm_type"].drop_duplicates())
 
-    MIT_NAME = "MIT harm severity scale"
-    EU_NAME = "EU AI Act serious-incident test"
-    with st.container(key="fwpick"):
-        which = st.radio(
-            "Rate the harm on",
-            [MIT_NAME, EU_NAME],
-            captions=[
-                "How big was it, compared with all AI harm?",
-                "Would it trigger mandatory reporting in the EU?",
-            ],
-            horizontal=True,
-        )
+    mit = lens_picker("bad", "lens_bad") == "mit"
 
+    # The harm filter reads the MIT ratings file, so it belongs to the MIT view alone.
+    # On the EU view it filtered the cases by a dimension the EU test does not use.
     chosen_harms = []
-    with st.container(key="harmpick"), st.popover(
-        "Filter by type of harm", icon=":material/filter_list:", width="content"
-    ):
-        chosen_harms = st.pills(
-            "Harm types", harms, selection_mode="multi", default=[],
-            label_visibility="collapsed",
-        )
+    if mit:
+        with st.container(key="harmpick"), st.popover(
+            "Filter by type of harm", icon=":material/filter_list:", width="content"
+        ):
+            chosen_harms = st.pills(
+                "Harm types", harms, selection_mode="multi", default=[],
+                label_visibility="collapsed",
+            )
     view = frame
     if chosen_harms:
         ids = set(ratings[ratings["harm_type"].isin(chosen_harms)]["case_id"])
@@ -1036,7 +1837,7 @@ def tab_how_severe(frame):
     n = len(counted)
 
     # The heading is the finding, so it has to be built from the data every time.
-    if which == MIT_NAME:
+    if mit:
         middle = int((counted["mit_level"] == 3).sum())
         st.markdown(
             f"#### No case reached the top two levels of harm. {middle} reached the middle."
@@ -1063,7 +1864,7 @@ def tab_how_severe(frame):
             "says so rather than guessing."
         )
 
-    active_level = st.query_params.get("level") if which == MIT_NAME else None
+    active_level = st.query_params.get("level") if mit else None
 
     def level_link(name):
         parts = ["screen=Findings"]
@@ -1071,7 +1872,7 @@ def tab_how_severe(frame):
             parts.append(f"level={quote_plus(name)}")
         return "?" + "&".join(parts)
 
-    if which == MIT_NAME:
+    if mit:
         st.markdown(f"##### Where the {n} cases fall on MIT's scale")
         st.markdown(
             severity_rows(counted, uncounted, active_level, level_link),
@@ -1086,6 +1887,10 @@ def tab_how_severe(frame):
             ))
             + "</p>",
             unsafe_allow_html=True,
+        )
+        st.caption(
+            "Summarised from MIT's table. The full table, five levels across ten harm "
+            "types with MIT's own wording, is on the Method page."
         )
 
     if not len(uncounted) == 0:
@@ -1109,14 +1914,14 @@ def tab_how_severe(frame):
         )
         st.markdown(table_controls(), unsafe_allow_html=True)
         st.markdown(
-            case_table(rows.sort_values("id"), ratings=ratings),
+            case_table(rows.sort_values("event_date", ascending=False), ratings=ratings),
             unsafe_allow_html=True,
         )
     else:
-        label = "severity" if which == MIT_NAME else "the EU test"
+        label = "severity" if mit else "the EU test"
         st.markdown(f"##### All {len(view)} cases, grouped by {label}")
         st.markdown(table_controls(), unsafe_allow_html=True)
-        if which == MIT_NAME:
+        if mit:
             groups = [
                 (MIT_LEVELS[l], MIT_SEVERITY_MEANING[l],
                  view[view["mit_level"] == l], MIT_SLUG[l])
@@ -1128,19 +1933,18 @@ def tab_how_severe(frame):
                 for v in ("Meets", "Does not meet", "Not determinable from the record")
             ]
         for name, meaning, rows, slug in groups:
-            count = len(rows)
+            in_group = int(rows["counted"].sum())
+            out_group = len(rows) - in_group
             tint = f' style="border-left:6px solid var(--sev-{slug})"' if slug else ""
             st.markdown(
-                f'<div class="ghead"{tint}><span class="gname">{esc(name)}</span>'
-                f'<span class="gcount">{count} {"case" if count == 1 else "cases"}</span>'
-                f'</div><p class="gmean">{esc(meaning)}</p>',
+                group_header(name, in_group, out_group, meaning, style=tint),
                 unsafe_allow_html=True,
             )
             if rows.empty:
                 st.markdown(empty_case_table(), unsafe_allow_html=True)
                 continue
             st.markdown(
-                case_table(rows.sort_values("id"), ratings=ratings),
+                case_table(rows.sort_values("event_date", ascending=False), ratings=ratings),
                 unsafe_allow_html=True,
             )
 
@@ -1155,9 +1959,11 @@ def tab_what_the_record_shows(frame):
     facts = headline(frame)
 
     counted = frame[frame["counted"]]
-    own_report = sorted(counted[counted["id"].isin(
-        ["AIR-013", "AIR-015", "AIR-020", "AIR-021"]
-    )]["id"])
+    # Derived from the source label, not listed by hand. The typed list said four and
+    # named AIR-015, whose primary record is a build tool maintainer's advisory, so the
+    # sentence also called Nx an AI company. The field supports a narrower and stronger
+    # claim: the primary record is the implicated organisation's own account.
+    own_report, uncorroborated = own_account_rows(counted)
 
     with_review = facts["total"] - facts["no_review_recorded"]
     review_clause = (
@@ -1176,12 +1982,42 @@ def tab_what_the_record_shows(frame):
         "safeguard nobody can name is one a reader cannot check. For your own agent, "
         "write down who can switch it off and the date you will next review it."
     )
-    st.markdown("**Where the newest cases came from is itself a finding.**")
+    st.markdown("**How much of this register another index already holds.**")
+    in_aiid = sorted(frame[frame["aiid_id"] != ""]["id"])
+    not_in = sorted(frame[frame["aiid_id"] == ""]["id"])
+    checked = sorted(frame["aiid_checked_on"])[-1] if len(frame) else ""
     st.markdown(
-        f"{len(own_report)} of the cases added in this release rest on a report published "
-        "by an AI company or an AI evaluation body about its own product or its own "
-        f"testing. They are {', '.join(own_report)}. Those organisations run threat "
-        "intelligence teams and publish what they find. Most companies do neither."
+        f"{len(in_aiid)} of the {len(frame)} cases here are also in the AI Incident "
+        f"Database. {len(not_in)} "
+        + ("does" if len(not_in) == 1 else "do")
+        + f" not, as of {checked}"
+        + (f" ({and_join(not_in)})" if not_in else "")
+        + ". Each match was opened and read rather than taken from a search result, and "
+        "an absence is recorded as nothing found rather than as nothing there. That "
+        "database is on this register's aggregator list, so it is how cases are found "
+        "and never what a claim rests on."
+    )
+    st.markdown("**Where the newest cases came from is itself a finding.**")
+    # The Limits page says three rows rest on one party's account. Read next to this
+    # sentence the two numbers look like they disagree, so the subset is named here.
+    if len(uncorroborated) > 1:
+        subset = (
+            f", of which {len(uncorroborated)} have no corroboration beyond restatement "
+            "(see Limits)"
+        )
+    elif uncorroborated:
+        subset = (
+            f", of which {uncorroborated[0]} has no corroboration beyond restatement "
+            "(see Limits)"
+        )
+    else:
+        subset = ""
+    st.markdown(
+        f"In {len(own_report)} of the {facts['total']} counted cases the primary record "
+        "is the implicated organisation's own published account of what happened. They "
+        f"are {and_join(own_report)}{subset}. Several are AI companies or an AI "
+        "evaluation body, which run threat intelligence teams and publish what they "
+        "find. Most organisations do neither."
     )
     st.markdown(
         "So the failures that exist on paper are the ones the best instrumented "
@@ -1303,13 +2139,11 @@ def screen_findings(frame):
         f"What {len(frame)} documented incidents show, measured against recognised "
         "frameworks."
     )
-    severe, missing, record = st.tabs(
-        ["Severity", "Missing safeguards", "Gaps in the record"]
-    )
+    severe, kind, record = st.tabs([HOW_BAD_TAB, WHAT_KIND_TAB, "Gaps in the record"])
     with severe:
         tab_how_severe(frame)
-    with missing:
-        tab_what_was_missing(frame)
+    with kind:
+        tab_what_kind(frame)
     with record:
         tab_what_the_record_shows(frame)
     st.markdown("")
@@ -1384,14 +2218,14 @@ def incident_card(row):
     with missing:
         directed_tier = row["directed_by_basis"].split(".")[0].strip()
         st.markdown(
-            f"**Who pointed it at this: {row['directed_by']}.** "
+            f"**Who directed the agent: {row['directed_by']}.** "
             f"{DIRECTED_MEANING[row['directed_by']]}\n\n"
             f"{esc(row['directed_by_basis'])}"
         )
         st.markdown("")
         tier = row["missing_control_basis"].split(".")[0].strip()
         st.markdown(
-            f"**State it was in: {row['control_maturity']}.** "
+            f"**State it was in: {MATURITY_LABEL[row['control_maturity']]}.** "
             f"{MATURITY_MEANING[row['control_maturity']]}\n\n"
             f"**How the register knows: {tier}.** "
             f"{esc(row['missing_control_basis'].split('.', 1)[1].strip())}"
@@ -1455,7 +2289,7 @@ def incident_card(row):
             st.caption(f"Checked {row['date_checked']}. No archived copy yet.")
         st.markdown(
             f"**Closest clauses.** NIST AI RMF {esc(row['nist_ai_rmf'])} · "
-            f"ISO/IEC 42001 {esc(row['iso_42001'])} · EU AI Act {esc(row['eu_ai_act'])}"
+            f"EU AI Act {esc(row['eu_ai_act'])}"
         )
         st.caption(
             "Closest clause, not a legal classification."
@@ -1537,9 +2371,9 @@ def screen_home(frame):
         "<h1>AI Agent Incident Register</h1>"
         '<p class="tagline">A public record of AI agents that caused harm, and the '
         "safeguard that was missing in each case.</p>"
-        f'<p class="fact">{facts["all_rows"]} documented incidents, {years[0]}&ndash;'
-        f'{years[-1]}<span class="sep">·</span>{facts["total"]} with strong enough '
-        "evidence to count</p>"
+        f'<p class="fact"><span>{facts["all_rows"]} documented incidents, {years[0]}'
+        f'&ndash;{years[-1]}</span><span>{facts["total"]} with strong enough evidence '
+        "to count</span></p>"
         '<p class="def">An AI agent here means a system that takes actions (runs code, '
         "changes data, sends, buys, posts), not one that only answers.</p></div>",
         unsafe_allow_html=True,
@@ -1602,7 +2436,7 @@ def screen_home(frame):
             [v for v in ("Deployer", "Attacker", "No one") if v in set(frame["directed_by"])],
         )
         query = st.text_input("Search", placeholder="Case, deployer, pattern")
-        counted_only = st.checkbox("Only rows that feed the numbers", value=False)
+        counted_only = st.checkbox("Counted cases only (grade A and B)", value=False)
 
     # The finding filters live in the URL so a filtered view stays shareable, even though
     # the chips that used to set them are gone.
@@ -1636,7 +2470,9 @@ def screen_home(frame):
         view = view[view[columns_to_search].apply(
             lambda r: needle in " ".join(r).lower(), axis=1
         )]
-    view = view.sort_values("id")
+    # Newest first. A register reads as a timeline, and the most recent case is the
+    # one a reader is most likely to recognise.
+    view = view.sort_values("event_date", ascending=False)
 
     st.markdown("---")
     if chosen:
@@ -1649,8 +2485,9 @@ def screen_home(frame):
         denominator = f"{len(frame)} cases"
     st.markdown(f"#### {esc(heading)}")
 
-    left, right = st.columns([3, 1])
+    left, middle, right = st.columns([3, 1, 1])
     left.markdown(f"**Showing {len(view)} of {denominator}**")
+    middle.link_button("Code and data on GitHub", REPO_URL, width="stretch")
     right.download_button(
         "Download the data", data=DATA_FILE.read_bytes(),
         file_name="ai_agent_incident_register.csv", mime="text/csv",
@@ -1677,11 +2514,71 @@ def screen_home(frame):
 
 
     ratings_for_cards, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
-    st.markdown(
-        table_controls()
-        + case_table(view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])),
-        unsafe_allow_html=True,
-    )
+
+    # 32. The same cases, with the columns an organisation's own register carries. The
+    # choice is in the URL so the view can be linked to, and written on change rather
+    # than on every run for the same reason the lens selectors are.
+    PUBLIC = "Public register"
+    INTERNAL = "As an organisation's own register"
+    options = [PUBLIC, INTERNAL]
+    asked = INTERNAL if st.query_params.get("register") == "internal" else PUBLIC
+
+    def remember_register():
+        if st.session_state["register_view"] == INTERNAL:
+            st.query_params["register"] = "internal"
+        elif "register" in st.query_params:
+            del st.query_params["register"]
+
+    with st.container(key="regpick"):
+        chosen_view = st.radio(
+            "Show these cases as",
+            options,
+            index=options.index(asked),
+            horizontal=True,
+            key="register_view",
+            on_change=remember_register,
+        )
+    internal = chosen_view == INTERNAL
+
+    if internal:
+        empty, cells, filled, partly = internal_summary(view)
+        st.markdown(
+            f"Same {len(view)} cases, with the columns an organisation's own incident "
+            "register carries. The dotted columns are filled at intake, during response "
+            "and at closure, from logs, tickets and the people involved. No public "
+            "source can fill them, so they are shown empty. Corrective action is the one "
+            "exception: the public record sometimes carries it. "
+            "[What else changes inside an organisation](?screen=Method&rule=enterprise)"
+        )
+        st.markdown(
+            '<p class="ilegend"><span class="key solid"></span>Solid, known from the '
+            'public record<span class="key dotted"></span>Dotted, only an '
+            "organisation's own register can fill this</p>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            table_controls()
+            + internal_table(
+                view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            f"{empty} of {cells} internal-register cells are empty. The public record "
+            f"fills {filled} fully and {partly} partly, all in one column."
+        )
+        st.caption(
+            "This is the structure an internal register adds, not a claim about how any "
+            "of these organisations ran their own response."
+        )
+    else:
+        st.markdown(
+            table_controls()
+            + case_table(
+                view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])
+            ),
+            unsafe_allow_html=True,
+        )
 
     st.caption(
         "Click any row to open its full record in place. Colour means one thing here: how "
@@ -1691,7 +2588,9 @@ def screen_home(frame):
 
     st.markdown("---")
     foot = st.columns(3)
-    foot[0].caption(f"Version {VERSION} · {UPDATED} · Built by Sana Asif Ahmad")
+    foot[0].caption(
+        f"Version {VERSION} · Last reviewed: {UPDATED} · Built by Sana Asif Ahmad"
+    )
     foot[1].caption(
         "Every number is computed from data/incidents.csv and "
         "data/case_harm_ratings.csv, and uses grade A and B rows only."
@@ -1704,11 +2603,33 @@ def screen_home(frame):
 
 
 
+def _articles_used(frame):
+    """The EU articles the register actually cites, in the rule's own order.
+
+    Typed as a list of seven until 14 October 2026, which went stale the moment the
+    recode added two and is the exact failure the computed-numbers rule exists to stop.
+    """
+    seen = set()
+    for value in frame["eu_ai_act"]:
+        for ref in (v.strip() for v in str(value).split(",") if v.strip()):
+            seen.add(rules_check.EU_RANK.get(ref, (9, 0)) + (ref,))
+    ordered = [ref for *_, ref in sorted(seen)]
+    numbers = [r.replace("Article ", "") for r in ordered]
+    return "Articles " + and_join(numbers)
+
+
 def _leads():
-    """How many leads were checked and not included. Read from the file, never typed."""
+    """Leads checked and not included, and the number since reconsidered.
+
+    Counted from the status column rather than from the row count, because a row that
+    was reconsidered and admitted stays in the file with its reasoning. Dropping it
+    would hide the mistake, and counting it as a rejection would misstate the total.
+    """
     path = Path(__file__).parent / "data" / "leads" / "considered_not_included.csv"
     with open(path, encoding="utf-8") as handle:
-        return sum(1 for _ in csv.DictReader(handle))
+        rows = list(csv.DictReader(handle))
+    reconsidered = [r for r in rows if r.get("status", "").startswith("Reconsidered")]
+    return len(rows) - len(reconsidered), len(reconsidered)
 
 
 def screen_method(frame):
@@ -1716,12 +2637,11 @@ def screen_method(frame):
     st.markdown(f"Version {VERSION}, last updated {UPDATED}. Single coder.")
     st.markdown(
         "This page is the argument for trusting the register, and the fastest way through "
-        "it is to start with what it cannot do. **Limits** is four sections down and names "
-        "four weaknesses: the sample is biased along the same axis the headline measures, "
-        "the ISO/IEC 42001 clause numbers come from the standard's structure rather than "
-        "its paywalled text, one person coded every row, and the secondary class has no "
-        "rubric. The **change log** at the bottom records every correction, including the "
-        "ones that went against this project. If you only read two things here, read those."
+        "it is to start with what it cannot do. **Limits**, below, names them: the sample "
+        "is biased along the same axis the headline measures, one person coded every row, "
+        "and the secondary class has no rubric. The **change log** at the bottom records "
+        "every correction, including the ones that went against this project. If you only "
+        "read two things here, read those."
     )
 
     st.markdown("### What counts as a case")
@@ -1786,6 +2706,17 @@ def screen_method(frame):
         "checked and not admitted is listed in data/leads/considered_not_included.csv "
         "with the test it failed, so the shape of what the evidence rule excluded can be "
         "seen rather than guessed at."
+    )
+    # A reconsidered lead stays in the file with its original reasoning and the
+    # correction. Deleting it would hide a rejection this register got wrong.
+    st.caption(
+        f"{_leads()[0]} leads not included. "
+        f"{_leads()[1]} "
+        + ("lead" if _leads()[1] == 1 else "leads")
+        + " reconsidered and included, kept in the table with the reasoning that "
+        "rejected "
+        + ("it" if _leads()[1] == 1 else "them")
+        + " and the correction."
     )
 
     st.markdown("### Incident or hazard")
@@ -1893,7 +2824,8 @@ def screen_method(frame):
     )
     st.markdown(
         f"**{facts['would_change_class']} rows change class** when accuracy is tested "
-        f"first (AIR-002, AIR-011, AIR-012), so the published ordering accounts for a real "
+        f"first ({', '.join(facts['change_class_ids'])}), so the published ordering "
+        "accounts for a real "
         f"part of the gap. {facts['accuracy_first']} of {facts['total']} is therefore the "
         "floor, and the home screen headline uses it rather than the larger number. Every "
         "row carries a `said_something_untrue` field recorded independently of its class. "
@@ -1956,16 +2888,17 @@ def screen_method(frame):
         "subcategory per row, for the control that was missing.\n"
         "- **[NIST AI 800-4](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.800-4.pdf), "
         "March 2026.** A research report, not a standard. It proposes six monitoring "
-        "categories and this register uses them to tag every signal: functionality, "
-        "operational, human factors, security, compliance, large-scale impacts.\n"
-        "- **ISO/IEC 42001:2023 Annex A.** Mostly A.6.2.6 on operation and monitoring, "
-        "A.6.2.8 on event logs, A.8.4 on communication of incidents and A.10.3 on "
-        "suppliers. Deliberately unlinked, because the standard is paywalled and a link "
-        "to a shop is not a link to the text. See the limits below.\n"
+        "categories and this register uses them to tag every signal: Functionality, "
+        "Operational, Human factors, Security, Compliance, Large-scale impacts. Those are "
+        "NIST's category names. Any one-line description of a category on this site is "
+        "this register's summary, not NIST's wording.\n"
         "- **[EU AI Act, Regulation (EU) 2024/1689]"
-        "(https://eur-lex.europa.eu/eli/reg/2024/1689/oj).** Articles 9, 14, 15, 26, 50 "
-        "and 73 as closest clauses. Article 3(49) defines a serious incident, which is the "
-        "threshold the reporting duty in Article 73 hangs on.\n"
+        f"(https://eur-lex.europa.eu/eli/reg/2024/1689/oj).** {_articles_used(frame)} as "
+        "closest clauses, listed in the order the mapping rule applies them. Article "
+        "3(49) defines a serious incident, which is "
+        "the threshold the reporting duty in Article 73 hangs on. EUR-Lex is the "
+        "authoritative text. Article titles were checked against that site's reproduction "
+        "because EUR-Lex does not serve automated requests.\n"
         "- **[OWASP Top 10 for Agentic Applications 2026]"
         "(https://genai.owasp.org/2025/12/09/owasp-genai-security-project-releases-top-10-"
         "risks-and-mitigations-for-agentic-ai-security/),** published 9 December 2025, for "
@@ -1980,10 +2913,157 @@ def screen_method(frame):
         "- **[Commission draft guidance and reporting template for serious AI incidents]"
         "(https://digital-strategy.ec.europa.eu/en/consultations/ai-act-commission-issues-"
         "draft-guidance-and-reporting-template-serious-ai-incidents-and-seeks).** A "
-        "September 2025 draft. The fields on each incident card were shaped to sit close "
-        "to it, so a row here can be lifted into that template rather than rewritten. "
-        "Check whether a final version has landed before relying on it."
+        "September 2025 draft, open for feedback until 7 November 2025. The fields on "
+        "each incident card were shaped to sit close to it, so a row here can be lifted "
+        "into that template rather than rewritten. No final version found as of 14 "
+        "October 2026, checked at the consultation page linked above."
     )
+
+    # 4a. The framework columns were "Our reading" on every row with no rule behind
+    # them, which is the same weakness the Limits section admits about the secondary
+    # class. This section states the rule, and the columns were recoded under it.
+    st.markdown('<div id="mapping-rule"></div>', unsafe_allow_html=True)
+    st.markdown("### How a case is mapped to a framework")
+    st.markdown(
+        "Each case names one provision per framework as its primary mapping, chosen by "
+        "the rule below, and that is the one every count on the Findings page uses. Any "
+        "other provision that also fits is kept on the case card, labelled, and counted "
+        "nowhere. This is the same treatment the secondary class gets, and for the same "
+        "reason: a figure built on an unruled judgement displays one person's reading as "
+        "structure."
+    )
+
+    st.markdown("**EU AI Act**")
+    st.markdown(
+        "List every article whose text names the missing safeguard, then order them "
+        "specific before general. The first in that order is the primary."
+    )
+    eu_order = [
+        ("1", "Articles naming a specific safeguard",
+         "Article 14 human oversight, Article 15 accuracy, robustness and "
+         "cybersecurity, Article 9 risk management, Article 10 data and data governance"),
+        ("2", "General provider and deployer duties",
+         "Article 16 obligations of providers, Article 26 obligations of deployers"),
+        ("3", "Transparency",
+         "Article 50 transparency obligations for certain AI systems"),
+        ("4", "General-purpose model duties",
+         "Article 53 obligations for providers of general-purpose AI models, "
+         "Article 55 where the model carries systemic risk"),
+        ("5", "Post-market and incident reporting",
+         "Article 72 post-market monitoring, Article 73 reporting of serious incidents"),
+    ]
+    st.markdown(
+        "| Order | Group | Articles |\n| --- | --- | --- |\n"
+        + "\n".join(f"| {n} | {group} | {arts} |" for n, group, arts in eu_order)
+    )
+    st.markdown(
+        "Where no article names the safeguard, the value is written as `None (closest: "
+        "Article N)` rather than reaching for the nearest general duty. That format "
+        "exists so a reader can tell a mapping from an absence of one."
+    )
+
+    st.markdown("**NIST AI RMF 1.0**")
+    st.markdown(
+        "The subcategory whose text names the missing safeguard, in the function where "
+        "that safeguard would have lived: GOVERN for policy, MAP for context, MEASURE "
+        "for testing, MANAGE for operating controls. A subcategory that names the "
+        "specific safeguard beats a generic one. MANAGE 4.1, which covers "
+        "post-deployment monitoring in general, is the primary only when nothing more "
+        "specific fits."
+    )
+
+    st.markdown("**OWASP Agentic Top 10**")
+    st.markdown(
+        "One entry per case: the one whose description names the mechanism of the "
+        "failure, not the harm it produced. Where the case has no security path at all, "
+        "the value is `Not applicable` rather than the closest-looking code."
+    )
+
+    st.markdown("**NIST AI 800-4**")
+    st.markdown(
+        "One category per case, by the same test: the category whose description names "
+        "the way the failure happened."
+    )
+
+    st.markdown(
+        "A mapping names the provision that describes the safeguard that was missing. It "
+        "does not say the provision applied to that system, that the deployer was bound "
+        "by it, or that anything was breached. Most systems here are not high-risk under "
+        "the EU AI Act and several cases predate its obligations."
+    )
+    st.markdown("Mappings were made by one person under this rule, with no second coder.")
+
+    # 31. The Home toggle links here. It answers the question that view raises and
+    # does not answer: what an organisation's own register carries that a public one
+    # cannot, and what that means for a reader who has to run one.
+    st.markdown('<div id="enterprise"></div>', unsafe_allow_html=True)
+    st.markdown("### What else changes inside an organisation")
+    internal_cols = len(INTERNAL_COLUMNS)
+    st.markdown(
+        f"Home can show these cases as an organisation's own register would hold them, "
+        f"with {count_word(internal_cols)} more columns across intake, response and "
+        "closure. Every one of them is empty, and that is the point rather than a gap "
+        "in the research: they are filled from logs, tickets, approvals and the people "
+        "involved, and none of that is published. The difference between the two views "
+        "is the difference between what a reader outside an organisation can ever know "
+        "and what the organisation knew by the end of the week."
+    )
+    st.markdown(
+        "**What the public record does carry.** One of those "
+        f"{count_word(internal_cols)} columns, corrective action, is sometimes public, "
+        "because a postmortem or a regulator's notice says what was changed. This "
+        "register records how completely each ending is known, which is why that column "
+        "can be filled at all."
+    )
+    st.markdown(
+        "**What an internal register adds beyond columns.** Three things, none of which "
+        "a public record can show.\n"
+        "- **A named owner while it is open, not only afterwards.** This register codes "
+        "a control owner and an accountable role for every case, and both are the "
+        "register's reading of who would have held it, not a name from the record. "
+        "Inside an organisation that is a person with a calendar.\n"
+        "- **A clock.** Intake, response and closure have dates and a due date between "
+        "them. A public account has a date it happened and sometimes a date it was "
+        "fixed, and nothing in between.\n"
+        "- **A decision about whether to tell a regulator.** The closure group carries "
+        "it because it is a decision somebody makes, with a date and a name against it. "
+        "Article 73 of the EU AI Act is the obligation this register points at most "
+        "often, and whether it applies is a question about the system and the "
+        "jurisdiction, not about the incident."
+    )
+    st.markdown(
+        "**What this register is not.** It is not a template for running an incident "
+        "process, and the empty columns are not a recommendation to adopt these nine. "
+        "They are the columns these cases would need to be answerable inside the "
+        "organisations they happened to, which is a different claim and a smaller one."
+    )
+
+    st.markdown("### Cross-references to the AI Incident Database")
+    in_aiid = frame[frame["aiid_id"] != ""].sort_values("id")
+    missing = sorted(frame[frame["aiid_id"] == ""]["id"])
+    st.markdown(
+        f"{len(in_aiid)} of the {len(frame)} cases here carry the same event's number "
+        "in the AI Incident Database. Each was matched against the export in "
+        "data/leads/, then opened and read to confirm it describes the same event. "
+        "The database is on the aggregator list above, so these are pointers for a "
+        "reader and never evidence for a row."
+    )
+    rows = "\n".join(
+        f"| {r['id']} | [{r['aiid_id']}](https://incidentdatabase.ai/cite/"
+        f"{r['aiid_id']}/) | {r['aiid_match_basis']} | {r['aiid_checked_on']} |"
+        for _, r in in_aiid.iterrows()
+    )
+    st.markdown(
+        "| Case | Database incident | Basis | Checked |\n| --- | --- | --- | --- |\n"
+        + rows
+    )
+    if missing:
+        st.caption(
+            f"{and_join(missing)} "
+            + ("has" if len(missing) == 1 else "have")
+            + " no match. Searching the export and the site for the deployer, the date "
+            "and the mechanism turned up nothing describing the same event."
+        )
 
     st.markdown("### Where the cases were found")
     st.markdown(
@@ -2009,103 +3089,130 @@ def screen_method(frame):
     )
 
     st.markdown("### Limits")
+    # E27. Fourteen long bullets asked a reader to work out what each one meant for
+    # them. The table says that in the second column, which is the only column most
+    # readers need.
+    own_account, one_party = own_account_rows(frame[frame["counted"]])
+    facts = headline(frame)
+    limits = [
+        ("One coder",
+         "One person made every inclusion, grading and classification decision. There "
+         "is no second rater and no inter-rater reliability figure, so read the coding "
+         "as one defensible reading rather than as a measurement."),
+        ("The secondary class has no rubric",
+         "The primary class comes from an ordered, published, first-match-wins test. "
+         "The secondary class, which records the reading that ordering discards, was "
+         "assigned case by case with no rule behind it. It is on cards and counted "
+         "nowhere, deliberately: a matrix built on it would display one person's "
+         "unruled judgement as structure."),
+        ("The rubric is stated, not pre-registered",
+         "It was written before the rows were coded, but the rule file and the data "
+         "file were first committed together, so nothing in the repository proves that "
+         "order. From version 0.9 onward a rubric change lands in its own commit ahead "
+         "of any recoding, which makes the claim checkable forward and not backward."),
+        ("The sampling frame runs along the axis the finding measures",
+         "Primary records exist for events that produce legal, security or regulatory "
+         "paperwork, and those are disproportionately the authority, boundary and "
+         "vendor cases. A chatbot that quietly gave wrong answers for a year generates "
+         "no such document. Read the headline as a floor on the non-accuracy cases, not "
+         "as a ratio between the two."),
+        ("Fixing the rubric did not fix that",
+         "Version 0.9 measured what the ordering was doing and rewrote the headline "
+         "around the part that survives it. That closes one threat and leaves the "
+         "sampling one standing, and the two are often confused. The repair was to "
+         f"publish the candidates that were dropped: {_leads()[0]} leads with the test "
+         f"each failed, and {count_word(_leads()[1])} since reconsidered and "
+         "admitted."),
+        (f"{count_word(len(one_party)).capitalize()} rows rest on one party's account",
+         f"{and_join(one_party)} are graded B with a reputable outlet as the second "
+         "source, and in each case that outlet reports the primary account rather than "
+         "verifying it. They clear grade B and would not clear grade A. These are the "
+         f"{count_word(len(one_party))} rows the Findings page points here, out of the "
+         f"{count_word(len(own_account))} whose primary record the organisation "
+         "published itself. Read them as the organisation's own account, carefully "
+         "written and unverified."),
+        ("Two cases were excluded, wrongly, and are now in",
+         "AIR-023 was rejected as a single source when a reputable trade outlet had "
+         "covered it seven months earlier, and that report was already in the lead "
+         "export the rejection was written from. Its primary record is a first-hand "
+         "postmortem naming the stale state file, the auto-approve, the row count and "
+         "the recovery, and recording that the agent argued against putting both sites "
+         "in one Terraform setup and was overruled, and that when the agent later "
+         "proposed the destroy itself the operator did not stop it. AIR-024 was "
+         "rejected as resting on a single report when three existed, one of them "
+         "carrying the deployer's own on-record statement. Both were search failures "
+         "rather than judgement calls, and both rows stay in the leads table with the "
+         "reasoning that rejected them."),
+        ("A convenience sample, not a population",
+         "These are the cases with a usable public record. Agent failures handled "
+         "quietly are the majority and none of them are here, which biases the counts "
+         "toward the visible and the embarrassing."),
+        (f"{facts['total']} is a small number",
+         "A count this size illustrates a pattern rather than measuring its "
+         "distribution. Treat the finding as a hypothesis worth testing against your "
+         "own incidents."),
+        ("Closest clause, not legal classification",
+         "Every framework value is checked against the published list it comes from, "
+         "and the build refuses one that is not in it. Whether a clause applies to a "
+         "given deployment is a different question this register does not answer. "
+         "Corrections to a clause reference are among the most useful things you can "
+         "send."),
+        ("Tests are not proof",
+         "Every test on this site would have caught the specific failure described. "
+         "Passing all of them does not make an agent safe."),
+        ("Every structural correction here was prompted by a reader",
+         "The checks catch regressions, not errors of judgement. The validator has "
+         "never told this project that a framing was wrong, a count was misleading or "
+         "a claim outran its evidence. People did, every time, and the automation is "
+         "there to hold the line afterwards rather than to find it."),
+    ]
     st.markdown(
-        "- **One coder.** Every judgement on this site is mine. There is no second rater and "
-        "no inter-rater reliability figure, so the coding should be read as one defensible "
-        "reading rather than as a measurement.\n"
-        "- **The secondary class has no rubric.** The primary class is assigned by an "
-        "ordered, published, first-match-wins test. The secondary class, added in version "
-        "0.9.9 to record the reading that ordering discards, was assigned case by case "
-        "with no rule behind it. It is shown on cards and counted nowhere, and that is "
-        "deliberate: a matrix built on it would display one person's unruled judgement as "
-        "structure. Oversight is the tell. It wins the primary test twice and was "
-        "assigned as a secondary six times.\n"
-        "- **The rubric is stated, not pre-registered.** It was written before the rows "
-        "were coded, but the rule file and the data file were first committed together, so "
-        "nothing in the repository proves that order and you should not take my word for "
-        "it. From version 0.9 onward any change to the rubric lands in its own commit "
-        "ahead of any recoding, which makes the claim checkable from here forward even "
-        "though it is not checkable backward.\n"
-        "- **The sampling frame runs along the axis the finding measures.** This is the "
-        "sharpest objection to this register and it deserves to be made here rather than "
-        "by someone else. Primary records exist for events that produce legal, security or "
-        "regulatory paperwork: rulings, CVEs, threat intelligence reports, enforcement "
-        "notices. Those are disproportionately the authority, boundary and vendor cases. A "
-        "chatbot that quietly gave wrong answers for a year generates no such document, so "
-        "accuracy failures are systematically harder to admit to this register. The "
-        "evidence rule that makes every row checkable is the same rule that biases the "
-        "sample toward the finding. Read the headline as a floor on the non-accuracy "
-        "cases, not as a ratio between the two.\n"
-        "- **Fixing the rubric did not fix this.** Version 0.9 measured what the rubric's "
-        "ordering was doing and rewrote the headline around the part that survives it. "
-        "That closes one threat and leaves this one standing, and the two are often "
-        "confused. The cases where the agent stated nothing untrue are largely the "
-        "security and legal ones, which are precisely the cases that generate primary "
-        "records, so the current headline is at least as exposed to this bias as the one "
-        "it replaced. The repair was to publish the long list of candidates that were "
-        "considered and dropped, with the test each failed, so the shape of what the rules "
-        f"excluded can be read rather than guessed at. That is now done: {_leads()} leads are "
-        "listed in data/leads/considered_not_included.csv, and the largest group by far is "
-        "cases where an AI system produced text and a person read it, which this register "
-        "excludes by design and which is where most public reporting of AI harm sits.\n"
-        "- **The clearest case this rule excludes.** In February 2026 a coding agent ran "
-        "terraform destroy against the production infrastructure of a course platform, "
-        "taking the database, the environment and every automated backup with it, and about "
-        "two and a half years of student submissions. The founder published a detailed "
-        "first-hand postmortem naming the stale state file, the auto-approve, the row count "
-        "and the recovery, and it even records that the agent advised against the approach "
-        "and a person approved anyway. It is not in this register. No reputable independent "
-        "outlet covered it, so a single source makes it grade C, and the inclusion rule "
-        "admits only A and B. That is the rule excluding a case documented better than "
-        "several that are in, and the trade is deliberate: the bar is set on what a reader "
-        "can check from two directions, not on how good the one account is. It is listed in "
-        "the considered and not included table with that reasoning.\n"
-        "- **Three rows rest on one party's account.** AIR-013, AIR-020 and AIR-021 are "
-        "graded B with a reputable outlet as the second source, and in each case that outlet "
-        "is reporting the primary account rather than verifying it. No indicators of "
-        "compromise, no victim statement and no third-party investigation exist for any of "
-        "them. They clear grade B, which asks for two independent reputable reports, and "
-        "they would not clear grade A, which asks the second source to corroborate rather "
-        "than restate. Read them as the organisation's own account, carefully written and "
-        "unverified.\n"
-        "- **A convenience sample, not a population.** These cases are the ones with "
-        "a usable public record. Agent failures that were handled quietly are the majority "
-        "and none of them are here, which also biases the counts toward the visible and "
-        "the embarrassing.\n"
-        f"- **{headline(frame)['total']} is a small number.** A count this size is an "
-        "illustration of a pattern, not evidence of its distribution. Treat the finding as a hypothesis worth testing "
-        "against your own incidents.\n"
-        "- **Closest clause, not legal classification.** The clause references are the "
-        "nearest fit for a reader who needs a starting point. Whether any obligation "
-        "actually applies depends on the role, the system and the jurisdiction. This is not "
-        "legal advice.\n"
-        "- **Tests are not proof.** Every test on this site is a test that would have caught "
-        "the specific failure described. Passing all of them does not make an agent safe.\n"
-        "- **Every structural correction in this log was prompted by a reader.** The "
-        "checks catch regressions, not errors of judgement. The validator has never once "
-        "told this project that a framing was wrong, a count was misleading or a claim "
-        "outran its source. People did that, every time, and the automation's job turned "
-        "out to be holding the line afterwards rather than finding it.\n"
-        "- **This register has already produced its own example of a control that was "
-        "implemented and not operating.** The repository has a validator, a test suite and "
-        "a green build. While all three were passing, a maintenance script was writing back "
-        "a stale copy of the data file and silently reverting edits made while it ran. One "
-        "published commit carried a reverted account of AIR-001, with a fact in the "
-        "deployer's favour missing from it, and the build was green throughout. Nothing in "
-        "the checks was watching for it, because the checks validate the file's contents "
-        "and not whether the contents are the ones somebody meant to write. An audit of "
-        "every commit that touched the data has since bounded the damage to that one row, "
-        "two fields and one commit. It happened twice: a crash on the register screen also "
-        "survived six green builds, because the build parsed the app and never rendered "
-        "it. The register codes that failure mode as Implemented in other people's "
-        "systems, and it is the honest label for both of these.\n"
-        "- **The clause references have not been line-checked against every official text.** "
-        "The NIST AI RMF and the EU AI Act are public and were used directly. ISO/IEC 42001 "
-        "is paywalled, and the Annex A control numbers here come from the standard's "
-        "published structure rather than from a reading of the clause text, because "
-        "secondary sites disagree on the numbering and do not count as a check. Treat the "
-        "ISO column as the weakest part of this register, and corrections to it are the "
-        "most useful thing you can send."
+        "| Limit | What it means for the reader |\n| --- | --- |\n"
+        + "\n".join(f"| **{name}** | {meaning} |" for name, meaning in limits)
+    )
+
+    st.markdown('<div id="own-failures"></div>', unsafe_allow_html=True)
+    st.markdown("### Four failures inside this project")
+    st.markdown(
+        "The register codes other people's agents as having controls that were "
+        "implemented and did not hold. The same label is the honest one for these."
+    )
+    st.markdown(
+        "- **A maintenance script reverted edits while every check passed.** The "
+        "repository has a validator, a test suite and a green build. While all three "
+        "were passing, a maintenance script was writing back a stale copy of the data "
+        "file and silently reverting edits made while it ran. One published commit "
+        "carried a reverted account of AIR-001, with a fact in the deployer's favour "
+        "missing from it, and the build was green throughout. The checks validate the "
+        "file's contents and not whether those contents are the ones somebody meant to "
+        "write. An audit of every commit that touched the data has bounded the damage "
+        "to that one row, two fields and one commit.\n"
+        "- **A crash on the register screen survived six green builds.** The build "
+        "parsed the app and never rendered it, so a nesting error that raised on every "
+        "card open was invisible to it. The build now renders every screen.\n"
+        "- **The fix for that crash's successor never worked at all.** Version 1.0 "
+        "reached the live site as a crash when a new column met a cached table. The "
+        "repair was a stamp passed to every loader so the cache would notice. "
+        "Streamlit's data cache leaves out any argument whose name begins with an "
+        "underscore, and the stamp was named that way, so the key never changed. The "
+        "check written to catch it asserted that the stamp moved, which was never the "
+        "question. The same crash reappeared on 14 October 2026 on a local development "
+        "server that had been running since before a schema change, which is how it was "
+        "found, and the live site was not affected on that occasion because a "
+        "deployment there restarts the process. The check now changes the data file and "
+        "asserts the loader returns the change.\n"
+        "- **The app read a stale copy of its own rulebook.** The app takes its "
+        "vocabularies from the validator, so that a value the validator would reject "
+        "cannot appear on a page as valid. Streamlit reloads the app file when it "
+        "changes and leaves the modules it imports in memory for the life of the "
+        "process. A server running since earlier that day raised an error on this page "
+        "for a name added to the validator that morning, and every headless check "
+        "passed throughout, because each starts a fresh process and cannot see a stale "
+        "one. The app now reloads the validator when its file has changed."
+    )
+    st.caption(
+        "All four are the same shape: a control that existed, passed, and was not "
+        "watching the thing that broke."
     )
 
     st.markdown("### Dates that matter")
@@ -2147,229 +3254,346 @@ def screen_method(frame):
     )
 
     st.markdown("### Change log")
-    st.markdown(
-        "| Version | Date | What changed |\n| --- | --- | --- |\n"
-        "| 1.0 | 2026-10-13 | **The watch list screen is removed.** It asked six "
-        "questions about a reader's own agent and returned the tests to run. The "
-        "questions did not discriminate. Three unlike systems, a read-only public "
-        "chatbot, an internal coding agent and a back-office automation that spends "
-        "money, each returned sixteen items. Across all sixty four possible answer "
-        "sets the median was thirteen and fifty two returned ten or more, so the only "
-        "way to get a short list was to describe an agent that barely exists. A "
-        "questionnaire where almost every answer gives almost the same output is a "
-        "list with extra steps, and sixteen items each carrying a test, a pass mark, a "
-        "signal, an owner, two framework codes and a case list is not a watch list. "
-        "The tests themselves were never the problem and they have not gone anywhere: "
-        "every one is still on the case it came from, under Test before launch. The "
-        "twenty four rules, the engine that applied them, their validator checks and "
-        "their continuous integration step are removed with the screen rather than "
-        "left in the repository unused. |\n"
-        "| 1.0 | 2026-10-13 | **The release broke the live site, and the cause is this "
-        "register's own subject.** v1.0 reached the hosted app as a KeyError on the home "
-        "screen. The data loaders were cached, and the cache keys on the function's code "
-        "and arguments rather than on the files it opens. Adding a column to the case data "
-        "left that key identical, so new code ran against a table cached before the column "
-        "existed. Every local check passed because each run starts with an empty cache, "
-        "which is the difference between a control that is implemented and one that is "
-        "operating. The loaders now take a stamp built from the data files, so the cache "
-        "falls when the data changes. The site was broken for the time between the push "
-        "and this fix. |\n"
-        "| 1.0 | 2026-10-12 | **Pre-merge review.** AIR-021 moved from grade A to B: its "
-        "only readable independent coverage is substantially a summary of the institute's "
-        "own report, and grade A asks the second source to corroborate rather than restate. "
-        "A read audit of every source on the nine new cases found four cited on a "
-        "reachability check rather than a reading, and all four have now been read: two "
-        "needed no change, one produced that regrade, and one had already been caught. Ten "
-        "of the ninety four title-stage rejections were drawn at random with a recorded "
-        "seed and checked in depth. None was wrongly rejected, so the remaining eighty four "
-        "were not re-screened, but two had the wrong test named and were corrected. A new "
-        "field records who pointed the agent at the harm, with a basis on every row, shown "
-        "on the cards and in the filters. The three Home cards were re-picked for twenty "
-        "cases. Two dead code paths were removed: a duplicate findings table that silently "
-        "overwrote the one above it, and a stale comment. |\n"
-        "| 1.0 | 2026-10-12 | **Release. Twelve cases to twenty one, eleven counted to twenty.** "
-        "Every number below is recomputed from the data on each page load, including the case "
-        "count itself. Old is version 0.9, new is this release. Said nothing untrue 5 of 11 to "
-        "10 of 20. Record silent on who could stop it 10 of 11 to 19 of 20. Control never built "
-        "6 of 11 to 9 of 20. Control existed and did not hold 1 of 11 to 6 of 20, plus one case "
-        "in a new state, Bypassable, where the gate was built and the caller could switch it "
-        "off. Missing control was not accuracy 8 of 11 to 17 of 20. Read-only agents 6 of 11 to "
-        "6 of 20, the only count that did not move at all. Evidence grades 5 A and 6 B to 7 A "
-        "and 13 B. Endings 8 documented, 2 partial, 1 undocumented to 14, 5 and 1. Severity on "
-        "MIT's scale, counted rows only, 5 Minor, 5 Negligible and 1 Substantial to 7, 7 and 6. "
-        "Missing control class 3 Accuracy, 3 Authority, 2 Boundary, 2 Oversight and 1 Vendor to "
-        "3, 7, 6, 3 and 1. Event years unchanged at 2022 to 2026. |\n"
-        "| 1.0 | 2026-10-12 | **Which findings held and which moved.** Held: no case in the "
-        "register was only the AI being wrong, which is still true at 20 counted cases as it was "
-        "at 11. Held and strengthened: the record is almost always silent on who could have "
-        "halted the deployment, now 19 of 20, and a scheduled date to look again appears in "
-        "none of the 20. Moved against the register's own framing: Accuracy did not grow at "
-        "all, staying at 3 cases while Authority went from 3 to 7 and Boundary from 2 to 6, so "
-        "the register is now mostly about what agents were allowed to do rather than what they "
-        "got wrong. Weakened: Vendor is still a single case after nine admissions, so any "
-        "statement about that class remains a description of one row. Worth saying rather than "
-        "hiding: the two strongest Vendor candidates found in the census both failed, one on the "
-        "organisation test and one on evidence. |\n"
-        "| 1.0 | 2026-10-12 | **What the census says about selection.** 115 leads were checked "
-        "and not included, each listed with the test it failed: 59 on agent action, 23 on harm, "
-        "21 on organisation, 9 on evidence, 2 on traceability and 1 already in the register. "
-        "That shape is the honest answer to how narrow this register is. The largest group is "
-        "cases where an AI system produced text and a person read it, which the register "
-        "excludes on purpose and which is where most public AI harm reporting sits. The "
-        "evidence test excluded nine, including a first-hand postmortem of an agent destroying "
-        "two and a half years of production data, which no reputable outlet covered. A single "
-        "source is grade C and the inclusion rule admits only A and B, so the rule excluded a "
-        "case better documented than some that are in. |\n"
-        "| 1.0 in progress | 2026-10-12 | Census complete against the lead lists. Every lead in "
-        "the window was screened and 115 are listed with the test each failed. Nine cases "
-        "admitted: AIR-013 and AIR-020, two campaigns run through one platform's coding agent, "
-        "one espionage and one extortion of at least seventeen organisations. AIR-015, malware "
-        "that asked the agents already on a machine to find its secrets. AIR-016 and AIR-019, "
-        "the same posting assistant two months apart, once after an update restored deprecated "
-        "code and once after an unreviewed edit to its prompt. AIR-017, an account recovery "
-        "assistant that handed accounts to whoever asked. AIR-018, a research agent that routed "
-        "around a government portal's blocks and wrote to an internal server. AIR-021, an "
-        "evaluation body's own agents reaching the live internet and working on real people. "
-        "AIR-022, a multi-agent framework running four days of government intrusion. A tenth "
-        "case was admitted and withdrawn the same day for failing the organisation test. |\n"
-        "| 1.0 in progress | 2026-10-12 | Two corrections from reviewing the admitted cases. "
-        "Every new case had its stop-authority answer recoded to Not disclosed. Each had been "
-        "marked Yes on the strength of a platform suspending accounts, removing packages or "
-        "disabling a tool after the event, which is a response and not a record of a role that "
-        "could have halted the deployment. One of the original twelve still holds that answer, "
-        "on a source describing sign off by two people. And AIR-016 was rewritten from the "
-        "article itself after it turned out to have been drafted from a search summary, which "
-        "changed what the company is quoted as saying and what it froze. |\n"
-        "| 1.0 in progress | 2026-10-11 | Three method changes forced by reviewing the first "
-        "batch. Grade A now requires its second source to be on a different host from the "
-        "primary record and to corroborate rather than restate it, which is what moved AIR-013 "
-        "to B. A fifth control state, Bypassable, was added for a gate that was built and wired "
-        "in and that the caller could switch off with a documented flag, which is a different "
-        "failure from a gate that engaged and did not hold. And the pre-commit hook now runs "
-        "the validator: a row had been committed with the register invalid, because the "
-        "validator printed the error, the output was read by its last few lines, and nothing "
-        "local refused the commit. |\n"
-        "| 1.0 in progress | 2026-10-11 | Lead sources amended, with the six inclusion tests "
-        "unchanged. The MIT AI Incident Tracker was dropped as a lead list, because its "
-        "incidents sit behind an embedded spreadsheet application rather than in the page and "
-        "it is built from AI Incident Database reports in any case. The database's own weekly "
-        "export is used instead, recorded in data/leads with its URL, download date and a "
-        "checksum. Both remain lead lists and neither is ever cited: the denylist that keeps "
-        "aggregators out of the evidence fields is unchanged. |\n"
-        "| 0.9 | 2026-10-11 | Committed a dated inclusion rule before adding any case "
-        "under it. Six tests, all of which must pass, with the window set to events and "
-        "publication between 1 January 2025 and 30 September 2026. The decision never "
-        "looks at a case's class, severity or whether the agent said something untrue, "
-        "because those are what the findings count. Six of the original twelve predate "
-        "the rule and are marked as such rather than retrofitted into it. The validator "
-        "rejects any row claiming to have passed the rule with an event date outside the "
-        "window. |\n"
-        "| 0.9 | 2026-10-11 | Layout pass, no numbers changed. The case list merged into "
-        "Home, which had been showing the same twelve rows under a second set of headline "
-        "numbers. Removed every comment and review invitation, the citation block, the "
-        "certainty strip, the shortcut links and a bar chart that labelled three of its "
-        "five bars. Findings became three tabs on one pattern: a question, a one-sentence "
-        "answer, a table, one line on how to read it. The severity grid became one row "
-        "per case, because the grid cut off the Privacy column and hid the only "
-        "Substantial case. On a card, only the severity pill is coloured now. |\n"
-        "| 0.9 | 2026-10-11 | Severity moved from the register's own 4-level scale, which "
-        "ranked cases against each other and had no external source, to MIT's 5-level "
-        "harm severity framework (CSET-based, up to global scale). The two scales use "
-        "different reference points, so old labels were retired, not converted. Each case "
-        "was re-scored from its facts: 6 Negligible, 5 Minor, 1 Substantial. An EU AI Act "
-        "serious-incident threshold view was added alongside it. |\n"
-        "| 0.9 | 2026-10-10 | Checked OWASP labels against OWASP's own coded list. No "
-        "change to codes. All ten names confirmed from the page that carries the codes, "
-        "with the shorter official forms adopted and the longer forms kept as aliases. "
-        "The same day's press release uses looser wording without codes, so it is not the "
-        "source. AIR-010's code is now recorded as Stated, because that list cites "
-        "EchoLeak as its own ASI01 example. Every framework value now carries a basis. |\n"
-        "| 0.9 | 2026-10-10 | Removed the comment deadline, keeping the route and the "
-        "commitment to log everything. Started the framework work by trying to verify the "
-        "two lists it depends on, and did not get them. The OWASP entry names sit in a "
-        "PDF behind a download form, and checking the ones that are public found OWASP's "
-        "own announcement wording ASI01 differently from the secondary source this "
-        "register used, on three cases. Allowed values now live in frameworks/, each with "
-        "its source, retrieval date and whether the owner's own publication was reachable. "
-        "The validator reads that file and warns on a disputed name, and the cards say so. "
-        "The MIT scales are not coded, because their reachable pages give counts without "
-        "naming the values. |\n"
-        "| 0.9 | 2026-10-10 | Line-by-line fact check of Home, which found four claims "
-        "the evidence did not carry. The headline said most of these failures were not "
-        "the AI being wrong, which only holds under the accuracy-last rubric the page "
-        "itself says the finding does not rest on. It is now the claim the validator "
-        "enforces: none was only the AI being wrong. Three sentences asserted an absence "
-        "with no source, including one about approval steps whose field, unlike the "
-        "stop-authority field, carries no source at all. The Article 73 note claimed "
-        "every row maps onto the Commission's template and could be lifted into a report, "
-        "when that duty falls on providers of high-risk systems and most of these are "
-        "not. Rebuilt Home as a hero, three dot cards and a certainty bar. |\n"
-        "| 0.9 | 2026-10-09 | Home cut from about 2,000 words and eleven headings to 500 "
-        "and four, after it was read as information overload. Nothing was deleted: the "
-        "analysis moved to a Findings screen somebody can choose. Home now carries the "
-        "finding, a chart of what the missing control governed, and the severity spread "
-        "as a bar. Extended the displayed-number check to cover Home. |\n"
-        "| 0.9 | 2026-10-09 | Redesign. Colour now means one thing, severity of harm, and "
-        "every severity pill carries a four-bar meter and the word so nothing depends on "
-        "colour alone. Evidence grade is monochrome and the chart is one hue. The cases "
-        "screen leads with the question, three findings as tiles, and filters where each "
-        "selection writes itself into the URL so a filtered view can be posted. Each case "
-        "opens into five tabs, and the three cases with a runnable test name the file and "
-        "class that runs it. Added a check that recomputes every number on screen from the "
-        "data file and fails the build if a typed number ever diverges. |\n"
-        "| 0.9 | 2026-10-09 | Reviewer rounds, consolidated. Late in the day, rebuilt the "
-        "incident card into four tabs after it had accumulated thirty-two fields and six "
-        "coloured boxes in one scroll, which was unreadable however correct each line "
-        "was. Moved the repeated definitions to this page. Replaced the red block at the "
-        "top of Method with plain text, because a page that opens on an alarm reads as an "
-        "apology rather than as a method. |\n"
-        "| 0.9 | 2026-10-09 | Earlier that day. Measured what the rubric's "
-        "ordering does to the finding and rewrote the headline around the part that "
-        "survives it. Separated descriptive counts from analytical ones. Decoupled "
-        "severity from recovery effort. Corrected the EU AI Act dates against EUR-Lex, "
-        "including that Article 50 is already in force, and labelled the two derived "
-        "dates as derived. Withdrew the pre-registration claim and a nine second figure, "
-        "both unevidenced. Audited how every story ended and corrected three accounts "
-        "that stopped at the failure. Added an aggregator denylist, per-row aftermath "
-        "citations, a stated basis for every severity rating, and the three deployment "
-        "questions where Not disclosed is the default. Split the owner, added control "
-        "maturity, and recorded who bore the harm against who could have prevented it. "
-        "Marked how the register knows each missing control, in three tiers. Fixed a "
-        "crash that had broken the register screen for six commits under a green build, "
-        "and added a headless render of every screen to CI. Archived every source after "
-        "finding the archiver was reverting hand edits. |\n"
-        "| 0.8 | 2026-10-03 | First build. 12 cases, 11 counted, 18 watch-list rules. |"
-    )
-    st.markdown(
-        "**No corrections from readers yet.** When one arrives it goes in the table above "
-        "with the date, what was wrong, and who sent it."
-    )
-
-    st.markdown("### If this stops being maintained")
-    st.markdown(
-        "A register that quietly goes stale is worse than one that never existed, because "
-        "a reader cannot tell the difference between current and abandoned. So: if "
-        "maintenance stops, this page will say so. The line below is the status, and it "
-        "is the first thing that changes if the project is parked."
-    )
-    st.success(
-        f"**Status: actively maintained.** Last reviewed {UPDATED}. If this line has not "
-        "moved in six months, treat the register as a static archive of what was true at "
-        "that date and check every source yourself before relying on it.",
-        icon="🟢",
-    )
-
-    st.markdown("### Reviewed by")
-    st.markdown(
-        ":orange[**Not yet reviewed.**] One practitioner read is planned, and the reviewer "
-        "will be credited here by name with the date."
-    )
-    st.markdown(
-        f"This is why the register is at version {VERSION} and not 1.0. A thing cannot be "
-        "both a finished release and a single-author draft, and of the two the draft is "
-        "the true one until somebody outside has read it cold. Version 1.0 is the cold "
-        "read landing, not a date."
-    )
+    # Wrapped so the stacking rule below 640px can be scoped to this table. Every other
+    # table on the page is two or three short columns and reads fine as a table.
+    with st.container(key="changelog"):
+        st.markdown(
+            "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        f"| {WORKING} | 2026-10-14 | **AIR-024 added, and a second rejection "
+        "corrected.** A lead was rejected on 12 October on the reasoning that it rested "
+        "on a single report with nothing corroborating it. Three reports existed, and "
+        "one of them carried an on-record statement from a named spokesperson at the "
+        "organisation involved. Re-screened on all six tests and admitted. Posting "
+        "without approval counts as an action under the first test, on the same reading "
+        "that admits AIR-016, and the organisation's own position is that the agent only "
+        "answered a question, which is recorded on the row and is why it is marked "
+        "disputed. Both rejections this register has had to reverse were search "
+        "failures, not rules that were too strict. The figures moved again: 22 "
+        "documented to 23, 21 counted to 22, not accuracy 18 of 21 to 19 of 22, the "
+        "record silent on who could stop the agent 19 of 21 to 20 of 22, no review date "
+        "21 of 21 to 22 of 22, control never built 10 to 11, no attacker 13 of 21 to 14 "
+        "of 22, Authority 8 to 9, the MIT Negligible band 7 to 8, and the rows with a "
+        "disputed account one to two. |\n"
+        f"| {WORKING} | 2026-10-14 | **The OWASP codes were re-checked against OWASP's "
+        "own descriptions, and eight changed.** The codes had been read by name, and six "
+        "cases were coded Not applicable on the reasoning that an accuracy failure has "
+        "no attack pattern. OWASP's own one-line description of ASI09 is that confident, "
+        "polished explanations misled human operators into approving harmful actions, "
+        "which names the mechanism in five of those six exactly. Not applicable is no "
+        "longer used by any row. The descriptions are now in the framework file and on "
+        "every card, read from the same page the codes come from. The same page names "
+        "worked examples for six of the ten codes, and two of them are cases in this "
+        "register, so those two mappings are now marked as applied by the framework "
+        "owner rather than by this register. |\n"
+        f"| {WORKING} | 2026-10-14 | **A fourth failure of the same shape, found in the "
+        "last check of the day.** The app reads its vocabularies from the validator so "
+        "that a value the validator would reject cannot be displayed as valid. "
+        "Streamlit reloads the app file when it changes and does not reload the modules "
+        "the app imports, which live in memory for the life of the process. A local "
+        "development server that had been running since before the mapping rule landed "
+        "raised an error on the Method page for a name added to the validator that "
+        "morning, and the live site was not affected because a deployment there starts "
+        "a fresh process. Every "
+        "headless check passed, because each of those starts a fresh process and can "
+        "never see a stale one. The app now reloads the validator when its file has "
+        "changed. The three failures this project had already recorded are in the "
+        "section above, and this is the fourth of the same kind: a control that "
+        "existed, passed, and was not watching the thing that broke. |\n"
+        f"| {WORKING} | 2026-10-14 | Limits is a table rather than fourteen long "
+        "bullets, with a second column saying what each limit means for a reader. The "
+        "three failures this project has produced itself now have their own section "
+        "rather than sitting inside a limit: a maintenance script that reverted edits "
+        "while every check passed, a crash that survived six green builds, and the "
+        "cache fix that never worked. All three are the shape this register codes in "
+        "other people's systems as a control that was implemented and not watching the "
+        "thing that broke. The first Limits row also stops saying every judgement here "
+        "is mine and says what it means instead, which is that one person made every "
+        "inclusion, grading and classification decision with no second rater. |\n"
+        f"| {WORKING} | 2026-10-14 | Every case now says whether the AI Incident "
+        "Database holds the same event, with the incident number, the basis for calling "
+        "it the same event and the date that was checked. Twenty of the twenty two "
+        "match. Each match was found in the database's own export, then opened and read "
+        "to confirm it describes the same event rather than a similar one, which caught "
+        "two whose dates differ because the database dates from the first report, and "
+        "one that the database records as a bundle of several misuse cases from a single "
+        "threat intelligence report. Two cases have no match, which is recorded as not "
+        "found rather than as not there. The database stays on the aggregator list: "
+        "these are pointers for a reader and never evidence for a row. |\n"
+        f"| {WORKING} | 2026-10-14 | **Framework mappings have a rule now, and the rows "
+        "were recoded under it.** Every framework column said \"Our reading\" with "
+        "nothing published behind it, which is the same weakness the Limits section "
+        "admits about the secondary class. The rule is on this page, above: one primary "
+        "mapping per framework per case, specific provisions before general ones, and "
+        "the EU ordering is checked by the build rather than asserted. 33 primary "
+        "mappings changed. The largest effects: MANAGE 4.1, which covers post-deployment "
+        "monitoring in general, was the primary on 11 rows and is now the primary on "
+        "none, because it is the fallback and something more specific fit every time. "
+        "Article 26, the general deployer duty, was the primary on no row and is now "
+        "secondary everywhere a specific article exists. Five accuracy and oversight "
+        "cases were labelled with an OWASP attack pattern they had no security path to, "
+        "and now read Not applicable, along with one change-control case. Every lens now "
+        "counts a case once under its primary mapping, so the bars add up to the number "
+        "of counted cases instead of to the number of mappings. |\n"
+            f"| {WORKING} | 2026-10-14 | **AIR-023 added, and it should have been here "
+            "already.** On 12 October a lead was rejected for want of a second source, on the "
+            "reasoning that no reputable independent outlet had covered it. One had, seven "
+            "months earlier, and that report was already in the lead export the rejection was "
+            "written from. The case is an own account with a reputable outlet relaying it, "
+            "which is the same shape the evidence rule already accepts on three other rows. "
+            "The error was a search that stopped at the first source, not a rule that was too "
+            "strict. Every figure moved: 21 documented cases to 22, 20 counted to 21, 14 grade "
+            "B rows to 15. The missing safeguard was not accuracy in 17 of 20, now 18 of 21. "
+            "With accuracy tested first, 10 of 20 becomes 11 of 21. The record does not say "
+            "who could stop the agent in 19 of 20, now 19 of 21, because this row is the "
+            "first where it does. No review date in 20 of 20, now 21 of 21. The control was "
+            "never built in 9 cases, now 10. No attacker was involved in 12 of 20, now 13 of "
+            "21. Authority rose from 7 to 8 and is still the largest class. The MIT Minor band "
+            "went from 7 to 8. Not determinable on the EU test went from 15 to 16. The primary "
+            "record is the organisation's own publication in 5 cases, now 6, and the rows that "
+            "rest on one party's account went from three to four. Entailed as the basis for "
+            "the missing control went from 5 to 6. The leads table holds 114 rejections rather "
+            "than 115, with the reconsidered row kept in place. |\n"
+            f"| {WORKING} | 2026-10-14 | The fix that was meant to stop a schema "
+            "change reaching the live site as a crash had never worked. Streamlit's data "
+            "cache leaves out any argument whose name begins with an underscore, and the "
+            "loaders took the file stamp as one, so the stamp moved on every data change "
+            "and the cache key did not. The same crash reappeared on 14 October 2026 on "
+            "a local development server that had been running since before a schema "
+            "change, which is how it was found, and the live site was not affected on "
+            "that occasion because a deployment there restarts the process. The loaders "
+            "no longer name it that way. The "
+            "check that was meant to catch this asserted that the stamp moved, which was "
+            "never the question, and now changes the data file and asserts the loader "
+            "returns the change. |\n"
+            f"| {WORKING} | 2026-10-14 | Findings is reorganised around the question a "
+            "reader arrives with. Three tabs, How bad, What kind of failure and Gaps in the "
+            "record, with a selector on the first two reading View the cases through. The "
+            "same cases can now be read through seven lenses: MIT harm severity, the EU "
+            "serious-incident test, this register's own missing-control classes, the OWASP "
+            "Agentic Top 10, the NIST AI RMF, the EU AI Act articles and the NIST AI 800-4 "
+            "monitoring categories. Every category name and every clause text in the four "
+            "new views is read from the published lists in frameworks/, and the chosen lens "
+            "is carried in the URL so one view can be linked to. The bars in those four "
+            "views are a single neutral blue, because severity is this site's only data "
+            "colour. The harm-type filter reads the MIT ratings file, so it now appears on "
+            "the MIT view alone rather than on both. |\n"
+            f"| {WORKING} | 2026-10-14 | A sentence on Findings said four cases rest on "
+            "a report published by an AI company, and named them by hand. One of the four "
+            "was a build tool maintainer's security advisory, so the page called that "
+            "maintainer an AI company. The sentence is now read off the source label and "
+            "says what the label supports, which is that the primary record is the "
+            "implicated organisation's own published account. That first came out as six, "
+            "which counted a case whose primary record is a news outlet relaying the "
+            "company's account rather than the account itself. It is five. The rows the "
+            "Limits section says rest on one party's account are the subset of those five "
+            "that no second source corroborates, and both figures now come from one "
+            "function, so the two screens cannot disagree. |\n"
+            f"| {WORKING} | 2026-10-14 | Framework values are checked against the "
+            "published lists rather than against a pattern. The NIST AI RMF core, 72 "
+            "subcategories with their official text, the EU AI Act article titles and the "
+            "six NIST AI 800-4 monitoring categories are now files in the repository, each "
+            "with its source and the date it was read. Until v1.1 the check asked only "
+            "whether a value looked right, so a subcategory or an article that does not "
+            "exist would pass. Both are now rejected. No existing row failed the new check: "
+            "every subcategory and article already in the register is a real one, so what "
+            "changed is that a wrong value can no longer get in. Two basis columns were "
+            "added so each mapping says whether a framework owner applied it or this "
+            "register did, and a value is allowed where no provision addresses the missing "
+            "safeguard, written as None with the closest article named. |\n"
+            f"| {WORKING} | 2026-10-14 | ISO/IEC 42001 column removed pending "
+            "verification against the standard's text. The numbers stay in the data file "
+            "and appear on no page. |\n"
+            "| 1.0 | 2026-10-13 | **The watch list screen is removed.** It asked six "
+            "questions about a reader's own agent and returned the tests to run. The "
+            "questions did not discriminate. Three unlike systems, a read-only public "
+            "chatbot, an internal coding agent and a back-office automation that spends "
+            "money, each returned sixteen items. Across all sixty four possible answer "
+            "sets the median was thirteen and fifty two returned ten or more, so the only "
+            "way to get a short list was to describe an agent that barely exists. A "
+            "questionnaire where almost every answer gives almost the same output is a "
+            "list with extra steps, and sixteen items each carrying a test, a pass mark, a "
+            "signal, an owner, two framework codes and a case list is not a watch list. "
+            "The tests themselves were never the problem and they have not gone anywhere: "
+            "every one is still on the case it came from, under Test before launch. The "
+            "twenty four rules, the engine that applied them, their validator checks and "
+            "their continuous integration step are removed with the screen rather than "
+            "left in the repository unused. |\n"
+            "| 1.0 | 2026-10-13 | **The release broke the live site, and the cause is this "
+            "register's own subject.** v1.0 reached the hosted app as a KeyError on the home "
+            "screen. The data loaders were cached, and the cache keys on the function's code "
+            "and arguments rather than on the files it opens. Adding a column to the case data "
+            "left that key identical, so new code ran against a table cached before the column "
+            "existed. Every local check passed because each run starts with an empty cache, "
+            "which is the difference between a control that is implemented and one that is "
+            "operating. The loaders now take a stamp built from the data files, so the cache "
+            "falls when the data changes. The site was broken for the time between the push "
+            "and this fix. |\n"
+            "| 1.0 | 2026-10-12 | **Pre-merge review.** AIR-021 moved from grade A to B: its "
+            "only readable independent coverage is substantially a summary of the institute's "
+            "own report, and grade A asks the second source to corroborate rather than restate. "
+            "A read audit of every source on the nine new cases found four cited on a "
+            "reachability check rather than a reading, and all four have now been read: two "
+            "needed no change, one produced that regrade, and one had already been caught. Ten "
+            "of the ninety four title-stage rejections were drawn at random with a recorded "
+            "seed and checked in depth. None was wrongly rejected, so the remaining eighty four "
+            "were not re-screened, but two had the wrong test named and were corrected. A new "
+            "field records who pointed the agent at the harm, with a basis on every row, shown "
+            "on the cards and in the filters. The three Home cards were re-picked for twenty "
+            "cases. Two dead code paths were removed: a duplicate findings table that silently "
+            "overwrote the one above it, and a stale comment. |\n"
+            "| 1.0 | 2026-10-12 | **Release. Twelve cases to twenty one, eleven counted to twenty.** "
+            "Every number below is recomputed from the data on each page load, including the case "
+            "count itself. Old is version 0.9, new is this release. Said nothing untrue 5 of 11 to "
+            "10 of 20. Record silent on who could stop it 10 of 11 to 19 of 20. Control never built "
+            "6 of 11 to 9 of 20. Control existed and did not hold 1 of 11 to 6 of 20, plus one case "
+            "in a new state, Bypassable, where the gate was built and the caller could switch it "
+            "off. Missing control was not accuracy 8 of 11 to 17 of 20. Read-only agents 6 of 11 to "
+            "6 of 20, the only count that did not move at all. Evidence grades 5 A and 6 B to 7 A "
+            "and 13 B. Endings 8 documented, 2 partial, 1 undocumented to 14, 5 and 1. Severity on "
+            "MIT's scale, counted rows only, 5 Minor, 5 Negligible and 1 Substantial to 7, 7 and 6. "
+            "Missing control class 3 Accuracy, 3 Authority, 2 Boundary, 2 Oversight and 1 Vendor to "
+            "3, 7, 6, 3 and 1. Event years unchanged at 2022 to 2026. |\n"
+            "| 1.0 | 2026-10-12 | **Which findings held and which moved.** Held: no case in the "
+            "register was only the AI being wrong, which is still true at 20 counted cases as it was "
+            "at 11. Held and strengthened: the record is almost always silent on who could have "
+            "halted the deployment, now 19 of 20, and a scheduled date to look again appears in "
+            "none of the 20. Moved against the register's own framing: Accuracy did not grow at "
+            "all, staying at 3 cases while Authority went from 3 to 7 and Boundary from 2 to 6, so "
+            "the register is now mostly about what agents were allowed to do rather than what they "
+            "got wrong. Weakened: Vendor is still a single case after nine admissions, so any "
+            "statement about that class remains a description of one row. Worth saying rather than "
+            "hiding: the two strongest Vendor candidates found in the census both failed, one on the "
+            "organisation test and one on evidence. |\n"
+            "| 1.0 | 2026-10-12 | **What the census says about selection.** 115 leads were checked "
+            "and not included, each listed with the test it failed: 59 on agent action, 23 on harm, "
+            "21 on organisation, 9 on evidence, 2 on traceability and 1 already in the register. "
+            "That shape is the honest answer to how narrow this register is. The largest group is "
+            "cases where an AI system produced text and a person read it, which the register "
+            "excludes on purpose and which is where most public AI harm reporting sits. The "
+            "evidence test excluded nine, including a first-hand postmortem of an agent destroying "
+            "two and a half years of production data, which no reputable outlet covered. A single "
+            "source is grade C and the inclusion rule admits only A and B, so the rule excluded a "
+            "case better documented than some that are in. |\n"
+            "| 1.0 | 2026-10-12 | Census complete against the lead lists. Every lead in "
+            "the window was screened and 115 are listed with the test each failed. Nine cases "
+            "admitted: AIR-013 and AIR-020, two campaigns run through one platform's coding agent, "
+            "one espionage and one extortion of at least seventeen organisations. AIR-015, malware "
+            "that asked the agents already on a machine to find its secrets. AIR-016 and AIR-019, "
+            "the same posting assistant two months apart, once after an update restored deprecated "
+            "code and once after an unreviewed edit to its prompt. AIR-017, an account recovery "
+            "assistant that handed accounts to whoever asked. AIR-018, a research agent that routed "
+            "around a government portal's blocks and wrote to an internal server. AIR-021, an "
+            "evaluation body's own agents reaching the live internet and working on real people. "
+            "AIR-022, a multi-agent framework running four days of government intrusion. A tenth "
+            "case was admitted and withdrawn the same day for failing the organisation test. |\n"
+            "| 1.0 | 2026-10-12 | Two corrections from reviewing the admitted cases. "
+            "Every new case had its stop-authority answer recoded to Not disclosed. Each had been "
+            "marked Yes on the strength of a platform suspending accounts, removing packages or "
+            "disabling a tool after the event, which is a response and not a record of a role that "
+            "could have halted the deployment. One of the original twelve still holds that answer, "
+            "on a source describing sign off by two people. And AIR-016 was rewritten from the "
+            "article itself after it turned out to have been drafted from a search summary, which "
+            "changed what the company is quoted as saying and what it froze. |\n"
+            "| 1.0 | 2026-10-11 | Three method changes forced by reviewing the first "
+            "batch. Grade A now requires its second source to be on a different host from the "
+            "primary record and to corroborate rather than restate it, which is what moved AIR-013 "
+            "to B. A fifth control state, Bypassable, was added for a gate that was built and wired "
+            "in and that the caller could switch off with a documented flag, which is a different "
+            "failure from a gate that engaged and did not hold. And the pre-commit hook now runs "
+            "the validator: a row had been committed with the register invalid, because the "
+            "validator printed the error, the output was read by its last few lines, and nothing "
+            "local refused the commit. |\n"
+            "| 1.0 | 2026-10-11 | Lead sources amended, with the six inclusion tests "
+            "unchanged. The MIT AI Incident Tracker was dropped as a lead list, because its "
+            "incidents sit behind an embedded spreadsheet application rather than in the page and "
+            "it is built from AI Incident Database reports in any case. The database's own weekly "
+            "export is used instead, recorded in data/leads with its URL, download date and a "
+            "checksum. Both remain lead lists and neither is ever cited: the denylist that keeps "
+            "aggregators out of the evidence fields is unchanged. |\n"
+            "| 0.9 | 2026-10-11 | Committed a dated inclusion rule before adding any case "
+            "under it. Six tests, all of which must pass, with the window set to events and "
+            "publication between 1 January 2025 and 30 September 2026. The decision never "
+            "looks at a case's class, severity or whether the agent said something untrue, "
+            "because those are what the findings count. Six of the original twelve predate "
+            "the rule and are marked as such rather than retrofitted into it. The validator "
+            "rejects any row claiming to have passed the rule with an event date outside the "
+            "window. |\n"
+            "| 0.9 | 2026-10-11 | Layout pass, no numbers changed. The case list merged into "
+            "Home, which had been showing the same twelve rows under a second set of headline "
+            "numbers. Removed every comment and review invitation, the citation block, the "
+            "certainty strip, the shortcut links and a bar chart that labelled three of its "
+            "five bars. Findings became three tabs on one pattern: a question, a one-sentence "
+            "answer, a table, one line on how to read it. The severity grid became one row "
+            "per case, because the grid cut off the Privacy column and hid the only "
+            "Substantial case. On a card, only the severity pill is coloured now. |\n"
+            "| 0.9 | 2026-10-11 | Severity moved from the register's own 4-level scale, which "
+            "ranked cases against each other and had no external source, to MIT's 5-level "
+            "harm severity framework (CSET-based, up to global scale). The two scales use "
+            "different reference points, so old labels were retired, not converted. Each case "
+            "was re-scored from its facts: 6 Negligible, 5 Minor, 1 Substantial. An EU AI Act "
+            "serious-incident threshold view was added alongside it. |\n"
+            "| 0.9 | 2026-10-10 | Checked OWASP labels against OWASP's own coded list. No "
+            "change to codes. All ten names confirmed from the page that carries the codes, "
+            "with the shorter official forms adopted and the longer forms kept as aliases. "
+            "The same day's press release uses looser wording without codes, so it is not the "
+            "source. AIR-010's code is now recorded as Stated, because that list cites "
+            "EchoLeak as its own ASI01 example. Every framework value now carries a basis. |\n"
+            "| 0.9 | 2026-10-10 | Removed the comment deadline, keeping the route and the "
+            "commitment to log everything. Started the framework work by trying to verify the "
+            "two lists it depends on, and did not get them. The OWASP entry names sit in a "
+            "PDF behind a download form, and checking the ones that are public found OWASP's "
+            "own announcement wording ASI01 differently from the secondary source this "
+            "register used, on three cases. Allowed values now live in frameworks/, each with "
+            "its source, retrieval date and whether the owner's own publication was reachable. "
+            "The validator reads that file and warns on a disputed name, and the cards say so. "
+            "The MIT scales are not coded, because their reachable pages give counts without "
+            "naming the values. |\n"
+            "| 0.9 | 2026-10-10 | Line-by-line fact check of Home, which found four claims "
+            "the evidence did not carry. The headline said most of these failures were not "
+            "the AI being wrong, which only holds under the accuracy-last rubric the page "
+            "itself says the finding does not rest on. It is now the claim the validator "
+            "enforces: none was only the AI being wrong. Three sentences asserted an absence "
+            "with no source, including one about approval steps whose field, unlike the "
+            "stop-authority field, carries no source at all. The Article 73 note claimed "
+            "every row maps onto the Commission's template and could be lifted into a report, "
+            "when that duty falls on providers of high-risk systems and most of these are "
+            "not. Rebuilt Home as a hero, three dot cards and a certainty bar. |\n"
+            "| 0.9 | 2026-10-09 | Home cut from about 2,000 words and eleven headings to 500 "
+            "and four, after it was read as information overload. Nothing was deleted: the "
+            "analysis moved to a Findings screen somebody can choose. Home now carries the "
+            "finding, a chart of what the missing control governed, and the severity spread "
+            "as a bar. Extended the displayed-number check to cover Home. |\n"
+            "| 0.9 | 2026-10-09 | Redesign. Colour now means one thing, severity of harm, and "
+            "every severity pill carries a four-bar meter and the word so nothing depends on "
+            "colour alone. Evidence grade is monochrome and the chart is one hue. The cases "
+            "screen leads with the question, three findings as tiles, and filters where each "
+            "selection writes itself into the URL so a filtered view can be posted. Each case "
+            "opens into five tabs, and the three cases with a runnable test name the file and "
+            "class that runs it. Added a check that recomputes every number on screen from the "
+            "data file and fails the build if a typed number ever diverges. |\n"
+            "| 0.9 | 2026-10-09 | Reviewer rounds, consolidated. Late in the day, rebuilt the "
+            "incident card into four tabs after it had accumulated thirty-two fields and six "
+            "coloured boxes in one scroll, which was unreadable however correct each line "
+            "was. Moved the repeated definitions to this page. Replaced the red block at the "
+            "top of Method with plain text, because a page that opens on an alarm reads as an "
+            "apology rather than as a method. |\n"
+            "| 0.9 | 2026-10-09 | Earlier that day. Measured what the rubric's "
+            "ordering does to the finding and rewrote the headline around the part that "
+            "survives it. Separated descriptive counts from analytical ones. Decoupled "
+            "severity from recovery effort. Corrected the EU AI Act dates against EUR-Lex, "
+            "including that Article 50 is already in force, and labelled the two derived "
+            "dates as derived. Withdrew the pre-registration claim and a nine second figure, "
+            "both unevidenced. Audited how every story ended and corrected three accounts "
+            "that stopped at the failure. Added an aggregator denylist, per-row aftermath "
+            "citations, a stated basis for every severity rating, and the three deployment "
+            "questions where Not disclosed is the default. Split the owner, added control "
+            "maturity, and recorded who bore the harm against who could have prevented it. "
+            "Marked how the register knows each missing control, in three tiers. Fixed a "
+            "crash that had broken the register screen for six commits under a green build, "
+            "and added a headless render of every screen to CI. Archived every source after "
+            "finding the archiver was reverting hand edits. |\n"
+            "| 0.8 | 2026-10-03 | First build. 12 cases, 11 counted, 18 watch-list rules. |"
+        )
 
 
 # ------------------------------------------------------------------------------ main
@@ -2434,6 +3658,57 @@ def main():
         height=0,
     )
 
+    # A ?lens= link names a selector that lives on one of the Findings tabs, and
+    # st.tabs cannot be opened from Python. The tab is clicked once, by its own label,
+    # so a shared link lands on the view it names rather than on the first tab.
+    wanted_tab = LENS_TAB.get(st.query_params.get("lens"))
+    if screen == "Findings" and wanted_tab and wanted_tab != HOW_BAD_TAB:
+        components.html(
+            "<script>"
+            "const doc = window.parent.document;"
+            "if (!doc.__lensTab) {"
+            "  doc.__lensTab = true;"
+            f"  const want = {wanted_tab!r};"
+            "  let n = 0;"
+            "  const id = setInterval(() => {"
+            "    const t = [...doc.querySelectorAll('button[role=\"tab\"]')]"
+            "      .find(b => b.innerText.trim() === want);"
+            "    if (t && t.getAttribute('aria-selected') === 'true') {"
+            "      clearInterval(id);"
+            "      return;"
+            "    }"
+            "    if (t) { t.click(); }"
+            "    if (++n > 20) { clearInterval(id); }"
+            "  }, 150);"
+            "}"
+            "</script>",
+            height=0,
+        )
+
+    # 4d. A link on a case card has to land on the rule in one click, and a Streamlit
+    # heading is not an anchor a browser will scroll to on its own after the page has
+    # rendered. The parameter is read here and the section is scrolled into view once.
+    rule_anchor = {"mapping": "mapping-rule", "enterprise": "enterprise"}.get(
+        st.query_params.get("rule")
+    )
+    if screen == "Method" and rule_anchor:
+        components.html(
+            "<script>"
+            "const doc = window.parent.document;"
+            "if (!doc.__ruleJump) {"
+            "  doc.__ruleJump = true;"
+            "  let n = 0;"
+            f"  const want = {rule_anchor!r};"
+            "  const id = setInterval(() => {"
+            "    const t = doc.getElementById(want);"
+            "    if (t) { t.scrollIntoView({block: 'start'}); clearInterval(id); }"
+            "    if (++n > 20) { clearInterval(id); }"
+            "  }, 150);"
+            "}"
+            "</script>",
+            height=0,
+        )
+
     if screen == "Home":
         screen_home(frame)
     elif screen == "Findings":
@@ -2450,9 +3725,10 @@ def main():
 
     st.markdown("---")
     st.caption(
-        f"AI Agent Incident Register, version {VERSION}. Every number on this site is "
-        "computed from data/incidents.csv and data/case_harm_ratings.csv, and uses grade "
-        "A and grade B rows only. Closest clause, not legal classification."
+        f"AI Agent Incident Register, version {VERSION}. Every number on this site "
+        "is computed from the case data and uses grade A and grade B rows only. The "
+        f"[code and the data]({REPO_URL}) are public, and the Method page says how both "
+        "work."
     )
 
 
