@@ -49,7 +49,8 @@ FIELDS = [
     "disputed", "aftermath_status", "aftermath_source_url", "inclusion",
     "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
     "source_2_url", "date_checked", "facts_changed_at", "derived_rechecked_at",
-    "archive_urls", "aiid_id", "evidence_note", "missing_control_note",
+    "archive_urls", "aiid_id", "aiid_match_basis", "aiid_checked_on",
+    "evidence_note", "missing_control_note",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -311,6 +312,25 @@ EU_RANK = {
     for group, articles in enumerate(EU_GROUPS)
     for position, article in enumerate(articles)
 }
+
+
+def check_aiid(report, where, row):
+    """The cross-reference is a pointer for a reader, never a source.
+
+    Every row says whether the AI Incident Database holds the same event and when that
+    was last checked, including the rows where it holds nothing. A blank basis would
+    leave "no number here" and "nobody looked" indistinguishable.
+    """
+    if row["aiid_id"] and not row["aiid_id"].isdigit():
+        report.error(f"{where}.aiid_id", "must be the database's incident number")
+    if not row["aiid_match_basis"]:
+        report.error(
+            f"{where}.aiid_match_basis",
+            "every row says why it does or does not match, including the rows with no "
+            "match",
+        )
+    if not DATE_PATTERN.match(row["aiid_checked_on"] or ""):
+        report.error(f"{where}.aiid_checked_on", "needs the date the match was checked")
 
 
 def check_eu_order(report, where, row):
@@ -697,6 +717,7 @@ def validate_rows(report, rows, today):
 
         check_clauses(report, where, row)
         check_eu_order(report, where, row)
+        check_aiid(report, where, row)
         check_evidence(report, where, row)
         check_style(report, where, row)
 

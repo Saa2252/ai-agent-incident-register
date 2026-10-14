@@ -470,6 +470,11 @@ p.subhead {
 p.org { margin:0 0 9px; padding:8px 10px; background:rgba(127,127,127,.07);
   border-radius:7px; }
 p.fwnote { font-size:12px; color:#52514e; margin:6px 0 0; line-height:1.5; }
+p.aiid {
+  margin:10px 0 0; padding:8px 10px; border-left:3px solid var(--grid-line);
+  background:rgba(127,127,127,.05); font-size:13px;
+}
+p.aiid span { font-size:12px; color:#52514e; }
 
 /* Tabs inside an open row. The active pane is a class rather than :checked, because
    React resets natively injected form controls and the radio trick died silently. */
@@ -757,6 +762,28 @@ def frameworks_html(row):
     )
 
 
+def aiid_line(row):
+    """The same event's number in the AI Incident Database, as a pointer not a source.
+
+    The database is on the aggregator list, which means it is how cases are found and
+    never what a claim rests on. It is still the first place a reader will go to check
+    this register against something else, so every row says whether it is there.
+    """
+    if row["aiid_id"]:
+        body = (
+            '<a href="https://incidentdatabase.ai/cite/'
+            f'{esc(row["aiid_id"])}/" target="_blank" rel="noopener">'
+            f'AI Incident Database, incident {esc(row["aiid_id"])}</a>'
+        )
+    else:
+        body = "Not in the AI Incident Database."
+    return (
+        f'<p class="aiid"><b>Cross-reference, not a source.</b> {body}'
+        f'<br><span>{esc(row["aiid_match_basis"])} '
+        f'Checked {esc(row["aiid_checked_on"])}.</span></p>'
+    )
+
+
 def case_sections_html(row, ratings=None):
     """One case's full record as plain HTML.
 
@@ -837,6 +864,7 @@ def case_sections_html(row, ratings=None):
             f"{esc(GRADE_MEANING[row['evidence_grade']])}</p>"
             + para(row["evidence_note"])
             + sources
+            + aiid_line(row)
             + f'<table class="mini"><tbody>{deployment}</tbody></table>'
             + harm_rows
             + f"<p><b>EU Article 3(49), closest limb ({esc(row['eu_closest_limb'])}).</b> "
@@ -1912,6 +1940,25 @@ def tab_what_the_record_shows(frame):
         "safeguard nobody can name is one a reader cannot check. For your own agent, "
         "write down who can switch it off and the date you will next review it."
     )
+    st.markdown("**How much of this register another index already holds.**")
+    in_aiid = sorted(frame[frame["aiid_id"] != ""]["id"])
+    not_in = sorted(frame[frame["aiid_id"] == ""]["id"])
+    st.markdown(
+        f"{len(in_aiid)} of the {len(frame)} cases here are also in the AI Incident "
+        f"Database, matched case by case and each match opened and read. "
+        + (
+            f"{and_join(not_in)} "
+            + ("is" if len(not_in) == 1 else "are")
+            + " not, which is not a claim that they are missing from it, only that "
+            "nothing matching was found."
+            if not_in else
+            "Every case was found there."
+        )
+        + " That database is on this register's aggregator list, so it is how cases are "
+        "found and never what a claim rests on. The number is here because a reader "
+        "checking this register against another index should not have to do the matching "
+        "themselves."
+    )
     st.markdown("**Where the newest cases came from is itself a finding.**")
     # The Limits page says three rows rest on one party's account. Read next to this
     # sentence the two numbers look like they disagree, so the subset is named here.
@@ -2896,6 +2943,33 @@ def screen_method(frame):
     )
     st.markdown("Mappings were made by one person under this rule, with no second coder.")
 
+    st.markdown("### Cross-references to the AI Incident Database")
+    in_aiid = frame[frame["aiid_id"] != ""].sort_values("id")
+    missing = sorted(frame[frame["aiid_id"] == ""]["id"])
+    st.markdown(
+        f"{len(in_aiid)} of the {len(frame)} cases here carry the same event's number "
+        "in the AI Incident Database. Each was matched against the export in "
+        "data/leads/, then opened and read to confirm it describes the same event. "
+        "The database is on the aggregator list above, so these are pointers for a "
+        "reader and never evidence for a row."
+    )
+    rows = "\n".join(
+        f"| {r['id']} | [{r['aiid_id']}](https://incidentdatabase.ai/cite/"
+        f"{r['aiid_id']}/) | {r['aiid_match_basis']} | {r['aiid_checked_on']} |"
+        for _, r in in_aiid.iterrows()
+    )
+    st.markdown(
+        "| Case | Database incident | Basis | Checked |\n| --- | --- | --- | --- |\n"
+        + rows
+    )
+    if missing:
+        st.caption(
+            f"{and_join(missing)} "
+            + ("has" if len(missing) == 1 else "have")
+            + " no match. Searching the export and the site for the deployer, the date "
+            "and the mechanism turned up nothing describing the same event."
+        )
+
     st.markdown("### Where the cases were found")
     st.markdown(
         "Finding a case and admitting a case are different steps, and only the second one "
@@ -3074,6 +3148,16 @@ def screen_method(frame):
     with st.container(key="changelog"):
         st.markdown(
             "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        f"| {WORKING} | 2026-10-14 | Every case now says whether the AI Incident "
+        "Database holds the same event, with the incident number, the basis for calling "
+        "it the same event and the date that was checked. Twenty of the twenty two "
+        "match. Each match was found in the database's own export, then opened and read "
+        "to confirm it describes the same event rather than a similar one, which caught "
+        "two whose dates differ because the database dates from the first report, and "
+        "one that the database records as a bundle of several misuse cases from a single "
+        "threat intelligence report. Two cases have no match, which is recorded as not "
+        "found rather than as not there. The database stays on the aggregator list: "
+        "these are pointers for a reader and never evidence for a row. |\n"
         f"| {WORKING} | 2026-10-14 | **Framework mappings have a rule now, and the rows "
         "were recoded under it.** Every framework column said \"Our reading\" with "
         "nothing published behind it, which is the same weakness the Limits section "

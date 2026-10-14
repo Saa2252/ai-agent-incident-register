@@ -263,6 +263,27 @@ def main(argv):
                 f"{got[1]}, agreeing with Findings"
             )
 
+    # The cross-reference count appears on two screens and is a claim about work that
+    # was actually done, so it is recomputed from the column rather than trusted.
+    cross = sum(1 for r in rows if r["aiid_id"])
+    for screen, pattern in (
+        ("Findings",
+         rf"{cross} of the {len(rows)} cases here are also in the AI Incident Database"),
+        ("Method",
+         rf"{cross} of the {len(rows)} cases here carry the same event's number"),
+    ):
+        at_x = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)
+        at_x.run()
+        screen_radio(at_x).set_value(screen).run()
+        shown = "\n".join(str(getattr(e, "value", "")) for e in at_x.markdown)
+        if not re.search(pattern, shown):
+            problems.append(
+                f"{screen} does not say {cross} of {len(rows)} cases are cross "
+                "referenced, which is what the column holds"
+            )
+        else:
+            print(f"  ok   {screen} cross-references = {cross} of {len(rows)}")
+
     # The four framework views. Each heading names the category with the most cases and
     # prints its count, and the bar chart prints a count per category. Both are
     # recomputed from the case data and from the published lists in frameworks/, so a
