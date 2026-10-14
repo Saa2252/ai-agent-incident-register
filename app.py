@@ -521,14 +521,14 @@ i.aiidmark {
 APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
-VERSION = "1.0"
+VERSION = "1.1"
 UPDATED = "14 October 2026"
 
 # The version being written on this branch. Every change log row for unreleased work
 # carries WORKING rather than a typed string, so the release is two edits here and not
 # a search through the log: set VERSION to this number and IN_PROGRESS to "". The date
 # comes from UPDATED, which the pre-commit hook stamps from the commit itself.
-IN_PROGRESS = "1.1"
+IN_PROGRESS = ""
 REPO_URL = "https://github.com/Saa2252/ai-agent-incident-register"
 WORKING = f"{IN_PROGRESS} in progress" if IN_PROGRESS else VERSION
 
@@ -3474,7 +3474,7 @@ def screen_method(frame):
             "two and a half years of production data, which no reputable outlet covered. A single "
             "source is grade C and the inclusion rule admits only A and B, so the rule excluded a "
             "case better documented than some that are in. |\n"
-            "| 1.0 in progress | 2026-10-12 | Census complete against the lead lists. Every lead in "
+            "| 1.0 | 2026-10-12 | Census complete against the lead lists. Every lead in "
             "the window was screened and 115 are listed with the test each failed. Nine cases "
             "admitted: AIR-013 and AIR-020, two campaigns run through one platform's coding agent, "
             "one espionage and one extortion of at least seventeen organisations. AIR-015, malware "
@@ -3486,7 +3486,7 @@ def screen_method(frame):
             "evaluation body's own agents reaching the live internet and working on real people. "
             "AIR-022, a multi-agent framework running four days of government intrusion. A tenth "
             "case was admitted and withdrawn the same day for failing the organisation test. |\n"
-            "| 1.0 in progress | 2026-10-12 | Two corrections from reviewing the admitted cases. "
+            "| 1.0 | 2026-10-12 | Two corrections from reviewing the admitted cases. "
             "Every new case had its stop-authority answer recoded to Not disclosed. Each had been "
             "marked Yes on the strength of a platform suspending accounts, removing packages or "
             "disabling a tool after the event, which is a response and not a record of a role that "
@@ -3494,7 +3494,7 @@ def screen_method(frame):
             "on a source describing sign off by two people. And AIR-016 was rewritten from the "
             "article itself after it turned out to have been drafted from a search summary, which "
             "changed what the company is quoted as saying and what it froze. |\n"
-            "| 1.0 in progress | 2026-10-11 | Three method changes forced by reviewing the first "
+            "| 1.0 | 2026-10-11 | Three method changes forced by reviewing the first "
             "batch. Grade A now requires its second source to be on a different host from the "
             "primary record and to corroborate rather than restate it, which is what moved AIR-013 "
             "to B. A fifth control state, Bypassable, was added for a gate that was built and wired "
@@ -3503,7 +3503,7 @@ def screen_method(frame):
             "the validator: a row had been committed with the register invalid, because the "
             "validator printed the error, the output was read by its last few lines, and nothing "
             "local refused the commit. |\n"
-            "| 1.0 in progress | 2026-10-11 | Lead sources amended, with the six inclusion tests "
+            "| 1.0 | 2026-10-11 | Lead sources amended, with the six inclusion tests "
             "unchanged. The MIT AI Incident Tracker was dropped as a lead list, because its "
             "incidents sit behind an embedded spreadsheet application rather than in the page and "
             "it is built from AI Incident Database reports in any case. The database's own weekly "
