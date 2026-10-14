@@ -69,6 +69,7 @@ def main(argv):
         return 1
 
     clean = True
+    home_rendered = ""
 
     for screen in SCREENS:
         at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
@@ -85,6 +86,7 @@ def main(argv):
         # accordion of twelve expanders.
         if screen == "Home":
             rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+            home_rendered = rendered
             rows = rendered.count('<details class="crow')
             print(f"          {rows} rows in the case table")
             if rows == 0:
@@ -98,6 +100,31 @@ def main(argv):
                 or " open>" in rendered:
                 print("          FAIL a row is open on Home with none requested")
                 clean = False
+
+    # The keepalive waits for one line of Home to prove the app rendered rather than
+    # the hibernation page. That line sat in scripts/keepalive.py with nothing tying it
+    # to the page, so when the heading it named left Home on 9 October 2026 the
+    # keepalive failed every six hours for five days and said so to nobody. Community
+    # Cloud sleeps a quiet app and screenshots it daily for the link preview, so this is
+    # also what keeps the preview from being captured off the sleep screen.
+    sentinel = re.search(
+        r'^EXPECTED_BODY = "([^"]+)"',
+        (project_dir / "scripts" / "keepalive.py").read_text(encoding="utf-8"),
+        re.M,
+    )
+    if not sentinel:
+        print("  FAIL  no EXPECTED_BODY found in scripts/keepalive.py", file=sys.stderr)
+        clean = False
+    elif sentinel.group(1) not in home_rendered:
+        print(
+            f"  FAIL  the keepalive waits for {sentinel.group(1)!r}, which is not on "
+            "Home. The app will sleep and the share preview will be taken off the "
+            "hibernation page",
+            file=sys.stderr,
+        )
+        clean = False
+    else:
+        print(f"  ok    the keepalive's sentinel is on Home: {sentinel.group(1)!r}")
 
     # Opening a case is now a link, not a selectbox. Check that asking for one by
     # query parameter renders its record with the heading and the tabs.
