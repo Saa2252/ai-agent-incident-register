@@ -14,6 +14,7 @@ Three rules run through this file.
 
 import csv
 import html
+import importlib
 from collections import Counter
 import sys
 from pathlib import Path
@@ -535,6 +536,19 @@ WORKING = f"{IN_PROGRESS} in progress" if IN_PROGRESS else VERSION
 # restating them. A value the validator would reject cannot be displayed as valid here.
 sys.path.insert(0, str(APP_DIR / "scripts"))
 import validate_register as rules_check  # noqa: E402
+
+# Streamlit reloads app.py when it changes. It does not reload the modules app.py
+# imports, because those live in sys.modules for the life of the process, so a change
+# to the validator reaches the page only on a restart. On 14 October 2026 a server that
+# had been up since the morning raised AttributeError for a name added to the validator
+# that same day, while every headless check passed, because each of those starts a
+# fresh process and never sees the stale copy. This is the third time this project has
+# shipped a control that passed and was not watching the thing that broke.
+_rules_source = Path(rules_check.__file__)
+_rules_stamp = _rules_source.stat().st_mtime_ns if _rules_source.exists() else 0
+if getattr(rules_check, "_loaded_at", None) != _rules_stamp:
+    rules_check = importlib.reload(rules_check)
+    rules_check._loaded_at = _rules_stamp
 
 COUNTED_GRADES = rules_check.COUNTED_GRADES
 CONTROL_CLASSES = rules_check.CONTROL_CLASSES
@@ -3125,7 +3139,7 @@ def screen_method(frame):
     )
 
     st.markdown('<div id="own-failures"></div>', unsafe_allow_html=True)
-    st.markdown("### Three failures inside this project")
+    st.markdown("### Four failures inside this project")
     st.markdown(
         "The register codes other people's agents as having controls that were "
         "implemented and did not hold. The same label is the honest one for these."
@@ -3151,10 +3165,18 @@ def screen_method(frame):
         "check written to catch it asserted that the stamp moved, which was never the "
         "question. The crash came back on a long-running server on 14 October 2026, "
         "which is how it was found. The check now changes the data file and asserts "
-        "the loader returns the change."
+        "the loader returns the change.\n"
+        "- **The app read a stale copy of its own rulebook.** The app takes its "
+        "vocabularies from the validator, so that a value the validator would reject "
+        "cannot appear on a page as valid. Streamlit reloads the app file when it "
+        "changes and leaves the modules it imports in memory for the life of the "
+        "process. A server running since earlier that day raised an error on this page "
+        "for a name added to the validator that morning, and every headless check "
+        "passed throughout, because each starts a fresh process and cannot see a stale "
+        "one. The app now reloads the validator when its file has changed."
     )
     st.caption(
-        "All three are the same shape: a control that existed, passed, and was not "
+        "All four are the same shape: a control that existed, passed, and was not "
         "watching the thing that broke."
     )
 
@@ -3202,6 +3224,18 @@ def screen_method(frame):
     with st.container(key="changelog"):
         st.markdown(
             "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        f"| {WORKING} | 2026-10-14 | **A fourth failure of the same shape, found in the "
+        "last check of the day.** The app reads its vocabularies from the validator so "
+        "that a value the validator would reject cannot be displayed as valid. "
+        "Streamlit reloads the app file when it changes and does not reload the modules "
+        "the app imports, which live in memory for the life of the process. A server "
+        "that had been running since before the mapping rule landed raised an error on "
+        "the Method page for a name added to the validator that morning, while every "
+        "headless check passed, because each of those starts a fresh process and can "
+        "never see a stale one. The app now reloads the validator when its file has "
+        "changed. The three failures this project had already recorded are in the "
+        "section above, and this is the fourth of the same kind: a control that "
+        "existed, passed, and was not watching the thing that broke. |\n"
         f"| {WORKING} | 2026-10-14 | Limits is a table rather than fourteen long "
         "bullets, with a second column saying what each limit means for a reader. The "
         "three failures this project has produced itself now have their own section "
