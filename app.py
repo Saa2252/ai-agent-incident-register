@@ -475,6 +475,9 @@ p.aiid {
   background:rgba(127,127,127,.05); font-size:13px;
 }
 p.aiid span { font-size:12px; color:#52514e; }
+i.aiidmark {
+  font-style:normal; font-size:11px; color:#2a78d6; margin-left:4px; cursor:help;
+}
 
 /* Tabs inside an open row. The active pane is a class rather than :checked, because
    React resets natively injected form controls and the radio trick died silently. */
@@ -762,6 +765,20 @@ def frameworks_html(row):
     )
 
 
+def aiid_mark(row):
+    """A marker in the ID cell when another index holds the same event.
+
+    Not a link. A link inside the summary would open the row as well as the page, so
+    the real link lives on the card where it does one thing.
+    """
+    if not row["aiid_id"]:
+        return ""
+    return (
+        f'<i class="aiidmark" title="AI Incident Database, incident '
+        f'{esc(row["aiid_id"])}">&#8599;</i>'
+    )
+
+
 def aiid_line(row):
     """The same event's number in the AI Incident Database, as a pointer not a source.
 
@@ -982,7 +999,7 @@ def case_table(view, ratings=None, open_id=None):
         rows.append(
             f'<details class="crow{klass}" id="{esc(row["id"])}"{is_open}>'
             '<summary><span class="cid"><i class="caret"></i>'
-            f'{esc(row["id"])}</span>'
+            f'{esc(row["id"])}{aiid_mark(row)}</span>'
             f'<span class="cdate">{esc(row["event_date"])}</span>'
             f'<span>{esc(org)}</span><span>{esc(row["title"])}</span>'
             f'<span>{esc(row["control_class"])}</span>'
@@ -1943,21 +1960,17 @@ def tab_what_the_record_shows(frame):
     st.markdown("**How much of this register another index already holds.**")
     in_aiid = sorted(frame[frame["aiid_id"] != ""]["id"])
     not_in = sorted(frame[frame["aiid_id"] == ""]["id"])
+    checked = sorted(frame["aiid_checked_on"])[-1] if len(frame) else ""
     st.markdown(
         f"{len(in_aiid)} of the {len(frame)} cases here are also in the AI Incident "
-        f"Database, matched case by case and each match opened and read. "
-        + (
-            f"{and_join(not_in)} "
-            + ("is" if len(not_in) == 1 else "are")
-            + " not, which is not a claim that they are missing from it, only that "
-            "nothing matching was found."
-            if not_in else
-            "Every case was found there."
-        )
-        + " That database is on this register's aggregator list, so it is how cases are "
-        "found and never what a claim rests on. The number is here because a reader "
-        "checking this register against another index should not have to do the matching "
-        "themselves."
+        f"Database. {len(not_in)} "
+        + ("does" if len(not_in) == 1 else "do")
+        + f" not, as of {checked}"
+        + (f" ({and_join(not_in)})" if not_in else "")
+        + ". Each match was opened and read rather than taken from a search result, and "
+        "an absence is recorded as nothing found rather than as nothing there. That "
+        "database is on this register's aggregator list, so it is how cases are found "
+        "and never what a claim rests on."
     )
     st.markdown("**Where the newest cases came from is itself a finding.**")
     # The Limits page says three rows rest on one party's account. Read next to this
@@ -2943,6 +2956,51 @@ def screen_method(frame):
     )
     st.markdown("Mappings were made by one person under this rule, with no second coder.")
 
+    # 31. The Home toggle links here. It answers the question that view raises and
+    # does not answer: what an organisation's own register carries that a public one
+    # cannot, and what that means for a reader who has to run one.
+    st.markdown('<div id="enterprise"></div>', unsafe_allow_html=True)
+    st.markdown("### What else changes inside an organisation")
+    internal_cols = len(INTERNAL_COLUMNS)
+    st.markdown(
+        f"Home can show these cases as an organisation's own register would hold them, "
+        f"with {count_word(internal_cols)} more columns across intake, response and "
+        "closure. Every one of them is empty, and that is the point rather than a gap "
+        "in the research: they are filled from logs, tickets, approvals and the people "
+        "involved, and none of that is published. The difference between the two views "
+        "is the difference between what a reader outside an organisation can ever know "
+        "and what the organisation knew by the end of the week."
+    )
+    st.markdown(
+        "**What the public record does carry.** One of those "
+        f"{count_word(internal_cols)} columns, corrective action, is sometimes public, "
+        "because a postmortem or a regulator's notice says what was changed. This "
+        "register records how completely each ending is known, which is why that column "
+        "can be filled at all."
+    )
+    st.markdown(
+        "**What an internal register adds beyond columns.** Three things, none of which "
+        "a public record can show.\n"
+        "- **A named owner while it is open, not only afterwards.** This register codes "
+        "a control owner and an accountable role for every case, and both are the "
+        "register's reading of who would have held it, not a name from the record. "
+        "Inside an organisation that is a person with a calendar.\n"
+        "- **A clock.** Intake, response and closure have dates and a due date between "
+        "them. A public account has a date it happened and sometimes a date it was "
+        "fixed, and nothing in between.\n"
+        "- **A decision about whether to tell a regulator.** The closure group carries "
+        "it because it is a decision somebody makes, with a date and a name against it. "
+        "Article 73 of the EU AI Act is the obligation this register points at most "
+        "often, and whether it applies is a question about the system and the "
+        "jurisdiction, not about the incident."
+    )
+    st.markdown(
+        "**What this register is not.** It is not a template for running an incident "
+        "process, and the empty columns are not a recommendation to adopt these nine. "
+        "They are the columns these cases would need to be answerable inside the "
+        "organisations they happened to, which is a different claim and a smaller one."
+    )
+
     st.markdown("### Cross-references to the AI Incident Database")
     in_aiid = frame[frame["aiid_id"] != ""].sort_values("id")
     missing = sorted(frame[frame["aiid_id"] == ""]["id"])
@@ -3524,15 +3582,19 @@ def main():
     # 4d. A link on a case card has to land on the rule in one click, and a Streamlit
     # heading is not an anchor a browser will scroll to on its own after the page has
     # rendered. The parameter is read here and the section is scrolled into view once.
-    if screen == "Method" and st.query_params.get("rule") == "mapping":
+    rule_anchor = {"mapping": "mapping-rule", "enterprise": "enterprise"}.get(
+        st.query_params.get("rule")
+    )
+    if screen == "Method" and rule_anchor:
         components.html(
             "<script>"
             "const doc = window.parent.document;"
             "if (!doc.__ruleJump) {"
             "  doc.__ruleJump = true;"
             "  let n = 0;"
+            f"  const want = {rule_anchor!r};"
             "  const id = setInterval(() => {"
-            "    const t = doc.getElementById('mapping-rule');"
+            "    const t = doc.getElementById(want);"
             "    if (t) { t.scrollIntoView({block: 'start'}); clearInterval(id); }"
             "    if (++n > 20) { clearInterval(id); }"
             "  }, 150);"

@@ -335,6 +335,25 @@ def main(argv):
     # answer the site gives to "why this article and not that one".
     at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
     at.query_params["screen"] = "Method"
+    at.query_params["rule"] = "enterprise"
+    at.run()
+    if report("Method through ?rule=enterprise", at):
+        text = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        if "What else changes inside an organisation" not in text:
+            print("          FAIL the enterprise section is not on Method",
+                  file=sys.stderr)
+            clean = False
+        elif 'id="enterprise"' not in text:
+            print("          FAIL the enterprise section has no anchor to land on",
+                  file=sys.stderr)
+            clean = False
+        else:
+            print("          the enterprise section and its anchor are both present")
+    else:
+        clean = False
+
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["screen"] = "Method"
     at.query_params["rule"] = "mapping"
     at.run()
     if report("Method through ?rule=mapping", at):
