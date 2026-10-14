@@ -81,7 +81,8 @@ def main(argv):
             if "<details" not in rendered:
                 print("          FAIL the case rows are not expandable")
                 clean = False
-            if 'class="crow" id="AIR-001" open' in rendered or " open>" in rendered:
+            if re.search(r'class="crow[^"]*" id="AIR-001" open', rendered) \
+                or " open>" in rendered:
                 print("          FAIL a row is open on Home with none requested")
                 clean = False
 
@@ -218,7 +219,7 @@ def main(argv):
     lenses = {
         "mit": "MIT harm severity scale",
         "eu": "EU AI Act serious-incident test",
-        "classes": "This register's missing-control classes",
+        "classes": "This register's classes",
         "owasp": "OWASP Agentic Top 10",
         "rmf": "NIST AI RMF",
         "articles": "EU AI Act articles",
@@ -304,7 +305,7 @@ def main(argv):
     if report("a card's Frameworks tab marks one primary per framework", at):
         rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
         card = re.search(
-            r'<details class="crow" id="AIR-012".*?</details>', rendered, re.S
+            r'<details class="crow[^"]*" id="AIR-012".*?</details>', rendered, re.S
         )
         body = card.group(0) if card else ""
         marked = body.count('class="fwtag"')
@@ -328,6 +329,36 @@ def main(argv):
             print(f"          four primaries marked, {secondary} labelled, rule linked")
     else:
         clean = False
+
+    # Every card's What happened tab carries both labelled parts. The second one is
+    # the register's reading and the first is the sourced facts, and the split only
+    # means anything if every card actually shows it.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.run()
+    rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+    cards = re.findall(
+        r'<details class="crow[^"]*" id="(AIR-\d+)".*?</details>', rendered, re.S
+    )
+    bodies = re.findall(
+        r'<details class="crow[^"]*" id="AIR-\d+".*?</details>', rendered, re.S
+    )
+    missing_split = [
+        cid for cid, body in zip(cards, bodies)
+        if "Why it is in the register" not in body
+    ]
+    if not bodies:
+        print("  FAIL  no cards rendered to check the What happened split",
+              file=sys.stderr)
+        clean = False
+    elif missing_split:
+        print(
+            f"  FAIL  {len(missing_split)} cards have no 'Why it is in the register' "
+            f"heading: {', '.join(missing_split[:5])}",
+            file=sys.stderr,
+        )
+        clean = False
+    else:
+        print(f"  ok    all {len(bodies)} cards label both parts of What happened")
 
     # v1.0 reached the live site as a KeyError because st.cache_data keys on the
     # function, not on the files it opens, so a new column in the case data left the

@@ -49,7 +49,7 @@ FIELDS = [
     "disputed", "aftermath_status", "aftermath_source_url", "inclusion",
     "evidence_grade", "source_1_label", "source_1_url", "source_2_label",
     "source_2_url", "date_checked", "facts_changed_at", "derived_rechecked_at",
-    "archive_urls", "aiid_id",
+    "archive_urls", "aiid_id", "evidence_note", "missing_control_note",
 ]
 
 # source_2_label and source_2_url may be blank, and only on a grade C row. Everything
@@ -68,6 +68,9 @@ OPTIONAL_FIELDS = {
     # cross-reference for a reader, never a source: incidentdatabase.ai is on the
     # aggregator list above and is how cases are found, not evidence that they happened.
     "aiid_id",
+    # The reasoning that used to sit in the narrative. Most rows have none, because most
+    # rows raise no question about their grade or their class.
+    "evidence_note", "missing_control_note",
 }
 
 # ---- fixed vocabularies ----

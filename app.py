@@ -421,6 +421,10 @@ p.gmean { font-size:13px; color:#52514e; margin:0 0 10px; max-width:760px; line-
 }
 a.fwlink { font-weight:700; }
 .fwbasis { font-size:12px; color:#52514e; margin-top:2px; }
+p.subhead {
+  font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+  color:#52514e; margin:14px 0 4px;
+}
 p.org { margin:0 0 9px; padding:8px 10px; background:rgba(127,127,127,.07);
   border-radius:7px; }
 p.fwnote { font-size:12px; color:#52514e; margin:6px 0 0; line-height:1.5; }
@@ -764,7 +768,9 @@ def case_sections_html(row, ratings=None):
             # would have risked the facts for the sake of a convention.
             f'<p class="org"><b>Organisation.</b> {esc(row["deployer"])}'
             f'<br><b>When.</b> {esc(row["event_date"])}</p>'
-            + para(row["what_happened"]) + para(row["why_in_register"]),
+            + para(row["what_happened"])
+            + '<p class="subhead">Why it is in the register</p>'
+            + para(row["why_in_register"]),
         ),
         (
             "What was missing",
@@ -774,7 +780,8 @@ def case_sections_html(row, ratings=None):
             f"{esc(MATURITY_MEANING[row['control_maturity']])}</p>"
             f"<p><b>Who directed the agent: {esc(row['directed_by'])}.</b> "
             f"{esc(DIRECTED_MEANING[row['directed_by']])}</p>"
-            + para(row["missing_control"]) + para(row["missing_control_basis"]),
+            + para(row["missing_control"]) + para(row["missing_control_basis"])
+            + para(row["missing_control_note"]),
         ),
         (
             "Test before launch",
@@ -786,6 +793,7 @@ def case_sections_html(row, ratings=None):
             "Evidence",
             f"<p><b>Grade {esc(row['evidence_grade'])}.</b> "
             f"{esc(GRADE_MEANING[row['evidence_grade']])}</p>"
+            + para(row["evidence_note"])
             + sources
             + f'<table class="mini"><tbody>{deployment}</tbody></table>'
             + harm_rows
