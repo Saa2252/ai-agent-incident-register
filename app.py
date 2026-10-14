@@ -2453,8 +2453,8 @@ def screen_home(frame):
         f'<p class="fact"><span>{facts["all_rows"]} documented incidents, {years[0]}'
         f'&ndash;{years[-1]}</span><span>{facts["total"]} with strong enough evidence '
         "to count</span></p>"
-        '<p class="def">An AI agent here means a system that takes actions (runs code, '
-        "changes data, sends, buys, posts), not one that only answers.</p></div>",
+        '<p class="def">An AI system counts as an agent here if it spoke or acted for '
+        "an organisation without a person approving each output.</p></div>",
         unsafe_allow_html=True,
     )
 
@@ -2721,6 +2721,10 @@ def _leads():
 def screen_method(frame):
     st.title("Method")
     st.markdown(f"Version {VERSION}, last updated {UPDATED}. Single coder.")
+    st.markdown(
+        "An AI system counts as an agent here if it spoke or acted for an organisation "
+        "without a person approving each output."
+    )
     st.markdown(
         "This page is the argument for trusting the register, and the fastest way through "
         "it is to start with what it cannot do. **Limits**, below, names them: the sample "
