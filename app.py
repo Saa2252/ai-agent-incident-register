@@ -300,6 +300,48 @@ table.cases tr.notcounted td { color: var(--muted); }
   gap:8px; align-items:center; padding:10px 14px;
 }
 .crow .cdate { font-variant-numeric:tabular-nums; white-space:nowrap; }
+
+/* The internal register view. Three public columns and nine an organisation fills from
+   its own logs and tickets, drawn empty because no public source can fill them. Date,
+   missing control and evidence are dropped here so the nine fit at 1280 without
+   sideways scrolling, and they are all still on the card. */
+.itbl .ctbl-head, .itbl .crow > summary, .ihead-groups {
+  grid-template-columns:68px 104px minmax(0, 1fr) repeat(9, 46px);
+  gap:5px; padding:8px 10px;
+}
+.ihead-groups {
+  display:grid; align-items:end; font-size:11px; font-weight:700; color:#52514e;
+  text-transform:uppercase; letter-spacing:.04em; padding-bottom:4px;
+}
+.ihead-groups .gpub { grid-column:span 3; }
+.ihead-groups .gint { border-bottom:2px dashed var(--grid-line); padding-bottom:3px; }
+.itbl .ctbl-head span { font-size:9px; line-height:1.15; overflow-wrap:break-word; }
+.itbl .crow > summary { font-size:13px; }
+.icell {
+  display:block; text-align:center; border-radius:5px; padding:4px 2px;
+  font-size:10px; line-height:1.2; overflow-wrap:break-word;
+}
+.icell.empty {
+  border:1.5px dashed var(--grid-line); background:rgba(127,127,127,.05); color:#8b8880;
+}
+.icell.known { border:1.5px solid #2a78d6; background:rgba(42,120,214,.10); color:#1d5fae; }
+.icell.part {
+  border:1.5px solid rgba(42,120,214,.45); background:rgba(42,120,214,.05); color:#1d5fae;
+}
+p.ilegend { display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:12px;
+  color:#52514e; margin:6px 0 10px; }
+p.ilegend .key { display:inline-block; width:22px; height:13px; border-radius:4px; }
+p.ilegend .key.solid { border:1.5px solid #2a78d6; background:rgba(42,120,214,.10); }
+p.ilegend .key.dotted {
+  border:1.5px dashed var(--grid-line); background:rgba(127,127,127,.05); margin-left:14px;
+}
+.st-key-regpick { margin:2px 0 8px; }
+.st-key-regpick [role="radiogroup"] { gap:22px; }
+@media (max-width: 900px) {
+  .itbl .ctbl-head, .ihead-groups { display:none; }
+  .itbl .crow > summary { grid-template-columns:1fr; gap:4px; }
+  .icell { text-align:left; }
+}
 .ctbl-head {
   font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
   color:#52514e; background:rgba(127,127,127,.14);
@@ -922,6 +964,96 @@ def case_table(view, ratings=None, open_id=None):
             + "</details>"
         )
     return f'<div class="ctbl">{head}{"".join(rows)}</div>'
+
+
+# The nine columns an organisation's own incident register carries and a public record
+# cannot fill, in the three groups a response actually moves through.
+INTERNAL_GROUPS = (
+    ("Intake", ("Detected", "Reported by", "Owner")),
+    ("Response", ("Root cause", "Corrective action", "Due")),
+    ("Closure", ("Closed", "Approved by", "Regulator notified")),
+)
+INTERNAL_COLUMNS = [c for _, cols in INTERNAL_GROUPS for c in cols]
+
+# The one column a public record sometimes fills. Everything else in the nine is filled
+# from logs, tickets and the people involved, and none of that is published.
+CORRECTIVE = {
+    "Documented": ("On public record", "known"),
+    "Partial": ("Partly on record", "part"),
+    "Undocumented": ("", ""),
+}
+
+
+def internal_cells(row):
+    """The nine internal cells for one case, as markup and as a tally.
+
+    Nothing is invented. A cell a public record cannot fill is drawn empty and dashed,
+    which is the point of the view: the gap is the finding.
+    """
+    html_cells, filled, partly = [], 0, 0
+    for name in INTERNAL_COLUMNS:
+        text, state = "", ""
+        if name == "Corrective action":
+            text, state = CORRECTIVE.get(row["aftermath_status"], ("", ""))
+            if state == "known":
+                filled += 1
+            elif state == "part":
+                partly += 1
+        if text:
+            html_cells.append(f'<span class="icell {state}">{esc(text)}</span>')
+        else:
+            html_cells.append('<span class="icell empty">\u2014</span>')
+    return "".join(html_cells), filled, partly
+
+
+def internal_summary(view):
+    """The computed line under the table. Cells, not rows, because cells is the claim."""
+    total = len(view) * len(INTERNAL_COLUMNS)
+    filled = partly = 0
+    for _, row in view.iterrows():
+        _, f, p = internal_cells(row)
+        filled += f
+        partly += p
+    return total - filled - partly, total, filled, partly
+
+
+def internal_table(view, ratings=None, open_id=None):
+    """The same cases with the columns an internal register adds, drawn empty.
+
+    Date, missing control and evidence are dropped here so the nine dotted columns fit
+    at 1280 without sideways scrolling. They are all still on the card, which opens in
+    this view exactly as it does in the other.
+    """
+    groups = (
+        '<div class="ihead-groups"><span class="gpub">From the public record</span>'
+        + "".join(
+            f'<span class="gint" style="grid-column: span 3">{esc(name)}</span>'
+            for name, _ in INTERNAL_GROUPS
+        )
+        + "</div>"
+    )
+    head = (
+        '<div class="ctbl-head itbl-head"><span>ID</span><span>Organisation</span>'
+        "<span>What happened</span>"
+        + "".join(f"<span>{esc(c)}</span>" for c in INTERNAL_COLUMNS)
+        + "</div>"
+    )
+    rows = []
+    for _, row in view.iterrows():
+        klass = " notcounted" if not row["counted"] else ""
+        is_open = " open" if open_id and row["id"] == open_id else ""
+        org = row["deployer"].split(",")[0].strip()
+        cells, _, _ = internal_cells(row)
+        rows.append(
+            f'<details class="crow{klass}" id="{esc(row["id"])}"{is_open}>'
+            '<summary><span class="cid"><i class="caret"></i>'
+            f'{esc(row["id"])}</span>'
+            f'<span>{esc(org)}</span><span>{esc(row["title"])}</span>'
+            f"{cells}</summary>"
+            + case_sections_html(row, ratings)
+            + "</details>"
+        )
+    return f'<div class="ctbl itbl">{groups}{head}{"".join(rows)}</div>'
 
 
 def describe_count(total, counted):
@@ -2296,11 +2428,71 @@ def screen_home(frame):
 
 
     ratings_for_cards, _, _ = load_harm_ratings(data_stamp(RATINGS_FILE))
-    st.markdown(
-        table_controls()
-        + case_table(view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])),
-        unsafe_allow_html=True,
-    )
+
+    # 32. The same cases, with the columns an organisation's own register carries. The
+    # choice is in the URL so the view can be linked to, and written on change rather
+    # than on every run for the same reason the lens selectors are.
+    PUBLIC = "Public register"
+    INTERNAL = "As an organisation's own register"
+    options = [PUBLIC, INTERNAL]
+    asked = INTERNAL if st.query_params.get("register") == "internal" else PUBLIC
+
+    def remember_register():
+        if st.session_state["register_view"] == INTERNAL:
+            st.query_params["register"] = "internal"
+        elif "register" in st.query_params:
+            del st.query_params["register"]
+
+    with st.container(key="regpick"):
+        chosen_view = st.radio(
+            "Show these cases as",
+            options,
+            index=options.index(asked),
+            horizontal=True,
+            key="register_view",
+            on_change=remember_register,
+        )
+    internal = chosen_view == INTERNAL
+
+    if internal:
+        empty, cells, filled, partly = internal_summary(view)
+        st.markdown(
+            f"Same {len(view)} cases, with the columns an organisation's own incident "
+            "register carries. The dotted columns are filled at intake, during response "
+            "and at closure, from logs, tickets and the people involved. No public "
+            "source can fill them, so they are shown empty. Corrective action is the one "
+            "exception: the public record sometimes carries it. "
+            "[What else changes inside an organisation](?screen=Method&rule=enterprise)"
+        )
+        st.markdown(
+            '<p class="ilegend"><span class="key solid"></span>Solid, known from the '
+            'public record<span class="key dotted"></span>Dotted, only an '
+            "organisation's own register can fill this</p>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            table_controls()
+            + internal_table(
+                view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            f"{empty} of {cells} internal-register cells are empty. The public record "
+            f"fills {filled} fully and {partly} partly, all in one column."
+        )
+        st.caption(
+            "This is the structure an internal register adds, not a claim about how any "
+            "of these organisations ran their own response."
+        )
+    else:
+        st.markdown(
+            table_controls()
+            + case_table(
+                view, ratings=ratings_for_cards, open_id=open_case_once(view["id"])
+            ),
+            unsafe_allow_html=True,
+        )
 
     st.caption(
         "Click any row to open its full record in place. Colour means one thing here: how "

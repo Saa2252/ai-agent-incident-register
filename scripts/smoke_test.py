@@ -29,6 +29,19 @@ SCREENS = ["Home", "Findings", "Method"]
 TIMEOUT = 120
 
 
+def screen_radio(at):
+    """The sidebar's screen selector, found by its label.
+
+    These scripts used screen_radio(at), which meant "the first radio on the page". Adding
+    the public and internal register toggle to Home put a radio ahead of it and every
+    screen in every scenario silently became Home.
+    """
+    for widget in at.radio:
+        if widget.label == "Screen":
+            return widget
+    raise AssertionError("no radio labelled 'Screen' on this page")
+
+
 def report(label, at):
     """Print any exception the run produced. Returns True when the screen is clean."""
     problems = list(at.exception)
@@ -64,7 +77,7 @@ def main(argv):
             clean = report(f"{screen} (initial load)", at) and clean
             continue
         # The sidebar radio chooses the screen.
-        at.radio[0].set_value(screen).run()
+        screen_radio(at).set_value(screen).run()
         clean = report(screen, at) and clean
 
         # Home carries the case table and one open case. Both are checked rather than
@@ -274,6 +287,48 @@ def main(argv):
         if rendered.count('<details class="crow') == 0:
             print(f"          FAIL ?lens={slug} rendered no cases", file=sys.stderr)
             clean = False
+
+    # The internal register view. Same rows, nine added columns that no public source
+    # can fill, and a computed line about how empty they are. A view whose whole claim
+    # is "these cells are empty" has to be checked against the data rather than looked
+    # at once.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["register"] = "internal"
+    at.run()
+    if report("Home as an organisation's own register", at):
+        rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        captions = "\n".join(str(getattr(e, "value", "")) for e in at.caption)
+        rows = len(re.findall(r'<details class="crow[^"]*"', rendered))
+        empty = rendered.count("icell empty")
+        known = rendered.count("icell known")
+        part = rendered.count("icell part")
+        said = re.search(
+            r"(\d+) of (\d+) internal-register cells are empty\. The public record "
+            r"fills (\d+) fully and (\d+) partly",
+            captions,
+        )
+        if not said:
+            print("          FAIL the internal view has no computed cell line",
+                  file=sys.stderr)
+            clean = False
+        elif [int(g) for g in said.groups()] != [empty, rows * 9, known, part]:
+            print(
+                f"          FAIL the line says {said.groups()}, the table draws "
+                f"{empty} empty, {rows * 9} cells, {known} known, {part} partly",
+                file=sys.stderr,
+            )
+            clean = False
+        elif known + part == 0:
+            print("          FAIL no cell is filled from the public record",
+                  file=sys.stderr)
+            clean = False
+        else:
+            print(
+                f"          {rows} rows, {empty} of {rows * 9} cells empty, "
+                f"{known} known and {part} partly from the record"
+            )
+    else:
+        clean = False
 
     # The mapping rule, and the one-click route to it from a questioned row. Both the
     # card and every lens chart link here, so a renamed section would break the only

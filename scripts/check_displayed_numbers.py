@@ -18,6 +18,19 @@ import sys
 from pathlib import Path
 
 
+def screen_radio(at):
+    """The sidebar's screen selector, found by its label.
+
+    These scripts used at.radio[0], which meant "the first radio on the page". Adding
+    the public and internal register toggle to Home put a radio ahead of it and every
+    screen in every scenario silently became Home.
+    """
+    for widget in at.radio:
+        if widget.label == "Screen":
+            return widget
+    raise AssertionError("no radio labelled 'Screen' on this page")
+
+
 def main(argv):
     project_dir = Path(argv[1] if len(argv) > 1 else ".").resolve()
     with open(project_dir / "data" / "incidents.csv", newline="", encoding="utf-8") as fh:
@@ -165,7 +178,7 @@ def main(argv):
     # The not-accuracy claim moved to the Findings tab, so it is read there.
     findings = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)
     findings.run()
-    findings.radio[0].set_value("Findings").run()
+    screen_radio(findings).set_value("Findings").run()
     if findings.exception:
         problems.append(f"the findings screen raised: {findings.exception[0].value}")
     else:
@@ -222,7 +235,7 @@ def main(argv):
     # by side, so a disagreement between the screens is the failure worth catching.
     method = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)
     method.run()
-    method.radio[0].set_value("Method").run()
+    screen_radio(method).set_value("Method").run()
     if method.exception:
         problems.append(f"the method screen raised: {method.exception[0].value}")
     else:
@@ -308,7 +321,7 @@ def main(argv):
          lambda top, n: rf"{n} of {len(counted)} cases fall under {top}: "
                         rf"{re.escape(owasp_names[top])}\."),
         ("rmf", *top_of(rmf, rmf_order), rmf,
-         lambda top, n: rf"{n} of {len(counted)} cases point to {re.escape(top)}:"),
+         lambda top, n: rf"{n} of {len(counted)} cases point to {re.escape(top)}\."),
         ("articles", *top_of(articles, None), articles,
          lambda top, n: rf"{re.escape(top)} is the closest provision in {n} of "
                         rf"{len(counted)} cases\."),
