@@ -274,6 +274,61 @@ def main(argv):
             print(f"          FAIL ?lens={slug} rendered no cases", file=sys.stderr)
             clean = False
 
+    # The mapping rule, and the one-click route to it from a questioned row. Both the
+    # card and every lens chart link here, so a renamed section would break the only
+    # answer the site gives to "why this article and not that one".
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["screen"] = "Method"
+    at.query_params["rule"] = "mapping"
+    at.run()
+    if report("Method through ?rule=mapping", at):
+        text = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        if "How a case is mapped to a framework" not in text:
+            print("          FAIL the mapping rule section is not on Method",
+                  file=sys.stderr)
+            clean = False
+        elif 'id="mapping-rule"' not in text:
+            print("          FAIL the mapping rule section has no anchor to land on",
+                  file=sys.stderr)
+            clean = False
+        else:
+            print("          the rule section and its anchor are both present")
+    else:
+        clean = False
+
+    # One primary per framework per card, marked, with the rest labelled. A card that
+    # marks two would mean two counts for one case on the Findings page.
+    at = AppTest.from_file(str(app), default_timeout=TIMEOUT)
+    at.query_params["case"] = "AIR-012"
+    at.run()
+    if report("a card's Frameworks tab marks one primary per framework", at):
+        rendered = "\n".join(str(getattr(e, "value", "")) for e in at.markdown)
+        card = re.search(
+            r'<details class="crow" id="AIR-012".*?</details>', rendered, re.S
+        )
+        body = card.group(0) if card else ""
+        marked = body.count('class="fwtag"')
+        secondary = body.count("also maps to")
+        if marked != 4:
+            print(
+                f"          FAIL the card marks {marked} primary mappings, there are "
+                "four frameworks",
+                file=sys.stderr,
+            )
+            clean = False
+        elif secondary == 0:
+            print("          FAIL no mapping is labelled 'also maps to'",
+                  file=sys.stderr)
+            clean = False
+        elif "?screen=Method&amp;rule=mapping" not in body:
+            print("          FAIL the card does not link to the mapping rule",
+                  file=sys.stderr)
+            clean = False
+        else:
+            print(f"          four primaries marked, {secondary} labelled, rule linked")
+    else:
+        clean = False
+
     # v1.0 reached the live site as a KeyError because st.cache_data keys on the
     # function, not on the files it opens, so a new column in the case data left the
     # key unchanged and new code ran against an old table. Nothing here would have

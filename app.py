@@ -413,6 +413,13 @@ p.gmean { font-size:13px; color:#52514e; margin:0 0 10px; max-width:760px; line-
 }
 
 .fwtable td.fwk { white-space:nowrap; font-weight:600; width:200px; }
+.fwtable tr.fwrow-s td.fwk { font-weight:400; font-style:italic; color:#52514e; }
+.fwtag {
+  display:inline-block; margin-left:8px; padding:1px 7px; border-radius:999px;
+  background:rgba(42,120,214,.12); border:1px solid #2a78d6; color:#1d5fae;
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+}
+a.fwlink { font-weight:700; }
 .fwbasis { font-size:12px; color:#52514e; margin-top:2px; }
 p.org { margin:0 0 9px; padding:8px 10px; background:rgba(127,127,127,.07);
   border-radius:7px; }
@@ -646,41 +653,61 @@ def frameworks_html(row):
     on a card is the framework owner's words and not a paraphrase typed here. ISO/IEC
     42001 is deliberately absent: its numbers have never been read against the text.
     """
-    def line(label, value, text, basis):
+    def line(label, value, text, basis, primary):
+        """One mapping. The first for a framework is the one every count uses."""
         body = f"<b>{esc(value)}</b>"
         if text:
             body += f" &middot; {esc(text)}"
+        mark = '<span class="fwtag">counted</span>' if primary else ""
         return (
-            f'<tr><td class="fwk">{esc(label)}</td><td>{body}'
+            f'<tr class="{"fwrow-p" if primary else "fwrow-s"}">'
+            f'<td class="fwk">{esc(label)}</td><td>{body}{mark}'
             f'<div class="fwbasis">{esc(basis)}</div></td></tr>'
         )
 
+    def block(name, refs, text_for, basis):
+        out = []
+        for i, ref in enumerate(refs):
+            out.append(line(name if i == 0 else "also maps to", ref,
+                            text_for(ref), basis, i == 0))
+        return out
+
     rows = []
-    for ref in (r.strip() for r in row["nist_ai_rmf"].split(",") if r.strip()):
-        rows.append(line(
-            "NIST AI RMF 1.0", ref,
-            NIST_RMF_ROWS.get(ref, {}).get("text", ""), row["nist_ai_rmf_basis"],
-        ))
-    for ref in (r.strip() for r in row["eu_ai_act"].split(",") if r.strip()):
+    rows += block(
+        "NIST AI RMF 1.0",
+        [r.strip() for r in row["nist_ai_rmf"].split(",") if r.strip()],
+        lambda ref: NIST_RMF_ROWS.get(ref, {}).get("text", ""),
+        row["nist_ai_rmf_basis"],
+    )
+
+    def eu_text(ref):
         inner = ref
         if ref.startswith("None (closest:"):
             inner = "Article " + ref.split("Article ")[1].rstrip(")")
-        title = EU_ARTICLE_ROWS.get(inner, {}).get("title", "")
-        rows.append(line("EU AI Act", ref, title, row["eu_ai_act_basis"]))
-    rows.append(line(
-        "OWASP Agentic Top 10 2026", row["owasp_code"],
-        OWASP_CODES.get(row["owasp_code"], ""), row["owasp_code_basis"],
-    ))
-    rows.append(line(
-        "NIST AI 800-4 monitoring", row["nist_800_4_category"],
-        NIST_800_4_ROWS.get(row["nist_800_4_category"], {}).get("what_it_covers", ""),
+        return EU_ARTICLE_ROWS.get(inner, {}).get("title", "")
+
+    rows += block(
+        "EU AI Act",
+        [r.strip() for r in row["eu_ai_act"].split(",") if r.strip()],
+        eu_text, row["eu_ai_act_basis"],
+    )
+    rows += block(
+        "OWASP Agentic Top 10 2026", [row["owasp_code"]],
+        lambda ref: OWASP_CODES.get(ref, ""), row["owasp_code_basis"],
+    )
+    rows += block(
+        "NIST AI 800-4 monitoring", [row["nist_800_4_category"]],
+        lambda ref: NIST_800_4_ROWS.get(ref, {}).get("what_it_covers", ""),
         "Register's summary, not NIST's wording",
-    ))
+    )
     return (
         '<table class="mini fwtable"><tbody>' + "".join(rows) + "</tbody></table>"
-        "<p class=\"fwnote\">Names and clause text come from the published lists in this "
-        "repository, each with its source and the date it was read. The mapping to this "
-        "case is the register's, not the framework owner's.</p>"
+        "<p class=\"fwnote\">The row marked <b>counted</b> is this case's primary "
+        "mapping, and the only one any figure on the Findings page uses. The rest also "
+        "fit and are counted nowhere. Names and clause text come from the published "
+        "lists in this repository, each with its source and the date it was read."
+        '<br><a class="fwlink" target="_self" href="?screen=Method&amp;rule=mapping">'
+        "How these mappings were made &rarr;</a></p>"
     )
 
 
@@ -1370,6 +1397,17 @@ def category_rows(pairs):
     return f'<div class="srows lens">{"".join(out)}</div>'
 
 
+def primary_mapping(spec, row):
+    """The one provision this case is counted under, which is the first in its list.
+
+    The order is the rule published on the Method page, and the validator rejects a
+    row whose first value is not the one that rule picks, so this is reading a decision
+    rather than making one.
+    """
+    values = spec["values"](row)
+    return values[0] if values else ""
+
+
 def framework_view(frame, slug):
     """One published framework applied to every case, in the same shape for all four.
 
@@ -1384,14 +1422,13 @@ def framework_view(frame, slug):
     uncounted = frame[~frame["counted"]]
     total = len(counted)
 
-    # A case with two values appears under both, which is why the chart heading says so
-    # for the two multi-valued fields.
-    hits = Counter()
-    extras = Counter()
-    for _, row in counted.iterrows():
-        hits.update(set(spec["values"](row)))
-    for _, row in uncounted.iterrows():
-        extras.update(set(spec["values"](row)))
+    # Every count here is of primary mappings, so a case appears once however many
+    # provisions also fit. Before the mapping rule a case with two values was counted
+    # under both and the bars added up to more cases than the register holds.
+    hits = Counter(primary_mapping(spec, row) for _, row in counted.iterrows())
+    extras = Counter(primary_mapping(spec, row) for _, row in uncounted.iterrows())
+    hits.pop("", None)
+    extras.pop("", None)
 
     catalogue = spec["catalogue"]()
     seen = set(hits) | set(extras)
@@ -1422,9 +1459,9 @@ def framework_view(frame, slug):
             f"{sum(hits[k] for k in three)} of {total}."
         )
     elif slug == "rmf":
+        st.markdown(f"#### {n} of {total} cases point to {esc(top)}.")
         st.markdown(
-            f"#### {n} of {total} cases point to {esc(top)}: "
-            f"{esc(NIST_RMF_ROWS.get(top, {}).get('text', ''))}"
+            f"{esc(top)} reads: {esc(NIST_RMF_ROWS.get(top, {}).get('text', ''))}"
         )
     elif slug == "articles":
         st.markdown(
@@ -1437,17 +1474,14 @@ def framework_view(frame, slug):
         )
     st.markdown(spec["sentence"])
 
-    chart_head = f"##### Where the {total} counted cases fall"
-    if spec["multi"]:
-        chart_head += ". Cases can appear under more than one category"
-    st.markdown(chart_head)
+    st.markdown(f"##### Where the {total} counted cases fall")
     st.markdown(
         category_rows([
             (spec["label"](key), hits[key], extras[key]) for key in order
         ]),
         unsafe_allow_html=True,
     )
-    used = [k for k in order if hits[k] or extras[k]]
+    used = [k for k in order if k in catalogue and (hits[k] or extras[k])]
     if spec["show_zeros"]:
         st.caption(
             f"{len(used)} of the {len(catalogue)} {spec['plural']} in the published "
@@ -1463,10 +1497,15 @@ def framework_view(frame, slug):
             f"the {spec['plural']} with no case are left out rather than drawn at zero."
         )
 
+    st.caption(
+        "Each case is counted once, under its primary mapping. Other mappings that fit "
+        "are on the case card and counted nowhere. "
+        "[How these mappings were made](?screen=Method&rule=mapping)"
+    )
     st.markdown(f"##### All {len(frame)} cases, grouped by {spec['unit']}")
     st.markdown(table_controls(), unsafe_allow_html=True)
     for key in order:
-        rows = frame[frame.apply(lambda r: key in spec["values"](r), axis=1)]
+        rows = frame[frame.apply(lambda r: primary_mapping(spec, r) == key, axis=1)]
         st.markdown(
             group_header(
                 spec["label"](key), hits[key], extras[key], spec["meaning"](key),
@@ -2814,6 +2853,21 @@ def screen_method(frame):
     with st.container(key="changelog"):
         st.markdown(
             "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        f"| {WORKING} | 2026-10-14 | **Framework mappings have a rule now, and the rows "
+        "were recoded under it.** Every framework column said \"Our reading\" with "
+        "nothing published behind it, which is the same weakness the Limits section "
+        "admits about the secondary class. The rule is on this page, above: one primary "
+        "mapping per framework per case, specific provisions before general ones, and "
+        "the EU ordering is checked by the build rather than asserted. 33 primary "
+        "mappings changed. The largest effects: MANAGE 4.1, which covers post-deployment "
+        "monitoring in general, was the primary on 11 rows and is now the primary on "
+        "none, because it is the fallback and something more specific fit every time. "
+        "Article 26, the general deployer duty, was the primary on no row and is now "
+        "secondary everywhere a specific article exists. Five accuracy and oversight "
+        "cases were labelled with an OWASP attack pattern they had no security path to, "
+        "and now read Not applicable, along with one change-control case. Every lens now "
+        "counts a case once under its primary mapping, so the bars add up to the number "
+        "of counted cases instead of to the number of mappings. |\n"
             f"| {WORKING} | 2026-10-14 | **AIR-023 added, and it should have been here "
             "already.** On 12 October a lead was rejected for want of a second source, on the "
             "reasoning that no reputable independent outlet had covered it. One had, seven "
@@ -3155,6 +3209,26 @@ def main():
             "      return;"
             "    }"
             "    if (t) { t.click(); }"
+            "    if (++n > 20) { clearInterval(id); }"
+            "  }, 150);"
+            "}"
+            "</script>",
+            height=0,
+        )
+
+    # 4d. A link on a case card has to land on the rule in one click, and a Streamlit
+    # heading is not an anchor a browser will scroll to on its own after the page has
+    # rendered. The parameter is read here and the section is scrolled into view once.
+    if screen == "Method" and st.query_params.get("rule") == "mapping":
+        components.html(
+            "<script>"
+            "const doc = window.parent.document;"
+            "if (!doc.__ruleJump) {"
+            "  doc.__ruleJump = true;"
+            "  let n = 0;"
+            "  const id = setInterval(() => {"
+            "    const t = doc.getElementById('mapping-rule');"
+            "    if (t) { t.scrollIntoView({block: 'start'}); clearInterval(id); }"
             "    if (++n > 20) { clearInterval(id); }"
             "  }, 150);"
             "}"

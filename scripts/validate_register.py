@@ -290,6 +290,47 @@ def check_style(report, where, row):
 
 NONE_CLOSEST = re.compile(r"^None \(closest: Article \d+\)$")
 
+NOT_APPLICABLE = "Not applicable"
+
+# The EU AI Act ordering published on the Method page. Specific before general, and the
+# first value in a row's list is its primary mapping. This is checked rather than
+# trusted, because the ordering is the whole claim: without it the mapping is one
+# person's pick and the bar on the Findings page is that pick counted up.
+EU_GROUPS = (
+    ("Article 14", "Article 15", "Article 9", "Article 10"),
+    ("Article 16", "Article 26"),
+    ("Article 50",),
+    ("Article 53", "Article 55"),
+    ("Article 72", "Article 73"),
+)
+EU_RANK = {
+    article: (group, position)
+    for group, articles in enumerate(EU_GROUPS)
+    for position, article in enumerate(articles)
+}
+
+
+def check_eu_order(report, where, row):
+    """The first article in the list has to be the one the rule puts first."""
+    values = [v.strip() for v in row["eu_ai_act"].split(",") if v.strip()]
+    if not values or NONE_CLOSEST.match(values[0]):
+        return
+    unknown = [v for v in values if v not in EU_RANK]
+    if unknown:
+        report.error(
+            f"{where}.eu_ai_act",
+            f"{', '.join(unknown)} is not in the published ordering, so the rule "
+            "cannot say whether it is the primary mapping",
+        )
+        return
+    best = min(EU_RANK[v] for v in values)
+    if EU_RANK[values[0]] != best:
+        should = [v for v in values if EU_RANK[v] == best][0]
+        report.error(
+            f"{where}.eu_ai_act",
+            f"{values[0]} is listed first but the rule makes {should} the primary",
+        )
+
 
 def check_clauses(report, where, row):
     """Clause references must exist, not merely look right.
@@ -459,7 +500,12 @@ def validate_rows(report, rows, today):
             report.error(f"{where}.control_class", f"'{row['control_class']}' is not one of {sorted(CONTROL_CLASSES)}")
         if row["nist_800_4_category"] not in NIST_800_4_CATEGORIES:
             report.error(f"{where}.nist_800_4_category", f"'{row['nist_800_4_category']}' is not a NIST AI 800-4 category")
-        if row["owasp_code"] not in OWASP_CODES:
+        # Added 14 October 2026 with the mapping rule. A case with no security path has
+        # no OWASP pattern, and picking the closest-looking code to avoid a blank was
+        # how five accuracy rows came to be labelled Human-Agent Trust Exploitation.
+        if row["owasp_code"] == NOT_APPLICABLE:
+            pass
+        elif row["owasp_code"] not in OWASP_CODES:
             report.error(
                 f"{where}.owasp_code",
                 f"'{row['owasp_code']}' is not in frameworks/owasp_agentic_2026.csv",
@@ -647,6 +693,7 @@ def validate_rows(report, rows, today):
                 )
 
         check_clauses(report, where, row)
+        check_eu_order(report, where, row)
         check_evidence(report, where, row)
         check_style(report, where, row)
 

@@ -267,10 +267,16 @@ def main(argv):
     mon_order, _ = catalogue("nist_ai_800_4_categories.csv", "category")
 
     def tally(field, over=None):
+        """Primary mappings only, which is the first value in the list.
+
+        This counted every value until the mapping rule landed, so a case with two
+        articles was counted under both and the bars added to more cases than exist.
+        """
         found = {}
         for r in (counted if over is None else over):
-            for value in (v.strip() for v in r[field].split(",") if v.strip()):
-                found[value] = found.get(value, 0) + 1
+            values = [v.strip() for v in r[field].split(",") if v.strip()]
+            if values:
+                found[values[0]] = found.get(values[0], 0) + 1
         return found
 
     # A case that is not counted still appears in its group, marked. A case with two
