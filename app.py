@@ -1678,6 +1678,10 @@ def tab_how_severe(frame):
             + "</p>",
             unsafe_allow_html=True,
         )
+        st.caption(
+            "Summarised from MIT's table. The full table, five levels across ten harm "
+            "types with MIT's own wording, is on the Method page."
+        )
 
     if not len(uncounted) == 0:
         ids = ", ".join(sorted(uncounted["id"]))
@@ -2207,7 +2211,7 @@ def screen_home(frame):
             [v for v in ("Deployer", "Attacker", "No one") if v in set(frame["directed_by"])],
         )
         query = st.text_input("Search", placeholder="Case, deployer, pattern")
-        counted_only = st.checkbox("Only rows that feed the numbers", value=False)
+        counted_only = st.checkbox("Counted cases only (grade A and B)", value=False)
 
     # The finding filters live in the URL so a filtered view stays shareable, even though
     # the chips that used to set them are gone.
@@ -2311,6 +2315,21 @@ def screen_home(frame):
     )
 
 
+
+
+def _articles_used(frame):
+    """The EU articles the register actually cites, in the rule's own order.
+
+    Typed as a list of seven until 14 October 2026, which went stale the moment the
+    recode added two and is the exact failure the computed-numbers rule exists to stop.
+    """
+    seen = set()
+    for value in frame["eu_ai_act"]:
+        for ref in (v.strip() for v in str(value).split(",") if v.strip()):
+            seen.add(rules_check.EU_RANK.get(ref, (9, 0)) + (ref,))
+    ordered = [ref for *_, ref in sorted(seen)]
+    numbers = [r.replace("Article ", "") for r in ordered]
+    return "Articles " + and_join(numbers)
 
 
 def _leads():
@@ -2577,8 +2596,9 @@ def screen_method(frame):
         "NIST's category names. Any one-line description of a category on this site is "
         "this register's summary, not NIST's wording.\n"
         "- **[EU AI Act, Regulation (EU) 2024/1689]"
-        "(https://eur-lex.europa.eu/eli/reg/2024/1689/oj).** Articles 9, 14, 15, 26, 50, "
-        "55 and 73 as closest clauses. Article 3(49) defines a serious incident, which is "
+        f"(https://eur-lex.europa.eu/eli/reg/2024/1689/oj).** {_articles_used(frame)} as "
+        "closest clauses, listed in the order the mapping rule applies them. Article "
+        "3(49) defines a serious incident, which is "
         "the threshold the reporting duty in Article 73 hangs on. EUR-Lex is the "
         "authoritative text. Article titles were checked against that site's reproduction "
         "because EUR-Lex does not serve automated requests.\n"
@@ -2596,9 +2616,10 @@ def screen_method(frame):
         "- **[Commission draft guidance and reporting template for serious AI incidents]"
         "(https://digital-strategy.ec.europa.eu/en/consultations/ai-act-commission-issues-"
         "draft-guidance-and-reporting-template-serious-ai-incidents-and-seeks).** A "
-        "September 2025 draft. The fields on each incident card were shaped to sit close "
-        "to it, so a row here can be lifted into that template rather than rewritten. "
-        "Check whether a final version has landed before relying on it."
+        "September 2025 draft, open for feedback until 7 November 2025. The fields on "
+        "each incident card were shaped to sit close to it, so a row here can be lifted "
+        "into that template rather than rewritten. No final version found as of 14 "
+        "October 2026, checked at the consultation page linked above."
     )
 
     # 4a. The framework columns were "Our reading" on every row with no rule behind
