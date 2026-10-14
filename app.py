@@ -528,6 +528,7 @@ UPDATED = "14 October 2026"
 # a search through the log: set VERSION to this number and IN_PROGRESS to "". The date
 # comes from UPDATED, which the pre-commit hook stamps from the commit itself.
 IN_PROGRESS = "1.1"
+REPO_URL = "https://github.com/Saa2252/ai-agent-incident-register"
 WORKING = f"{IN_PROGRESS} in progress" if IN_PROGRESS else VERSION
 
 # The app imports its vocabularies and its evidence rule from the validator rather than
@@ -2460,8 +2461,9 @@ def screen_home(frame):
         denominator = f"{len(frame)} cases"
     st.markdown(f"#### {esc(heading)}")
 
-    left, right = st.columns([3, 1])
+    left, middle, right = st.columns([3, 1, 1])
     left.markdown(f"**Showing {len(view)} of {denominator}**")
+    middle.link_button("Code and data on GitHub", REPO_URL, width="stretch")
     right.download_button(
         "Download the data", data=DATA_FILE.read_bytes(),
         file_name="ai_agent_incident_register.csv", mime="text/csv",
@@ -3052,114 +3054,108 @@ def screen_method(frame):
     )
 
     st.markdown("### Limits")
-    # The same derivation the Findings sentence uses, so the two counts are one count.
+    # E27. Fourteen long bullets asked a reader to work out what each one meant for
+    # them. The table says that in the second column, which is the only column most
+    # readers need.
     own_account, one_party = own_account_rows(frame[frame["counted"]])
-    if len(one_party) == 1:
-        head, verb, them, they = "row rests", "is", "it", "It"
-    else:
-        head, verb, them, they = "rows rest", "are", "them", "They"
+    facts = headline(frame)
+    limits = [
+        ("One coder",
+         "One person made every inclusion, grading and classification decision. There "
+         "is no second rater and no inter-rater reliability figure, so read the coding "
+         "as one defensible reading rather than as a measurement."),
+        ("The secondary class has no rubric",
+         "The primary class comes from an ordered, published, first-match-wins test. "
+         "The secondary class, which records the reading that ordering discards, was "
+         "assigned case by case with no rule behind it. It is on cards and counted "
+         "nowhere, deliberately: a matrix built on it would display one person's "
+         "unruled judgement as structure."),
+        ("The rubric is stated, not pre-registered",
+         "It was written before the rows were coded, but the rule file and the data "
+         "file were first committed together, so nothing in the repository proves that "
+         "order. From version 0.9 onward a rubric change lands in its own commit ahead "
+         "of any recoding, which makes the claim checkable forward and not backward."),
+        ("The sampling frame runs along the axis the finding measures",
+         "Primary records exist for events that produce legal, security or regulatory "
+         "paperwork, and those are disproportionately the authority, boundary and "
+         "vendor cases. A chatbot that quietly gave wrong answers for a year generates "
+         "no such document. Read the headline as a floor on the non-accuracy cases, not "
+         "as a ratio between the two."),
+        ("Fixing the rubric did not fix that",
+         "Version 0.9 measured what the ordering was doing and rewrote the headline "
+         "around the part that survives it. That closes one threat and leaves the "
+         "sampling one standing, and the two are often confused. The repair was to "
+         f"publish the candidates that were dropped: {_leads()[0]} leads with the test "
+         "each failed, of which "
+         f"{count_word(_leads()[1])} has since been reconsidered and admitted."),
+        (f"{count_word(len(one_party)).capitalize()} rows rest on one party's account",
+         f"{and_join(one_party)} are graded B with a reputable outlet as the second "
+         "source, and in each case that outlet reports the primary account rather than "
+         "verifying it. They clear grade B and would not clear grade A. These are the "
+         f"{count_word(len(one_party))} rows the Findings page points here, out of the "
+         f"{count_word(len(own_account))} whose primary record the organisation "
+         "published itself. Read them as the organisation's own account, carefully "
+         "written and unverified."),
+        ("A convenience sample, not a population",
+         "These are the cases with a usable public record. Agent failures handled "
+         "quietly are the majority and none of them are here, which biases the counts "
+         "toward the visible and the embarrassing."),
+        (f"{facts['total']} is a small number",
+         "A count this size illustrates a pattern rather than measuring its "
+         "distribution. Treat the finding as a hypothesis worth testing against your "
+         "own incidents."),
+        ("Closest clause, not legal classification",
+         "Every framework value is checked against the published list it comes from, "
+         "and the build refuses one that is not in it. Whether a clause applies to a "
+         "given deployment is a different question this register does not answer. "
+         "Corrections to a clause reference are among the most useful things you can "
+         "send."),
+        ("Tests are not proof",
+         "Every test on this site would have caught the specific failure described. "
+         "Passing all of them does not make an agent safe."),
+        ("Every structural correction here was prompted by a reader",
+         "The checks catch regressions, not errors of judgement. The validator has "
+         "never told this project that a framing was wrong, a count was misleading or "
+         "a claim outran its evidence. People did, every time, and the automation is "
+         "there to hold the line afterwards rather than to find it."),
+    ]
     st.markdown(
-        "- **One coder.** Every judgement on this site is mine. There is no second rater and "
-        "no inter-rater reliability figure, so the coding should be read as one defensible "
-        "reading rather than as a measurement.\n"
-        "- **The secondary class has no rubric.** The primary class is assigned by an "
-        "ordered, published, first-match-wins test. The secondary class, added in version "
-        "0.9.9 to record the reading that ordering discards, was assigned case by case "
-        "with no rule behind it. It is shown on cards and counted nowhere, and that is "
-        "deliberate: a matrix built on it would display one person's unruled judgement as "
-        "structure. Oversight is the tell. It wins the primary test twice and was "
-        "assigned as a secondary six times.\n"
-        "- **The rubric is stated, not pre-registered.** It was written before the rows "
-        "were coded, but the rule file and the data file were first committed together, so "
-        "nothing in the repository proves that order and you should not take my word for "
-        "it. From version 0.9 onward any change to the rubric lands in its own commit "
-        "ahead of any recoding, which makes the claim checkable from here forward even "
-        "though it is not checkable backward.\n"
-        "- **The sampling frame runs along the axis the finding measures.** This is the "
-        "sharpest objection to this register and it deserves to be made here rather than "
-        "by someone else. Primary records exist for events that produce legal, security or "
-        "regulatory paperwork: rulings, CVEs, threat intelligence reports, enforcement "
-        "notices. Those are disproportionately the authority, boundary and vendor cases. A "
-        "chatbot that quietly gave wrong answers for a year generates no such document, so "
-        "accuracy failures are systematically harder to admit to this register. The "
-        "evidence rule that makes every row checkable is the same rule that biases the "
-        "sample toward the finding. Read the headline as a floor on the non-accuracy "
-        "cases, not as a ratio between the two.\n"
-        "- **Fixing the rubric did not fix this.** Version 0.9 measured what the rubric's "
-        "ordering was doing and rewrote the headline around the part that survives it. "
-        "That closes one threat and leaves this one standing, and the two are often "
-        "confused. The cases where the agent stated nothing untrue are largely the "
-        "security and legal ones, which are precisely the cases that generate primary "
-        "records, so the current headline is at least as exposed to this bias as the one "
-        "it replaced. The repair was to publish the long list of candidates that were "
-        "considered and dropped, with the test each failed, so the shape of what the rules "
-        f"excluded can be read rather than guessed at. That is now done: {_leads()[0]} "
-        "leads are listed in data/leads/considered_not_included.csv with the test each "
-        f"failed, {count_word(_leads()[1])} of them since reconsidered and admitted, and "
-        "the largest group by far is cases where an AI system produced text and a person "
-        "read it, which this register excludes by design and which is where most public "
-        "reporting of AI harm sits.\n"
-        "- **A case this register first excluded, wrongly.** In February 2026 a coding "
-        "agent ran terraform destroy against the production infrastructure of a course "
-        "platform, taking the database, the environment and every automated backup with "
-        "it, and about two and a half years of student submissions. The organisation "
-        "published a detailed first-hand postmortem naming the stale state file, the "
-        "auto-approve, the row count and the recovery, and it even records that the agent "
-        "advised against the approach and a person approved anyway. It was rejected as a "
-        "single source and graded C. That was a search failure, not a judgement call: a "
-        "reputable trade outlet had covered it seven months earlier, and that report was "
-        "already sitting in the lead export the rejection was written from. It is now "
-        "AIR-023. The row stays in the considered and not included table with the "
-        "reasoning and the correction, because a register that quietly deletes its "
-        "mistakes is worth less than one that can be checked.\n"
-        f"- **{count_word(len(one_party)).capitalize()} {head} on one party's account.** "
-        f"{and_join(one_party)} {verb} graded B with a reputable outlet as the second "
-        "source, and in each case that outlet is reporting the primary account rather "
-        "than verifying it. No indicators of compromise, no victim statement and no "
-        f"third-party investigation exist for any of {them}. {they} clear grade B, which "
-        "asks for two independent reputable reports, and would not clear grade A, which "
-        "asks the second source to corroborate rather than restate. These are the "
-        f"{count_word(len(one_party))} rows the Findings page points here, out of the "
-        f"{count_word(len(own_account))} whose primary record the organisation published "
-        "itself. Read "
-        f"{them} as the organisation's own account, carefully written and unverified.\n"
-        "- **A convenience sample, not a population.** These cases are the ones with "
-        "a usable public record. Agent failures that were handled quietly are the majority "
-        "and none of them are here, which also biases the counts toward the visible and "
-        "the embarrassing.\n"
-        f"- **{headline(frame)['total']} is a small number.** A count this size is an "
-        "illustration of a pattern, not evidence of its distribution. Treat the finding as a hypothesis worth testing "
-        "against your own incidents.\n"
-        "- **Closest clause, not legal classification.** The clause references are the "
-        "nearest fit for a reader who needs a starting point. Whether any obligation "
-        "actually applies depends on the role, the system and the jurisdiction. This is not "
-        "legal advice.\n"
-        "- **Tests are not proof.** Every test on this site is a test that would have caught "
-        "the specific failure described. Passing all of them does not make an agent safe.\n"
-        "- **Every structural correction in this log was prompted by a reader.** The "
-        "checks catch regressions, not errors of judgement. The validator has never once "
-        "told this project that a framing was wrong, a count was misleading or a claim "
-        "outran its source. People did that, every time, and the automation's job turned "
-        "out to be holding the line afterwards rather than finding it.\n"
-        "- **This register has already produced its own example of a control that was "
-        "implemented and not operating.** The repository has a validator, a test suite and "
-        "a green build. While all three were passing, a maintenance script was writing back "
-        "a stale copy of the data file and silently reverting edits made while it ran. One "
-        "published commit carried a reverted account of AIR-001, with a fact in the "
-        "deployer's favour missing from it, and the build was green throughout. Nothing in "
-        "the checks was watching for it, because the checks validate the file's contents "
-        "and not whether the contents are the ones somebody meant to write. An audit of "
-        "every commit that touched the data has since bounded the damage to that one row, "
-        "two fields and one commit. It happened twice: a crash on the register screen also "
-        "survived six green builds, because the build parsed the app and never rendered "
-        "it. The register codes that failure mode as Implemented in other people's "
-        "systems, and it is the honest label for both of these.\n"
-        "- **The clause references are the nearest fit, not a legal classification.** "
-        "Every NIST AI RMF subcategory and EU AI Act article shown on this site is checked "
-        "against the published list it comes from, and the build refuses a value that is "
-        "not in that list. Whether the clause applies to a given deployment is a separate "
-        "question this register does not answer, and corrections to a clause reference are "
-        "among the most useful things you can send."
+        "| Limit | What it means for the reader |\n| --- | --- |\n"
+        + "\n".join(f"| **{name}** | {meaning} |" for name, meaning in limits)
+    )
+
+    st.markdown('<div id="own-failures"></div>', unsafe_allow_html=True)
+    st.markdown("### Three failures inside this project")
+    st.markdown(
+        "The register codes other people's agents as having controls that were "
+        "implemented and did not hold. The same label is the honest one for these."
+    )
+    st.markdown(
+        "- **A maintenance script reverted edits while every check passed.** The "
+        "repository has a validator, a test suite and a green build. While all three "
+        "were passing, a maintenance script was writing back a stale copy of the data "
+        "file and silently reverting edits made while it ran. One published commit "
+        "carried a reverted account of AIR-001, with a fact in the deployer's favour "
+        "missing from it, and the build was green throughout. The checks validate the "
+        "file's contents and not whether those contents are the ones somebody meant to "
+        "write. An audit of every commit that touched the data has bounded the damage "
+        "to that one row, two fields and one commit.\n"
+        "- **A crash on the register screen survived six green builds.** The build "
+        "parsed the app and never rendered it, so a nesting error that raised on every "
+        "card open was invisible to it. The build now renders every screen.\n"
+        "- **The fix for that crash's successor never worked at all.** Version 1.0 "
+        "reached the live site as a crash when a new column met a cached table. The "
+        "repair was a stamp passed to every loader so the cache would notice. "
+        "Streamlit's data cache leaves out any argument whose name begins with an "
+        "underscore, and the stamp was named that way, so the key never changed. The "
+        "check written to catch it asserted that the stamp moved, which was never the "
+        "question. The crash came back on a long-running server on 14 October 2026, "
+        "which is how it was found. The check now changes the data file and asserts "
+        "the loader returns the change."
+    )
+    st.caption(
+        "All three are the same shape: a control that existed, passed, and was not "
+        "watching the thing that broke."
     )
 
     st.markdown("### Dates that matter")
@@ -3206,6 +3202,16 @@ def screen_method(frame):
     with st.container(key="changelog"):
         st.markdown(
             "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        f"| {WORKING} | 2026-10-14 | Limits is a table rather than fourteen long "
+        "bullets, with a second column saying what each limit means for a reader. The "
+        "three failures this project has produced itself now have their own section "
+        "rather than sitting inside a limit: a maintenance script that reverted edits "
+        "while every check passed, a crash that survived six green builds, and the "
+        "cache fix that never worked. All three are the shape this register codes in "
+        "other people's systems as a control that was implemented and not watching the "
+        "thing that broke. The first Limits row also stops saying every judgement here "
+        "is mine and says what it means instead, which is that one person made every "
+        "inclusion, grading and classification decision with no second rater. |\n"
         f"| {WORKING} | 2026-10-14 | Every case now says whether the AI Incident "
         "Database holds the same event, with the incident number, the basis for calling "
         "it the same event and the date that was checked. Twenty of the twenty two "
@@ -3619,9 +3625,10 @@ def main():
 
     st.markdown("---")
     st.caption(
-        f"AI Agent Incident Register, version {VERSION}. Every number on this site is "
-        "computed from data/incidents.csv and data/case_harm_ratings.csv, and uses grade "
-        "A and grade B rows only. Closest clause, not legal classification."
+        f"AI Agent Incident Register, version {VERSION}. Every number on this site "
+        "is computed from the case data and uses grade A and grade B rows only. The "
+        f"[code and the data]({REPO_URL}) are public, and the Method page says how both "
+        "work."
     )
 
 
