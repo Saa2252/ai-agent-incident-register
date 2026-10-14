@@ -2562,6 +2562,80 @@ def screen_method(frame):
         "Check whether a final version has landed before relying on it."
     )
 
+    # 4a. The framework columns were "Our reading" on every row with no rule behind
+    # them, which is the same weakness the Limits section admits about the secondary
+    # class. This section states the rule, and the columns were recoded under it.
+    st.markdown('<div id="mapping-rule"></div>', unsafe_allow_html=True)
+    st.markdown("### How a case is mapped to a framework")
+    st.markdown(
+        "Each case names one provision per framework as its primary mapping, chosen by "
+        "the rule below, and that is the one every count on the Findings page uses. Any "
+        "other provision that also fits is kept on the case card, labelled, and counted "
+        "nowhere. This is the same treatment the secondary class gets, and for the same "
+        "reason: a figure built on an unruled judgement displays one person's reading as "
+        "structure."
+    )
+
+    st.markdown("**EU AI Act**")
+    st.markdown(
+        "List every article whose text names the missing safeguard, then order them "
+        "specific before general. The first in that order is the primary."
+    )
+    eu_order = [
+        ("1", "Articles naming a specific safeguard",
+         "Article 14 human oversight, Article 15 accuracy, robustness and "
+         "cybersecurity, Article 9 risk management, Article 10 data and data governance"),
+        ("2", "General provider and deployer duties",
+         "Article 16 obligations of providers, Article 26 obligations of deployers"),
+        ("3", "Transparency",
+         "Article 50 transparency obligations for certain AI systems"),
+        ("4", "General-purpose model duties",
+         "Article 53 obligations for providers of general-purpose AI models, "
+         "Article 55 where the model carries systemic risk"),
+        ("5", "Post-market and incident reporting",
+         "Article 72 post-market monitoring, Article 73 reporting of serious incidents"),
+    ]
+    st.markdown(
+        "| Order | Group | Articles |\n| --- | --- | --- |\n"
+        + "\n".join(f"| {n} | {group} | {arts} |" for n, group, arts in eu_order)
+    )
+    st.markdown(
+        "Where no article names the safeguard, the value is written as `None (closest: "
+        "Article N)` rather than reaching for the nearest general duty. That format "
+        "exists so a reader can tell a mapping from an absence of one."
+    )
+
+    st.markdown("**NIST AI RMF 1.0**")
+    st.markdown(
+        "The subcategory whose text names the missing safeguard, in the function where "
+        "that safeguard would have lived: GOVERN for policy, MAP for context, MEASURE "
+        "for testing, MANAGE for operating controls. A subcategory that names the "
+        "specific safeguard beats a generic one. MANAGE 4.1, which covers "
+        "post-deployment monitoring in general, is the primary only when nothing more "
+        "specific fits."
+    )
+
+    st.markdown("**OWASP Agentic Top 10**")
+    st.markdown(
+        "One entry per case: the one whose description names the mechanism of the "
+        "failure, not the harm it produced. Where the case has no security path at all, "
+        "the value is `Not applicable` rather than the closest-looking code."
+    )
+
+    st.markdown("**NIST AI 800-4**")
+    st.markdown(
+        "One category per case, by the same test: the category whose description names "
+        "the way the failure happened."
+    )
+
+    st.markdown(
+        "A mapping names the provision that describes the safeguard that was missing. It "
+        "does not say the provision applied to that system, that the deployer was bound "
+        "by it, or that anything was breached. Most systems here are not high-risk under "
+        "the EU AI Act and several cases predate its obligations."
+    )
+    st.markdown("Mappings were made by one person under this rule, with no second coder.")
+
     st.markdown("### Where the cases were found")
     st.markdown(
         "Finding a case and admitting a case are different steps, and only the second one "
