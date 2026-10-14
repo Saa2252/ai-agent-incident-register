@@ -329,19 +329,25 @@ def main(argv):
         empty = rendered.count("icell empty")
         known = rendered.count("icell known")
         part = rendered.count("icell part")
-        said = re.search(
-            r"(\d+) of (\d+) internal-register cells are empty\. The public record "
-            r"fills (\d+) fully and (\d+) partly",
+        # The empty count moved into the callout above the table on 15 October 2026,
+        # because it is the finding and it was sitting in grey under the table where
+        # it got read last. The check moved with it rather than staying on the caption
+        # it used to live in: a number is only honest where somebody reads it.
+        said = re.search(r"empty: (\d+) of the (\d+) cells below", rendered)
+        fills = re.search(
+            r"The public record fills (\d+) of those (\d+) cells fully and (\d+) partly",
             captions,
         )
-        if not said:
+        if not said or not fills:
             print("          FAIL the internal view has no computed cell line",
                   file=sys.stderr)
             clean = False
-        elif [int(g) for g in said.groups()] != [empty, rows * 9, known, part]:
+        elif [int(g) for g in said.groups()] != [empty, rows * 9] or \
+                [int(g) for g in fills.groups()] != [known, rows * 9, part]:
             print(
-                f"          FAIL the line says {said.groups()}, the table draws "
-                f"{empty} empty, {rows * 9} cells, {known} known, {part} partly",
+                f"          FAIL the callout says {said.groups()} and the caption "
+                f"{fills.groups()}, the table draws {empty} empty, {rows * 9} cells, "
+                f"{known} known, {part} partly",
                 file=sys.stderr,
             )
             clean = False

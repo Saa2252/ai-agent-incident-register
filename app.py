@@ -342,6 +342,18 @@ table.cases tr.notcounted td { color: var(--muted); }
 .icell.part {
   border:1.5px solid rgba(42,120,214,.45); background:rgba(42,120,214,.05); color:#1d5fae;
 }
+/* The sentence this whole view exists to make. It says why most of the table is blank,
+   and as plain body text between a radio and a legend it read as preamble and got
+   skipped, which left the empty columns looking like missing data rather than the
+   finding. Same blue the solid cells use, so the accent means what it means elsewhere. */
+p.viewnote {
+  border-left:4px solid #2a78d6; background:rgba(42,120,214,.07);
+  border-radius:0 10px 10px 0; padding:14px 18px; margin:8px 0 14px;
+  max-width:880px; font-size:15px; line-height:1.55;
+}
+p.viewnote a { font-weight:600; }
+@media (prefers-color-scheme: dark) { p.viewnote { background:rgba(42,120,214,.13); } }
+
 p.ilegend { display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:12px;
   color:#52514e; margin:6px 0 10px; }
 p.ilegend .key { display:inline-block; width:22px; height:13px; border-radius:4px; }
@@ -535,7 +547,7 @@ APP_DIR = Path(__file__).parent
 DATA_FILE = APP_DIR / "data" / "incidents.csv"
 
 VERSION = "1.1"
-UPDATED = "14 October 2026"
+UPDATED = "15 October 2026"
 
 # The version being written on this branch. Every change log row for unreleased work
 # carries WORKING rather than a typed string, so the release is two edits here and not
@@ -2626,12 +2638,15 @@ def screen_home(frame):
     if internal:
         empty, cells, filled, partly = internal_summary(view)
         st.markdown(
-            f"Same {len(view)} cases, with the columns an organisation's own incident "
-            "register carries. The dotted columns are filled at intake, during response "
-            "and at closure, from logs, tickets and the people involved. No public "
-            "source can fill them, so they are shown empty. Corrective action is the one "
-            "exception: the public record sometimes carries it. "
-            "[What else changes inside an organisation](?screen=Method&rule=enterprise)"
+            f'<p class="viewnote">Same {len(view)} cases, with the columns an '
+            "organisation's own incident register carries. The dotted columns are "
+            "filled at intake, during response and at closure, from logs, tickets and "
+            "the people involved. <b>No public source can fill them, so they are shown "
+            f"empty: {empty} of the {cells} cells below.</b> Corrective action is the "
+            "one exception, and the public record sometimes carries it. "
+            '<a target="_self" href="?screen=Method&amp;rule=enterprise">What else '
+            "changes inside an organisation</a></p>",
+            unsafe_allow_html=True,
         )
         st.markdown(
             '<p class="ilegend"><span class="key solid"></span>Solid, known from the '
@@ -2650,8 +2665,8 @@ def screen_home(frame):
             unsafe_allow_html=True,
         )
         st.caption(
-            f"{empty} of {cells} internal-register cells are empty. The public record "
-            f"fills {filled} fully and {partly} partly, all in one column."
+            f"The public record fills {filled} of those {cells} cells fully and "
+            f"{partly} partly, all in one column."
         )
         st.caption(
             "This is the structure an internal register adds, not a claim about how any "
