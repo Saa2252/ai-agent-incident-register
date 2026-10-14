@@ -6,7 +6,7 @@ AIR-003,Infrastructure Damage,2,Yes,"A rental management platform was down for a
 AIR-003,Property Damage,2,No,"The production database and its volume backups were destroyed, then recovered from offsite backups after about two and a half days.",Our reading
 AIR-003,Financial Loss,2,Yes,"Rental businesses could not take bookings or release vehicles for the outage. Not quantified in the record, but above the 10,000 floor.",Our reading
 AIR-004,Infrastructure Damage,2,Yes,"AWS Cost Explorer was unavailable in one region for about 13 hours. A billing console, not a critical service.",Our reading
-AIR-005,Financial Loss,1,No,"Some developers cancelled subscriptions and the company issued refunds. No figure in the record, and subscription scale puts it under the level 1 ceiling.",Our reading
+AIR-005,Financial Loss,1,No,"The company refunded the affected user and reported cancellations. No figure in the record, and subscription scale puts it under the level 1 ceiling.",Our reading
 AIR-006,Toxic or Malicious Content,2,Yes,"Harmful misinformation on a city government site, live for nearly two years, telling small businesses they could do things the law forbids.",Our reading
 AIR-006,Differential Treatment,1,No,"The chatbot said landlords could refuse housing vouchers. The record does not establish that any discrimination followed, so this stays at noticeable bias.",Our reading
 AIR-006,Human/Civil Rights,1,No,Advice touching tenants' and workers' rights. No actual restriction of rights is established in the record.,Our reading

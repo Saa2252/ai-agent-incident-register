@@ -26,12 +26,25 @@ A keepalive that reports success without looking at what came back is the same
 mistake as a monitor that trusts a 200, and this repository has a row about
 trusting a claim nobody reproduced.
 
+Why it looks in every frame
+---------------------------
+Community Cloud serves a host page at the app's own address and embeds the running
+app in a child frame at /~/+/. The app's text is in that frame, so the top-level
+document's body is empty: inner_text("body") on it returns nothing at all, and a
+text selector against the page matches nothing however long it waits.
+
+This script looked only at the top-level document until 14 October 2026, which made
+every run a false alarm regardless of what the app was doing. It now polls every
+frame for either the app's content or the wake button, so it keeps working whichever
+document Community Cloud decides to put them in.
+
 Playwright is deliberately not in requirements.txt. It is a CI-only dependency and
 the deployed app must not carry it.
 """
 
 import os
 import sys
+import time
 
 DEFAULT_URL = "https://ai-agent-incident-register.streamlit.app"
 
@@ -46,11 +59,51 @@ WAKE_BUTTON_TEXTS = [
 
 # Proof the real app rendered, not the shell and not the hibernation page. The
 # title alone is not enough, because the sleeping page carries it too.
+#
+# This was "Rows that feed the numbers" until 14 October 2026. That heading left
+# Home on 9 October, when Home was cut to a landing page, and nothing connected the
+# two: the keepalive waited sixty seconds for text that could no longer appear and
+# failed every six hours. Five days of a workflow whose whole job is to prove the
+# app rendered, reporting that it had not, with nobody reading it.
+#
+# It matters more than a red workflow. Community Cloud sleeps the app after twelve
+# quiet hours and screenshots it once a day for the link preview, so a dead
+# keepalive means the preview can be captured from the hibernation page.
+#
+# The line below is the hero tagline, which is the first thing Home paints and the
+# thing a reader is meant to see. scripts/smoke_test.py now reads this value and
+# fails if it is not on the rendered page, so the next rewrite of the hero cannot
+# break the keepalive quietly.
 EXPECTED_TITLE = "AI Agent Incident Register"
-EXPECTED_BODY = "Rows that feed the numbers"
+EXPECTED_BODY = "A public record of AI agents that caused harm"
 
 PAGE_TIMEOUT_MS = 60_000
 WAKE_TIMEOUT_MS = 180_000
+POLL_MS = 1_000
+
+
+def find_visible_text(page, candidates, timeout_ms):
+    """Poll every frame for the first of `candidates` that is visible.
+
+    Returns (frame, text) or (None, None). The frame list is re-read on each pass
+    because the app's frame does not exist yet when the page first loads, and a
+    frame that goes away mid-pass raises rather than returning False.
+    """
+    if isinstance(candidates, str):
+        candidates = [candidates]
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        for frame in list(page.frames):
+            for text in candidates:
+                try:
+                    found = frame.get_by_text(text, exact=False)
+                    if found.count() > 0 and found.first.is_visible():
+                        return frame, text
+                except Exception:  # noqa: BLE001
+                    continue
+        if time.monotonic() >= deadline:
+            return None, None
+        page.wait_for_timeout(POLL_MS)
 
 
 def main(argv):
@@ -76,47 +129,41 @@ def main(argv):
             browser.close()
             return 1
 
-        # If the app is asleep, wake it. The button may take a moment to appear,
-        # so this looks rather than assumes.
-        woke = False
-        for text in WAKE_BUTTON_TEXTS:
-            button = page.get_by_text(text, exact=False)
-            try:
-                if button.count() > 0 and button.first.is_visible():
-                    print(f"app was asleep. clicking '{text}'")
-                    button.first.click()
-                    woke = True
-                    break
-            except Exception:  # noqa: BLE001
-                continue
+        # Either the app is already serving, or it is asleep and showing the wake
+        # button. Both are waited for together, in every frame, because waiting for
+        # one and then the other means a sleeping app spends the whole first timeout
+        # waiting for content that cannot arrive until the button is clicked.
+        print("waiting for the app's content or the wake button")
+        frame, hit = find_visible_text(
+            page, [EXPECTED_BODY] + WAKE_BUTTON_TEXTS, PAGE_TIMEOUT_MS
+        )
 
-        if woke:
+        woke = False
+        if hit in WAKE_BUTTON_TEXTS:
+            print(f"app was asleep. clicking '{hit}'")
+            try:
+                frame.get_by_text(hit, exact=False).first.click()
+            except Exception as error:  # noqa: BLE001
+                print(f"FAIL could not click the wake button: {error}", file=sys.stderr)
+                browser.close()
+                return 1
+            woke = True
             print("waiting for the app to come back up")
-            try:
-                page.wait_for_selector(
-                    f"text={EXPECTED_BODY}", timeout=WAKE_TIMEOUT_MS
-                )
-            except Exception as error:  # noqa: BLE001
-                print(f"FAIL app did not come back up in time: {error}", file=sys.stderr)
-                browser.close()
-                return 1
-        else:
-            try:
-                page.wait_for_selector(f"text={EXPECTED_BODY}", timeout=PAGE_TIMEOUT_MS)
-            except Exception as error:  # noqa: BLE001
-                print(f"FAIL app was awake but did not render: {error}", file=sys.stderr)
-                browser.close()
-                return 1
+            frame, hit = find_visible_text(page, EXPECTED_BODY, WAKE_TIMEOUT_MS)
 
         title = page.title()
-        body = page.inner_text("body")
+        body = frame.inner_text("body") if frame else ""
+        where = frame.url if frame else ""
         browser.close()
 
     problems = []
     if EXPECTED_TITLE not in title:
         problems.append(f"title was '{title}', expected it to contain '{EXPECTED_TITLE}'")
     if EXPECTED_BODY not in body:
-        problems.append(f"page did not contain '{EXPECTED_BODY}'")
+        problems.append(
+            f"no frame rendered '{EXPECTED_BODY}'. The app is asleep, broken, or the "
+            "hero has been rewritten and this script was not told"
+        )
 
     if problems:
         for line in problems:
@@ -124,7 +171,7 @@ def main(argv):
         return 1
 
     state = "woken" if woke else "already awake"
-    print(f"OK app is up and rendering, {state}")
+    print(f"OK app is up and rendering, {state}, from {where}")
     return 0
 
 

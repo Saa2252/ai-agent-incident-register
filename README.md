@@ -1,8 +1,13 @@
 # AI Agent Incident Register
 
-Twenty three real AI agent failures, each traced to the control that was missing, the
-test that would have caught it before launch, and the signal that would have shown it
-after. Version 1.1, released 14 October 2026.
+Twenty three real AI agent failures, each traced to the control that was missing, the test that would have caught it before launch, and the signal that would have shown it after. Version 1.1, released 14 October 2026.
+
+<!-- The paragraph above is on one line on purpose. Community Cloud builds the share
+preview's description from the first paragraph of this file and strips the newlines
+without putting a space back, so a hard wrap there reaches LinkedIn as a joined word.
+It did: the card read "the control that was missing, thetest that wo...". Only the
+first hundred characters or so survive the truncation, which is the other reason that
+paragraph leads with what the register is. -->
 
 Live app: https://ai-agent-incident-register.streamlit.app
 
@@ -56,8 +61,8 @@ of this stops being true.
 
 - **Only grade A and grade B rows feed a number.** Grade A needs a primary record plus a
   second source. Grade B needs two independent sources on different hosts. Grade C gets
-  one source, is labelled on its card, and is excluded from every count on the site. The
-  register carries one grade C row.
+  one source, is labelled on its card, and is excluded from every count on the site. No
+  grade C row remains.
 - **Every number on screen is computed from the CSV.** Nothing is typed into a page, so
   no count can drift away from the rows behind it.
 - **Fixed vocabularies.** Severity, control class, monitoring category and failure
@@ -114,7 +119,10 @@ runs the page JavaScript and opens a websocket.
 
 `.github/workflows/keepalive.yml` runs headless Chromium against the published app
 every 6 hours, clicks the wake button if it finds one, and then checks that real
-content rendered rather than trusting the response code. Run it by hand with:
+content rendered rather than trusting the response code. It looks in every frame,
+because Community Cloud serves a host page and embeds the running app in a child
+frame at `/~/+/`: the top-level document's body is empty, so a check written against
+the page alone fails whatever the app is doing. Run it by hand with:
 
 ```bash
 pip install playwright && playwright install chromium
@@ -127,6 +135,12 @@ economics of free hosting, so if Streamlit changes what counts as activity again
 workflow will start failing. That is why it checks what rendered: a keepalive that
 reports success without looking at the response is the same mistake this register has a
 row about.
+
+It made the opposite mistake for five days. The line it waited for left the page on 9
+October 2026 and it was looking in the wrong frame besides, so it failed every six hours
+and said so to nobody. `scripts/smoke_test.py` now reads that line out of
+`scripts/keepalive.py` and fails if Home does not carry it, which closes the half of
+that failure a check can close.
 
 ## Layout
 
