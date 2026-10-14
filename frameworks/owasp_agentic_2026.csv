@@ -1,11 +1,11 @@
-code,name,alias,verified_against,status,source_url,retrieved
-ASI01,Agent Goal Hijack,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI02,Tool Misuse,Tool Misuse and Exploitation,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI03,Identity & Privilege Abuse,Identity and Privilege Abuse,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI04,Agentic Supply Chain Vulnerabilities,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI05,Unexpected Code Execution,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI06,Memory & Context Poisoning,Memory and Context Poisoning,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI07,Insecure Inter-Agent Communication,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI08,Cascading Failures,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI09,Human-Agent Trust Exploitation,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
-ASI10,Rogue Agents,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-10
+code,name,alias,description,owasp_example,verified_against,status,source_url,retrieved
+ASI01,Agent Goal Hijack,,Hidden prompts turned copilots into silent exfiltration engines.,EchoLeak,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI02,Tool Misuse,Tool Misuse and Exploitation,Agents bent legitimate tools into destructive outputs.,Amazon Q,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI03,Identity & Privilege Abuse,Identity and Privilege Abuse,Leaked credentials let them operate far beyond their intended scope.,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI04,Agentic Supply Chain Vulnerabilities,,Dynamic MCP and A2A ecosystems revealed how easily runtime components could be poisoned.,GitHub MCP exploit,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI05,Unexpected Code Execution,,Natural-language execution paths unlocked dangerous new avenues for remote code execution.,AutoGPT RCE,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI06,Memory & Context Poisoning,Memory and Context Poisoning,Memory poisoning reshaped behaviour long after the initial interaction.,Gemini Memory Attack,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI07,Insecure Inter-Agent Communication,,Spoofed inter-agent messages misdirected entire clusters.,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI08,Cascading Failures,,False signals cascaded through automated pipelines with escalating impact.,,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI09,Human-Agent Trust Exploitation,,"Confident, polished explanations misled human operators into approving harmful actions.",,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14
+ASI10,Rogue Agents,,"Misalignment, concealment, and self-directed action.",Replit meltdown,official coded list,confirmed,https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agent,2026-10-14

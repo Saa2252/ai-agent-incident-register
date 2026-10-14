@@ -555,6 +555,13 @@ CONTROL_CLASSES = rules_check.CONTROL_CLASSES
 OWASP_CODES = rules_check.OWASP_CODES
 OWASP_STATUS = rules_check.OWASP_STATUS
 OWASP_ROWS = rules_check.OWASP_ROWS
+# OWASP's own one-line characterisation of each code, read from the same page the codes
+# come from. Added 14 October 2026, after six cases were coded Not applicable by
+# reasoning from the code names alone and five of them turned out to be described by
+# ASI09 word for word.
+OWASP_DESCRIPTIONS = {
+    code: row.get("description", "") for code, row in OWASP_ROWS.items()
+}
 NIST_RMF_ROWS = rules_check.NIST_RMF_ROWS
 EU_ARTICLE_ROWS = rules_check.EU_ARTICLE_ROWS
 NIST_800_4_ROWS = rules_check.NIST_800_4_ROWS
@@ -762,7 +769,10 @@ def frameworks_html(row):
     )
     rows += block(
         "OWASP Agentic Top 10 2026", [row["owasp_code"]],
-        lambda ref: OWASP_CODES.get(ref, ""), row["owasp_code_basis"],
+        lambda ref: " ".join(
+            x for x in (OWASP_CODES.get(ref, ""), OWASP_DESCRIPTIONS.get(ref, "")) if x
+        ),
+        row["owasp_code_basis"],
     )
     rows += block(
         "NIST AI 800-4 monitoring", [row["nist_800_4_category"]],
@@ -1062,7 +1072,7 @@ def internal_cells(row):
         if text:
             html_cells.append(f'<span class="icell {state}">{esc(text)}</span>')
         else:
-            html_cells.append('<span class="icell empty">\u2014</span>')
+            html_cells.append('<span class="icell empty">\u2013</span>')
     return "".join(html_cells), filled, partly
 
 
@@ -1485,7 +1495,7 @@ FRAMEWORK_LENSES = {
         "catalogue": lambda: list(OWASP_CODES),
         "values": lambda row: _split(row["owasp_code"]),
         "label": lambda key: f"{key} {OWASP_CODES.get(key, '')}".strip(),
-        "meaning": lambda key: "",
+        "meaning": lambda key: OWASP_DESCRIPTIONS.get(key, ""),
         "sentence": (
             "OWASP's list names the attack patterns that apply to an agent rather than "
             "to a chatbot. Each case is given the one code that fits its failure best, "
@@ -2697,6 +2707,17 @@ def screen_method(frame):
         "with the test it failed, so the shape of what the evidence rule excluded can be "
         "seen rather than guessed at."
     )
+    # A reconsidered lead stays in the file with its original reasoning and the
+    # correction. Deleting it would hide a rejection this register got wrong.
+    st.caption(
+        f"{_leads()[0]} leads not included. "
+        f"{_leads()[1]} "
+        + ("lead" if _leads()[1] == 1 else "leads")
+        + " reconsidered and included, kept in the table with the reasoning that "
+        "rejected "
+        + ("it" if _leads()[1] == 1 else "them")
+        + " and the correction."
+    )
 
     st.markdown("### Incident or hazard")
     for kind, meaning in KIND_MEANING.items():
@@ -3100,8 +3121,8 @@ def screen_method(frame):
          "around the part that survives it. That closes one threat and leaves the "
          "sampling one standing, and the two are often confused. The repair was to "
          f"publish the candidates that were dropped: {_leads()[0]} leads with the test "
-         "each failed, of which "
-         f"{count_word(_leads()[1])} has since been reconsidered and admitted."),
+         f"each failed, and {count_word(_leads()[1])} since reconsidered and "
+         "admitted."),
         (f"{count_word(len(one_party)).capitalize()} rows rest on one party's account",
          f"{and_join(one_party)} are graded B with a reputable outlet as the second "
          "source, and in each case that outlet reports the primary account rather than "
@@ -3110,6 +3131,18 @@ def screen_method(frame):
          f"{count_word(len(own_account))} whose primary record the organisation "
          "published itself. Read them as the organisation's own account, carefully "
          "written and unverified."),
+        ("Two cases were excluded, wrongly, and are now in",
+         "AIR-023 was rejected as a single source when a reputable trade outlet had "
+         "covered it seven months earlier, and that report was already in the lead "
+         "export the rejection was written from. Its primary record is a first-hand "
+         "postmortem naming the stale state file, the auto-approve, the row count and "
+         "the recovery, and recording that the agent argued against putting both sites "
+         "in one Terraform setup and was overruled, and that when the agent later "
+         "proposed the destroy itself the operator did not stop it. AIR-024 was "
+         "rejected as resting on a single report when three existed, one of them "
+         "carrying the deployer's own on-record statement. Both were search failures "
+         "rather than judgement calls, and both rows stay in the leads table with the "
+         "reasoning that rejected them."),
         ("A convenience sample, not a population",
          "These are the cases with a usable public record. Agent failures handled "
          "quietly are the majority and none of them are here, which biases the counts "
@@ -3163,9 +3196,11 @@ def screen_method(frame):
         "Streamlit's data cache leaves out any argument whose name begins with an "
         "underscore, and the stamp was named that way, so the key never changed. The "
         "check written to catch it asserted that the stamp moved, which was never the "
-        "question. The crash came back on a long-running server on 14 October 2026, "
-        "which is how it was found. The check now changes the data file and asserts "
-        "the loader returns the change.\n"
+        "question. The same crash reappeared on 14 October 2026 on a local development "
+        "server that had been running since before a schema change, which is how it was "
+        "found, and the live site was not affected on that occasion because a "
+        "deployment there restarts the process. The check now changes the data file and "
+        "asserts the loader returns the change.\n"
         "- **The app read a stale copy of its own rulebook.** The app takes its "
         "vocabularies from the validator, so that a value the validator would reject "
         "cannot appear on a page as valid. Streamlit reloads the app file when it "
@@ -3224,13 +3259,41 @@ def screen_method(frame):
     with st.container(key="changelog"):
         st.markdown(
             "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        f"| {WORKING} | 2026-10-14 | **AIR-024 added, and a second rejection "
+        "corrected.** A lead was rejected on 12 October on the reasoning that it rested "
+        "on a single report with nothing corroborating it. Three reports existed, and "
+        "one of them carried an on-record statement from a named spokesperson at the "
+        "organisation involved. Re-screened on all six tests and admitted. Posting "
+        "without approval counts as an action under the first test, on the same reading "
+        "that admits AIR-016, and the organisation's own position is that the agent only "
+        "answered a question, which is recorded on the row and is why it is marked "
+        "disputed. Both rejections this register has had to reverse were search "
+        "failures, not rules that were too strict. The figures moved again: 22 "
+        "documented to 23, 21 counted to 22, not accuracy 18 of 21 to 19 of 22, the "
+        "record silent on who could stop the agent 19 of 21 to 20 of 22, no review date "
+        "21 of 21 to 22 of 22, control never built 10 to 11, no attacker 13 of 21 to 14 "
+        "of 22, Authority 8 to 9, the MIT Negligible band 7 to 8, and the rows with a "
+        "disputed account one to two. |\n"
+        f"| {WORKING} | 2026-10-14 | **The OWASP codes were re-checked against OWASP's "
+        "own descriptions, and eight changed.** The codes had been read by name, and six "
+        "cases were coded Not applicable on the reasoning that an accuracy failure has "
+        "no attack pattern. OWASP's own one-line description of ASI09 is that confident, "
+        "polished explanations misled human operators into approving harmful actions, "
+        "which names the mechanism in five of those six exactly. Not applicable is no "
+        "longer used by any row. The descriptions are now in the framework file and on "
+        "every card, read from the same page the codes come from. The same page names "
+        "worked examples for six of the ten codes, and two of them are cases in this "
+        "register, so those two mappings are now marked as applied by the framework "
+        "owner rather than by this register. |\n"
         f"| {WORKING} | 2026-10-14 | **A fourth failure of the same shape, found in the "
         "last check of the day.** The app reads its vocabularies from the validator so "
         "that a value the validator would reject cannot be displayed as valid. "
         "Streamlit reloads the app file when it changes and does not reload the modules "
-        "the app imports, which live in memory for the life of the process. A server "
-        "that had been running since before the mapping rule landed raised an error on "
-        "the Method page for a name added to the validator that morning, while every "
+        "the app imports, which live in memory for the life of the process. A local "
+        "development server that had been running since before the mapping rule landed "
+        "raised an error on the Method page for a name added to the validator that "
+        "morning, and the live site was not affected because a deployment there starts "
+        "a fresh process. Every "
         "headless check passed, because each of those starts a fresh process and can "
         "never see a stale one. The app now reloads the validator when its file has "
         "changed. The three failures this project had already recorded are in the "
@@ -3294,8 +3357,11 @@ def screen_method(frame):
             "change reaching the live site as a crash had never worked. Streamlit's data "
             "cache leaves out any argument whose name begins with an underscore, and the "
             "loaders took the file stamp as one, so the stamp moved on every data change "
-            "and the cache key did not. The crash came back on a long-running server on "
-            "14 October 2026, which is how it was found. The loaders no longer name it that way. The "
+            "and the cache key did not. The same crash reappeared on 14 October 2026 on "
+            "a local development server that had been running since before a schema "
+            "change, which is how it was found, and the live site was not affected on "
+            "that occasion because a deployment there restarts the process. The loaders "
+            "no longer name it that way. The "
             "check that was meant to catch this asserted that the stamp moved, which was "
             "never the question, and now changes the data file and asserts the loader "
             "returns the change. |\n"
