@@ -33,7 +33,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 FIELDS = [
-    "id", "title", "event_date", "deployer", "sector", "agent_type", "what_happened",
+    "id", "title", "event_date", "event_date_precision", "deployer", "sector", "agent_type", "what_happened",
     "why_in_register", "incident_or_hazard", "harm_type", "harm_borne_by",
     "could_have_prevented", "harm_bearer_had_control", "eu_serious_incident",
     "eu_closest_limb", "eu_basis", "eu_basis_type", "authority", "human_approval",
@@ -250,6 +250,10 @@ EU_PATTERN = re.compile(r"^Article \d+(\(\d+\))?$")
 ID_PATTERN = re.compile(r"^AIR-\d{3}$")
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# How precisely the record dates the event. A row still carries a full date so it can be
+# sorted and compared, and this says how much of that date the source actually supports.
+DATE_PRECISION = {"day", "week", "month"}
+
 # Punctuation that reads as machine written. Checked on every field so nobody has to
 # remember the rule by hand when adding a row later.
 AI_TELLS = {"—": "em dash", ";": "semicolon", "--": "double hyphen"}
@@ -312,6 +316,14 @@ EU_RANK = {
     for group, articles in enumerate(EU_GROUPS)
     for position, article in enumerate(articles)
 }
+
+
+def check_date_precision(report, where, row):
+    if row["event_date_precision"] not in DATE_PRECISION:
+        report.error(
+            f"{where}.event_date_precision",
+            f"must be one of {sorted(DATE_PRECISION)}",
+        )
 
 
 def check_aiid(report, where, row):
@@ -718,6 +730,7 @@ def validate_rows(report, rows, today):
         check_clauses(report, where, row)
         check_eu_order(report, where, row)
         check_aiid(report, where, row)
+        check_date_precision(report, where, row)
         check_evidence(report, where, row)
         check_style(report, where, row)
 

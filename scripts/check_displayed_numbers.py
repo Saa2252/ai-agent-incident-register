@@ -347,8 +347,7 @@ def main(argv):
          lambda top, n: rf"{re.escape(top)} is the closest provision in {n} of "
                         rf"{len(counted)} cases\."),
         ("monitoring", *top_of(monitoring, mon_order), monitoring,
-         lambda top, n: rf"{n} of {len(counted)} would have been caught by {top} "
-                        r"monitoring\."),
+         lambda top, n: rf"{n} of {len(counted)} fall under {top} monitoring\."),
     ]
     for slug, top, n, found, pattern in lens_checks:
         at_lens = AppTest.from_file(str(project_dir / "app.py"), default_timeout=180)

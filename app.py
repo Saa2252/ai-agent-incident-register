@@ -13,8 +13,10 @@ Three rules run through this file.
 """
 
 import csv
+import datetime
 import html
 import importlib
+import re
 from collections import Counter
 import sys
 from pathlib import Path
@@ -306,21 +308,25 @@ table.cases tr.notcounted td { color: var(--muted); }
    its own logs and tickets, drawn empty because no public source can fill them. Date,
    missing control and evidence are dropped here so the nine fit at 1280 without
    sideways scrolling, and they are all still on the card. */
+/* Twelve columns do not fit the page width at a readable size, so the table scrolls
+   inside its own container instead of squeezing every label to one word a line. */
+.ctbl.itbl { overflow-x:auto; }
 .itbl .ctbl-head, .itbl .crow > summary, .ihead-groups {
-  grid-template-columns:68px 104px minmax(0, 1fr) repeat(9, 46px);
-  gap:5px; padding:8px 10px;
+  grid-template-columns:86px 118px 150px 230px repeat(9, minmax(110px, 1fr));
+  gap:8px; padding:8px 12px; width:max-content; min-width:100%;
 }
 .ihead-groups {
   display:grid; align-items:end; font-size:11px; font-weight:700; color:#52514e;
   text-transform:uppercase; letter-spacing:.04em; padding-bottom:4px;
 }
-.ihead-groups .gpub { grid-column:span 3; }
+.ihead-groups .gpub { grid-column:span 4; }
 .ihead-groups .gint { border-bottom:2px dashed var(--grid-line); padding-bottom:3px; }
-.itbl .ctbl-head span { font-size:9px; line-height:1.15; overflow-wrap:break-word; }
+.itbl .ctbl-head span { font-size:11px; line-height:1.2; white-space:nowrap; }
+.itbl .crow > summary > span:nth-child(n+5) { white-space:normal; }
 .itbl .crow > summary { font-size:13px; }
 .icell {
   display:block; text-align:center; border-radius:5px; padding:4px 2px;
-  font-size:10px; line-height:1.2; overflow-wrap:break-word;
+  font-size:11px; line-height:1.25; overflow-wrap:break-word;
 }
 .icell.empty {
   border:1.5px dashed var(--grid-line); background:rgba(127,127,127,.05); color:#8b8880;
@@ -340,7 +346,7 @@ p.ilegend .key.dotted {
 .st-key-regpick [role="radiogroup"] { gap:22px; }
 @media (max-width: 900px) {
   .itbl .ctbl-head, .ihead-groups { display:none; }
-  .itbl .crow > summary { grid-template-columns:1fr; gap:4px; }
+  .itbl .crow > summary { grid-template-columns:1fr; gap:4px; width:auto; }
   .icell { text-align:left; }
 }
 .ctbl-head {
@@ -790,6 +796,29 @@ def frameworks_html(row):
     )
 
 
+def event_date_label(row):
+    """The event date shown at the precision the record actually supports.
+
+    Every row still carries a full date so the table can sort and the validator can
+    compare. Two rows are dated less precisely than that by their own sources, and
+    printing a day for them would be precision this register does not have.
+    """
+    precision = (row.get("event_date_precision") or "day").strip()
+    if precision == "day":
+        return row["event_date"]
+    stamp = datetime.date.fromisoformat(row["event_date"])
+    month = stamp.strftime("%b %Y")
+    if precision == "month":
+        return month
+    anchor = re.search(
+        r"(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*",
+        row["source_1_label"],
+    )
+    if not anchor:
+        return f"{month}, week not named"
+    return f"{month}, week before {anchor.group(1)} {anchor.group(2)}"
+
+
 def aiid_mark(row):
     """A marker in the ID cell when another index holds the same event.
 
@@ -878,7 +907,7 @@ def case_sections_html(row, ratings=None):
             # titles did not carry the organisation, and rewriting them to force it in
             # would have risked the facts for the sake of a convention.
             f'<p class="org"><b>Organisation.</b> {esc(row["deployer"])}'
-            f'<br><b>When.</b> {esc(row["event_date"])}</p>'
+            f'<br><b>When.</b> {esc(event_date_label(row))}</p>'
             + para(row["what_happened"])
             + '<p class="subhead">Why it is in the register</p>'
             + para(row["why_in_register"]),
@@ -1025,7 +1054,7 @@ def case_table(view, ratings=None, open_id=None):
             f'<details class="crow{klass}" id="{esc(row["id"])}"{is_open}>'
             '<summary><span class="cid"><i class="caret"></i>'
             f'{esc(row["id"])}{aiid_mark(row)}</span>'
-            f'<span class="cdate">{esc(row["event_date"])}</span>'
+            f'<span class="cdate">{esc(event_date_label(row))}</span>'
             f'<span>{esc(org)}</span><span>{esc(row["title"])}</span>'
             f'<span>{esc(row["control_class"])}</span>'
             f'<span>{severity_pill(row["mit_level"], row["mit_floored"])}</span>'
@@ -1090,9 +1119,10 @@ def internal_summary(view):
 def internal_table(view, ratings=None, open_id=None):
     """The same cases with the columns an internal register adds, drawn empty.
 
-    Date, missing control and evidence are dropped here so the nine dotted columns fit
-    at 1280 without sideways scrolling. They are all still on the card, which opens in
-    this view exactly as it does in the other.
+    Missing control, severity and evidence are dropped here so the nine dotted columns
+    have a readable width. They are all still on the card, which opens in this view
+    exactly as it does in the other. The table scrolls sideways inside its own container
+    rather than squeezing twelve columns into the page width.
     """
     groups = (
         '<div class="ihead-groups"><span class="gpub">From the public record</span>'
@@ -1103,8 +1133,8 @@ def internal_table(view, ratings=None, open_id=None):
         + "</div>"
     )
     head = (
-        '<div class="ctbl-head itbl-head"><span>ID</span><span>Organisation</span>'
-        "<span>What happened</span>"
+        '<div class="ctbl-head itbl-head"><span>ID</span><span>Date</span>'
+        "<span>Organisation</span><span>What happened</span>"
         + "".join(f"<span>{esc(c)}</span>" for c in INTERNAL_COLUMNS)
         + "</div>"
     )
@@ -1117,7 +1147,8 @@ def internal_table(view, ratings=None, open_id=None):
         rows.append(
             f'<details class="crow{klass}" id="{esc(row["id"])}"{is_open}>'
             '<summary><span class="cid"><i class="caret"></i>'
-            f'{esc(row["id"])}</span>'
+            f'{esc(row["id"])}{aiid_mark(row)}</span>'
+            f'<span class="cdate">{esc(event_date_label(row))}</span>'
             f'<span>{esc(org)}</span><span>{esc(row["title"])}</span>'
             f"{cells}</summary>"
             + case_sections_html(row, ratings)
@@ -1421,11 +1452,6 @@ def tab_what_was_missing(frame):
         "can bind the organisation running it. Check what your own agent can say, not "
         "only what it can do."
     )
-    how_to_read(
-        "The approval field carries no source of its own, unlike the stop-authority "
-        "field, so read it as this register's reading of each account rather than a "
-        "sourced absence."
-    )
     with st.expander("Why it matters"):
         st.markdown(
             "Putting accuracy last in the rubric is a choice that could manufacture the "
@@ -1453,7 +1479,7 @@ LENS_LABEL = {
     "rmf": ("NIST AI RMF", "Which governance function was missing?"),
     "articles": ("EU AI Act articles",
                  "Which provision addresses the missing safeguard?"),
-    "monitoring": ("NIST AI 800-4 monitoring", "What monitoring would have caught it?"),
+    "monitoring": ("NIST AI 800-4 monitoring", "Which kind of monitoring was missing?"),
 }
 LENS_BAD = ["mit", "eu"]
 LENS_KIND = ["classes", "owasp", "rmf", "articles", "monitoring"]
@@ -1485,7 +1511,7 @@ def _eu_label(key):
 
 FRAMEWORK_LENSES = {
     "owasp": {
-        "name": "OWASP Agentic Top 10 for Agentic Applications, 2026",
+        "name": "OWASP Top 10 for Agentic Applications, 2026",
         "unit": "pattern",
         "plural": "patterns",
         "multi": False,
@@ -1498,8 +1524,10 @@ FRAMEWORK_LENSES = {
         "meaning": lambda key: OWASP_DESCRIPTIONS.get(key, ""),
         "sentence": (
             "OWASP's list names the attack patterns that apply to an agent rather than "
-            "to a chatbot. Each case is given the one code that fits its failure best, "
-            "so the counts below add up to the number of cases."
+            "to a chatbot. Each case is given the one code whose entry describes the "
+            "mechanism of its failure, or Not applicable where no entry does. The code "
+            "names are OWASP's. The one-line descriptions are this register's summary, "
+            "not OWASP's wording."
         ),
     },
     "rmf": {
@@ -1516,8 +1544,8 @@ FRAMEWORK_LENSES = {
         "meaning": lambda key: NIST_RMF_ROWS.get(key, {}).get("text", ""),
         "sentence": (
             "The framework names the practices an organisation is meant to have in "
-            "place. A case is listed under the subcategory whose practice would have "
-            "had to be working for the failure not to happen."
+            "place. A case is listed under the subcategory whose text names the missing "
+            "safeguard."
         ),
     },
     "articles": {
@@ -1553,8 +1581,8 @@ FRAMEWORK_LENSES = {
         "meaning": lambda key: NIST_800_4_ROWS.get(key, {}).get("what_it_covers", ""),
         "sentence": (
             "NIST groups what an organisation has to watch for once a system is live. A "
-            "case is listed under the kind of monitoring that would have surfaced it. "
-            "The category names are NIST's. The one-line descriptions are this "
+            "case is listed under the kind of monitoring whose absence the record "
+            "shows. The category names are NIST's. The one-line descriptions are this "
             "register's summary, not NIST's wording."
         ),
     },
@@ -1679,9 +1707,7 @@ def framework_view(frame, slug):
             "cases. None of these systems is confirmed high-risk."
         )
     else:
-        st.markdown(
-            f"#### {n} of {total} would have been caught by {esc(top)} monitoring."
-        )
+        st.markdown(f"#### {n} of {total} fall under {esc(top)} monitoring.")
     st.markdown(spec["sentence"])
 
     st.markdown(f"##### Where the {total} counted cases fall")
@@ -1989,7 +2015,7 @@ def tab_what_the_record_shows(frame):
     st.markdown(
         f"{len(in_aiid)} of the {len(frame)} cases here are also in the AI Incident "
         f"Database. {len(not_in)} "
-        + ("does" if len(not_in) == 1 else "do")
+        + ("is" if len(not_in) == 1 else "are")
         + f" not, as of {checked}"
         + (f" ({and_join(not_in)})" if not_in else "")
         + ". Each match was opened and read rather than taken from a search result, and "
@@ -2529,11 +2555,15 @@ def screen_home(frame):
         elif "register" in st.query_params:
             del st.query_params["register"]
 
+    # The URL is the only state this toggle has. Without this line the widget's own
+    # session state outlives the parameter, so a reader who looked at the internal view
+    # once kept arriving back in it. Public is what an arrival shows unless the link
+    # asks for the other one.
+    st.session_state["register_view"] = asked
     with st.container(key="regpick"):
         chosen_view = st.radio(
             "Show these cases as",
             options,
-            index=options.index(asked),
             horizontal=True,
             key="register_view",
             on_change=remember_register,
@@ -2555,6 +2585,9 @@ def screen_home(frame):
             'public record<span class="key dotted"></span>Dotted, only an '
             "organisation's own register can fill this</p>",
             unsafe_allow_html=True,
+        )
+        st.caption(
+            "Sorted by event date, newest first. IDs show the order cases were added."
         )
         st.markdown(
             table_controls()
@@ -3259,6 +3292,29 @@ def screen_method(frame):
     with st.container(key="changelog"):
         st.markdown(
             "| Version | Date | What changed |\n| --- | --- | --- |\n"
+        f"| {WORKING} | 2026-10-14 | **The OWASP entries were read in full, and four "
+        "more mappings changed.** The codes had first been read by name, then by the "
+        "launch post's recap sentences, which describe 2025 incidents rather than "
+        "defining the entries. Reading the published document changed four rows. ASI09 "
+        "requires a confident answer to persuade a person into an action, and in three "
+        "of the five cases it had been given to, the record has no person who acted: "
+        "those read Not applicable. The document also lists the poisoned build tool "
+        "package under its supply chain entry, which moves that row and makes the "
+        "mapping the framework owner's rather than this register's. Three mappings are "
+        "now the framework owner's own. The one-line descriptions on the cards and the "
+        "lens are this register's summary of each entry, labelled as such. |\n"
+        f"| {WORKING} | 2026-10-14 | Counterfactual wording is out of the two monitoring "
+        "and governance lenses. A case is listed under the kind of monitoring whose "
+        "absence the record shows, and under the subcategory whose text names the "
+        "missing safeguard, rather than under what would have caught it. Nothing in the "
+        "data changed and the counts are the same. The claim was the difference between "
+        "what the record shows and what a different setup might have done, and only one "
+        "of those is in evidence. |\n"
+        f"| {WORKING} | 2026-10-14 | Rows now carry how precisely their own source dates "
+        "the event. Two are dated to a month and to a week rather than to a day, and "
+        "they display that way instead of showing a precision this register does not "
+        "have. The cross-reference line for those rows compares with the database at the "
+        "precision they actually hold. |\n"
         f"| {WORKING} | 2026-10-14 | **AIR-024 added, and a second rejection "
         "corrected.** A lead was rejected on 12 October on the reasoning that it rested "
         "on a single report with nothing corroborating it. Three reports existed, and "
