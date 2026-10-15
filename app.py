@@ -126,15 +126,14 @@ PAGE_CSS = """
   --tint-neg:rgba(137,135,129,0.14);
   --meter-off:#c3c2b7; --track:#e1e0d9; --grid-line:#e1e0d9; --ink-2:#52514e; --muted:#898781;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --sev-cat:#f08a8a;
-    --tint-cat:rgba(240,138,138,0.22); --tint-sev:rgba(208,59,59,0.26);
-    --tint-sub:rgba(236,131,90,0.22); --tint-min:rgba(250,178,25,0.20);
-    --tint-neg:rgba(137,135,129,0.22);
-    --meter-off:#66655f; --track:#2c2c2a; --grid-line:#2c2c2a; --ink-2:#c3c2b7;
-  }
-}
+/* There is no dark token set, because there is no dark page. The theme is pinned to
+   light in .streamlit/config.toml, so the background is white whatever the reader's
+   system is set to, while this stylesheet's prefers-color-scheme block keyed off the
+   system instead. A dark-system reader got the dark values on a white page: --ink-2 at
+   #c3c2b7 for 1.79:1 against a 4.5:1 floor, near-black grid lines, and worst of it,
+   unfilled meter dots at #3a3a37, which read as filled and turned "20 of 23" into a
+   row of twenty-three dark dots. Removed 15 October 2026. If the page ever gains a
+   real dark theme, these come back keyed to that theme and not to the system. */
 
 /* Wide tables scroll in their own box rather than pushing the page sideways. */
 /* Tables wrap rather than scroll. min-width: max-content with nowrap cells made every
@@ -222,7 +221,6 @@ table.cases tr.notcounted td { color: var(--muted); }
 .hero-band {
   background:#0d2440; color:#fff; border-radius:14px; padding:44px 48px; margin:4px 0 48px;
 }
-@media (prefers-color-scheme: dark) { .hero-band { background:#13263d; } }
 @media (max-width: 640px) { .hero-band { padding:28px 20px; } }
 .hero-band h1 { font-size:40px; line-height:1.1; margin:0 0 12px; font-weight:700; color:#fff; }
 .hero-band p.tagline {
@@ -257,7 +255,6 @@ table.cases tr.notcounted td { color: var(--muted); }
 .dots { display:flex; gap:5px; margin:0 0 16px; flex-wrap:wrap; }
 .dots i { width:14px; height:14px; border-radius:50%; background:#d6d4cc; display:block; }
 .dots i.on { background:#2a78d6; }
-@media (prefers-color-scheme: dark) { .dots i { background:#3a3a37; } .dots i.on { background:#3987e5; } }
 .fcard .say { font-size:16px; font-weight:600; margin:0 0 8px; line-height:1.35; }
 .fcard .more { color:#52514e; font-size:14px; margin:0; line-height:1.5; }
 .fcard .note { color:var(--muted); font-size:13px; margin:10px 0 0; line-height:1.45; }
@@ -352,7 +349,6 @@ p.viewnote {
   max-width:880px; font-size:15px; line-height:1.55;
 }
 p.viewnote a { font-weight:600; }
-@media (prefers-color-scheme: dark) { p.viewnote { background:rgba(42,120,214,.13); } }
 
 p.ilegend { display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:12px;
   color:#52514e; margin:6px 0 10px; }
