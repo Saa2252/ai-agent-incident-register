@@ -103,7 +103,11 @@ EU_LIMBS = {"a", "b", "c", "d"}
 CONTROL_CLASSES = {
     "Accuracy": "The agent said something that was not true.",
     "Authority": "The agent was allowed to do more than it should have been able to do.",
-    "Boundary": "The agent acted on instructions that came from content, not from its operator.",
+    # Reworded 15 October 2026. "Came from content" described only half the rows it
+    # covers: in AIR-007 a visitor typed the instruction straight into the chat box,
+    # which is not content the agent went and read. The class was always about where
+    # the instruction came from rather than how it arrived.
+    "Boundary": "Acted on instructions that did not come from its operator, whether typed directly by a user or hidden in content it read.",
     "Oversight": "No person was positioned to catch it, stop it, or verify the claim it ran on.",
     "Vendor": "The failure arrived through a third party holding access to the organisation.",
 }

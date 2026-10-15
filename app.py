@@ -362,6 +362,13 @@ p.ilegend .key.dotted {
   border:1.5px dashed var(--grid-line); background:rgba(127,127,127,.05); margin-left:14px;
 }
 .st-key-regpick { margin:2px 0 8px; }
+
+/* The sidebar version line was cut off at the panel edge instead of running on to a
+   second line, so it ended mid-sentence. Long words break rather than overflow. */
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+  white-space:normal; overflow-wrap:break-word; word-break:break-word;
+}
 .st-key-regpick [role="radiogroup"] { gap:22px; }
 @media (max-width: 900px) {
   .itbl .ctbl-head, .ihead-groups { display:none; }
@@ -419,9 +426,14 @@ p.ilegend .key.dotted {
 /* Open and close every row. Buttons rather than links, because this changes nothing a
    reader would want to share or bookmark. */
 .tctl { display:flex; gap:6px; margin:0 0 8px; }
+/* color:inherit, not --ink-2. The page is pinned to the light theme in
+   .streamlit/config.toml, but this stylesheet's prefers-color-scheme block still fires
+   for a reader whose system is dark, which set --ink-2 to #c3c2b7 on a white page:
+   1.79:1, against a 4.5:1 floor. Inheriting the page's own text colour is correct
+   under either token set and is 17.4:1 here. */
 .tctl-b {
   font:inherit; font-size:13px; font-weight:600; padding:5px 11px; cursor:pointer;
-  color:var(--ink-2); background:none; border:1px solid var(--grid-line); border-radius:8px;
+  color:inherit; background:none; border:1px solid var(--grid-line); border-radius:8px;
 }
 .tctl-b:hover { background:rgba(42,120,214,.10); border-color:#2a78d6; color:inherit; }
 
@@ -510,7 +522,7 @@ i.aiidmark {
 .ctabs .tabrow { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 12px; }
 .ctabs .tb {
   padding:6px 12px; cursor:pointer; font:inherit; font-size:13px; font-weight:600;
-  color:var(--ink-2); background:none; border:1px solid transparent; border-radius:8px;
+  color:inherit; background:none; border:1px solid transparent; border-radius:8px;
 }
 .ctabs .tb:hover { background:rgba(42,120,214,.10); }
 .ctabs .tb.on { background:rgba(42,120,214,.16); border-color:#2a78d6; color:inherit; }
@@ -815,6 +827,20 @@ def frameworks_html(row):
     )
 
 
+def pretty_date(iso):
+    """An ISO date as the site writes dates: 14 Oct 2026.
+
+    The register stores ISO because it sorts and compares, and printed ISO until 15
+    October 2026, which put 2026-04-17 directly under "24-25 Apr 2026" in the same
+    column once date_shown arrived. One format, everywhere a date is shown.
+    """
+    try:
+        stamp = datetime.date.fromisoformat(str(iso).strip())
+    except ValueError:
+        return str(iso)
+    return f"{stamp.day} {stamp.strftime('%b %Y')}"
+
+
 def event_date_label(row):
     """The event date shown at the precision the record actually supports.
 
@@ -832,7 +858,7 @@ def event_date_label(row):
         return shown
     precision = (row.get("event_date_precision") or "day").strip()
     if precision == "day":
-        return row["event_date"]
+        return pretty_date(row["event_date"])
     stamp = datetime.date.fromisoformat(row["event_date"])
     month = stamp.strftime("%b %Y")
     if precision == "month":
@@ -878,7 +904,7 @@ def aiid_line(row):
     return (
         f'<p class="aiid"><b>Cross-reference, not a source.</b> {body}'
         f'<br><span>{esc(row["aiid_match_basis"])} '
-        f'Checked {esc(row["aiid_checked_on"])}.</span></p>'
+        f'Checked {esc(pretty_date(row["aiid_checked_on"]))}.</span></p>'
     )
 
 
@@ -1378,8 +1404,9 @@ def tab_what_was_missing(frame):
         f"{by_class['Accuracy']} come down to the agent saying something untrue. In "
         f"{by_class['Authority']}, the agent had more power than its task needed: it "
         "could delete, send or change things with no check (Authority). In "
-        f"{by_class['Boundary']}, it treated text it was reading, such as an email, web "
-        "page or document, as an instruction to follow (Boundary). The table below "
+        f"{by_class['Boundary']}, it acted on instructions that did not come from its "
+        "operator, whether typed directly by a user or hidden in content it read "
+        "(Boundary). The table below "
         "defines all five types. This split depends partly on the order the types are "
         f"checked in. If accuracy is checked first, {facts['accuracy_first']} of "
         f"{facts['total']} still involve no false statement at all."
@@ -2076,7 +2103,7 @@ def tab_what_the_record_shows(frame):
     st.markdown("**How much of this register another index already holds.**")
     in_aiid = sorted(frame[frame["aiid_id"] != ""]["id"])
     not_in = sorted(frame[frame["aiid_id"] == ""]["id"])
-    checked = sorted(frame["aiid_checked_on"])[-1] if len(frame) else ""
+    checked = pretty_date(sorted(frame["aiid_checked_on"])[-1]) if len(frame) else ""
     st.markdown(
         f"{len(in_aiid)} of the {len(frame)} cases here are also in the AI Incident "
         f"Database. {len(not_in)} "
@@ -2484,8 +2511,9 @@ def screen_home(frame):
         ("not-accuracy",
          "The missing safeguard wasn't about accuracy.",
          f"In {by_class['Authority']} cases the agent could do more than its task needed. "
-         f"In {by_class['Boundary']} it obeyed instructions hidden in content it was "
-         f"reading. Only {by_class['Accuracy']} came down to a false statement.",
+         f"In {by_class['Boundary']} it acted on instructions that did not come from "
+         "its operator, whether typed directly by a user or hidden in content it read. "
+         f"Only {by_class['Accuracy']} came down to a false statement.",
          f"Even if every case with a false statement is counted as an accuracy failure, "
          f"it is still {facts['accuracy_first']} of {total}."),
         ("record-silent-on-stop",
@@ -2719,18 +2747,53 @@ def _articles_used(frame):
     return "Articles " + and_join(numbers)
 
 
-def _leads():
-    """Leads checked and not included, and the number since reconsidered.
+LEADS_FILE = APP_DIR / "data" / "leads" / "considered_not_included.csv"
 
-    Counted from the status column rather than from the row count, because a row that
-    was reconsidered and admitted stays in the file with its reasoning. Dropping it
-    would hide the mistake, and counting it as a rejection would misstate the total.
+
+@st.cache_data
+def load_leads(stamp):
+    with open(LEADS_FILE, encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def lead_funnel(frame):
+    """What was screened, what got in, what was turned away and why.
+
+    Three rules, because each one was a way of flattering the number.
+
+    A lead that was reconsidered and admitted stays in the leads file with the
+    reasoning that rejected it. Deleting it would hide the mistake and counting it as
+    a rejection would misstate the total, so it is counted once, as included.
+
+    Excluded means a recorded reason. A lead with no reason is not a rejection, it is
+    one nobody has finished looking at, and it is reported as that rather than folded
+    into the rejected pile where it would read as a decision that was never made.
+
+    Reviewed is the two files added together, not the size of either. A case that got
+    in was screened too.
     """
-    path = Path(__file__).parent / "data" / "leads" / "considered_not_included.csv"
-    with open(path, encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    reconsidered = [r for r in rows if r.get("status", "").startswith("Reconsidered")]
-    return len(rows) - len(reconsidered), len(reconsidered)
+    leads = load_leads(data_stamp(LEADS_FILE))
+    readmitted = [r for r in leads if r.get("status", "").startswith("Reconsidered")]
+    turned_away = [r for r in leads if r not in readmitted]
+    excluded = [r for r in turned_away if r.get("failed_test", "").strip()]
+    return {
+        "reviewed": len(frame) + len(turned_away),
+        "included": len(frame),
+        "excluded": len(excluded),
+        "unassessed": len(turned_away) - len(excluded),
+        "readmitted": len(readmitted),
+        "reasons": Counter(r["failed_test"].strip() for r in excluded),
+    }
+
+
+def _leads():
+    """The two figures the Limits bullet and the inclusion caption print.
+
+    Both read the funnel rather than counting the file a second time, because the two
+    counts disagreeing is the failure mode and one of them would be the stale one.
+    """
+    funnel = lead_funnel(load_register(data_stamp(DATA_FILE, RATINGS_FILE)))
+    return funnel["excluded"], funnel["readmitted"]
 
 
 def screen_method(frame):
@@ -2739,6 +2802,14 @@ def screen_method(frame):
     st.markdown(
         "An AI system counts as an agent here if it spoke or acted for an organisation "
         "without a person approving each output."
+    )
+    st.markdown(
+        "A case is added when a lead passes all six inclusion tests below. Every lead "
+        "that was screened and not added stays in "
+        "`data/leads/considered_not_included.csv` with the test it failed, and the "
+        "funnel under those tests counts both. A correction is shown as a dated row in "
+        "the change log at the end of this page, and a lead this register rejected "
+        "wrongly keeps its original reasoning in that file beside the correction."
     )
     st.markdown(
         "This page is the argument for trusting the register, and the fastest way through "
@@ -2824,6 +2895,45 @@ def screen_method(frame):
         + " and the correction."
     )
 
+    funnel = lead_funnel(frame)
+    st.markdown("**What was screened, and what happened to it**")
+    rows = [
+        ("Reviewed", funnel["reviewed"], "Leads screened against the six tests."),
+        ("Included", funnel["included"], "Passed all six and became a case."),
+        ("Excluded", funnel["excluded"], "Failed a test, and which test is recorded."),
+        ("Not yet assessed", funnel["unassessed"],
+         "Screened but with no reason recorded, so not counted as a rejection."),
+    ]
+    st.markdown(
+        '<div class="case-table-wrap"><table class="cases"><thead><tr><th>Stage</th>'
+        "<th>Cases</th><th>What it means</th></tr></thead><tbody>"
+        + "".join(
+            f"<tr><td>{esc(name)}</td>"
+            f'<td style="text-align:right">{n}</td><td>{esc(meaning)}</td></tr>'
+            for name, n, meaning in rows
+        )
+        + "</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(f"**Why the {funnel['excluded']} were excluded**")
+    st.markdown(
+        '<div class="case-table-wrap"><table class="cases"><thead><tr><th>Recorded '
+        "reason</th><th>Leads</th></tr></thead><tbody>"
+        + "".join(
+            f"<tr><td>{esc(reason)}</td>"
+            f'<td style="text-align:right">{n}</td></tr>'
+            for reason, n in funnel["reasons"].most_common()
+        )
+        + "</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+    how_to_read(
+        "Descriptive. Every figure here is counted from the two data files rather than "
+        "typed, and a lead with no recorded reason is reported as not yet assessed "
+        f"rather than as a rejection. {funnel['readmitted']} of the excluded were later "
+        "reconsidered and admitted, and are counted above as included."
+    )
+
     st.markdown("### Incident or hazard")
     for kind, meaning in KIND_MEANING.items():
         count = int((frame["incident_or_hazard"] == kind).sum())
@@ -2876,7 +2986,7 @@ def screen_method(frame):
     )
     rubric = [
         ("1. Vendor", "The failure arrived through a third party that held access to the organisation."),
-        ("2. Boundary", "The agent acted on instructions that came from content it read rather than from its operator."),
+        ("2. Boundary", "The agent acted on instructions that did not come from its operator, whether typed directly by a user or hidden in content it read."),
         ("3. Authority", "The agent was able to take an action it should not have been able to take at all."),
         ("4. Oversight", "No person was positioned to catch it, stop it, or verify the claim the deployment ran on."),
         ("5. Accuracy", "What is left. The agent stated something untrue and nothing checked it against the source."),
@@ -2887,6 +2997,11 @@ def screen_method(frame):
             f"| {name.split('.')[0]} | {name.split('. ')[1]} | {test} |"
             for name, test in rubric
         )
+    )
+    st.markdown(
+        "Each case has one primary missing-control class, chosen by the fixed order "
+        "above. Other failures are described in the case text, and counts are of the "
+        "primary class only."
     )
     st.caption(
         "Accuracy is last on purpose. An agent that says something wrong and an agent that "
@@ -3153,7 +3268,7 @@ def screen_method(frame):
     )
     rows = "\n".join(
         f"| {r['id']} | [{r['aiid_id']}](https://incidentdatabase.ai/cite/"
-        f"{r['aiid_id']}/) | {r['aiid_match_basis']} | {r['aiid_checked_on']} |"
+        f"{r['aiid_id']}/) | {r['aiid_match_basis']} | {pretty_date(r['aiid_checked_on'])} |"
         for _, r in in_aiid.iterrows()
     )
     st.markdown(
@@ -3855,10 +3970,12 @@ def main():
         screen_method(frame)
 
     with st.sidebar:
+        funnel = lead_funnel(frame)
         st.caption(
-            f"Version {VERSION}, {UPDATED}. {len(frame)} cases, "
-            f"{int(frame['counted'].sum())} counted. Built by Sana Asif Ahmad. "
-            "Not legal advice."
+            f"{funnel['included']} cases · {funnel['reviewed']} leads reviewed"
+        )
+        st.caption(
+            f"Version {VERSION}, {UPDATED}. Built by Sana Asif Ahmad. Not legal advice."
         )
 
     st.markdown("---")
