@@ -124,7 +124,7 @@ PAGE_CSS = """
   --tint-cat:rgba(143,29,29,0.16); --tint-sev:rgba(208,59,59,0.14);
   --tint-sub:rgba(236,131,90,0.18); --tint-min:rgba(250,178,25,0.18);
   --tint-neg:rgba(137,135,129,0.14);
-  --meter-off:#c3c2b7; --track:#e1e0d9; --grid-line:#e1e0d9; --ink-2:#52514e; --muted:#898781;
+  --meter-off:#c3c2b7; --track:#e1e0d9; --grid-line:#e1e0d9; --ink-2:#52514e; --muted:#787671;
 }
 /* There is no dark token set, because there is no dark page. The theme is pinned to
    light in .streamlit/config.toml, so the background is white whatever the reader's
@@ -333,7 +333,7 @@ table.cases tr.notcounted td { color: var(--muted); }
   font-size:11px; line-height:1.25; overflow-wrap:break-word;
 }
 .icell.empty {
-  border:1.5px dashed var(--grid-line); background:rgba(127,127,127,.05); color:#8b8880;
+  border:1.5px dashed var(--grid-line); background:rgba(127,127,127,.05); color:#79766f;
 }
 .icell.known { border:1.5px solid #2a78d6; background:rgba(42,120,214,.10); color:#1d5fae; }
 .icell.part {
@@ -510,7 +510,7 @@ p.aiid {
 }
 p.aiid span { font-size:12px; color:#52514e; }
 i.aiidmark {
-  font-style:normal; font-size:11px; color:#2a78d6; margin-left:4px; cursor:help;
+  font-style:normal; font-size:11px; color:#2976d4; margin-left:4px; cursor:help;
 }
 
 /* Tabs inside an open row. The active pane is a class rather than :checked, because
